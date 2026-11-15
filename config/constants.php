@@ -72,7 +72,9 @@ return [
     'new_notification_count_interval' => 60, //Interval to check for new notifications in seconds;Default is 60sec
     
     'administrator_usernames' => env('ADMINISTRATOR_USERNAMES'),
-    'allow_registration' => env('ALLOW_REGISTRATION', true),
+    // Hard off (11/15/26 audit): public signup let strangers become an Admin and
+    // use the shared Claude key. Nivessa adds staff from Users, not signup.
+    'allow_registration' => false,
     'app_title' => env('APP_TITLE'),
     'mpdf_temp_path' => storage_path('app/pdf'), //Temporary path used by mpdf
     

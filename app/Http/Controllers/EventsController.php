@@ -2126,6 +2126,11 @@ class EventsController extends Controller
                 $json = json_decode((string) file_get_contents($file), true);
                 if (is_array($json) && isset($json['items']) && is_array($json['items'])) {
                     foreach ($json['items'] as $it) {
+                        // Public feed: drop internal staff-only fields (11/15/26 audit).
+                        unset($it['createdBy'], $it['lastModifiedBy']);
+                        if (isset($it['prepDetails']) && is_array($it['prepDetails'])) {
+                            unset($it['prepDetails']['staffInstructions']);
+                        }
                         $items[] = $it;
                     }
                 }

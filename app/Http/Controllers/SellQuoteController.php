@@ -1071,6 +1071,9 @@ class SellQuoteController extends StoreOrDiscogsController
      */
     protected function alertStore($q)
     {
+        if (self::overNotifyCap('slack', $q->phone ?? '')) {
+            return true; // treat as sent so we don't retry the alert
+        }
         try {
             $storeRow = collect($this->stores())->firstWhere('id', (int) $q->location_id);
             $storeKey = stripos((string) ($storeRow['name'] ?? ''), 'pico') !== false ? 'pico' : 'hollywood';
@@ -1130,12 +1133,35 @@ class SellQuoteController extends StoreOrDiscogsController
      */
     const NOTIFY_REPEAT_MIN = 30;
 
+    // Public form, so a bot could make us text/email/Slack any number over
+    // and over (11/15/26 audit, same pattern as the booking spam). Caps: 3
+    // texts/emails and 3 Slack alerts per phone per day, 150 per day total.
+    protected static function overNotifyCap($kind, $phone)
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone);
+        $day = date('Ymd');
+        $perKey = 'sellquote-cap:' . $kind . ':' . $day . ':' . ($digits !== '' ? $digits : 'none');
+        $allKey = 'sellquote-cap:' . $kind . ':' . $day . ':all';
+        $per = (int) \Cache::get($perKey, 0);
+        $all = (int) \Cache::get($allKey, 0);
+        if ($per >= 3 || $all >= 150) {
+            \Log::warning('SellQuote notify capped', ['kind' => $kind, 'phone' => $digits, 'per' => $per, 'all' => $all]);
+            return true;
+        }
+        \Cache::put($perKey, $per + 1, 86400);
+        \Cache::put($allKey, $all + 1, 86400);
+        return false;
+    }
+
     protected function notifySeller($q, $prev)
     {
         $out = ['sms' => false, 'email' => false];
         if (is_array($prev) && abs((float) ($prev['cash'] ?? -1) - (float) $q->cash_total) < 0.005
             && (time() - (int) ($prev['at'] ?? 0)) < self::NOTIFY_REPEAT_MIN * 60) {
             return $out + ['repeat' => true];
+        }
+        if (self::overNotifyCap('seller', $q->phone ?? '')) {
+            return $out + ['capped' => true];
         }
         $storeRow = collect($this->stores())->firstWhere('id', (int) $q->location_id);
         $storeName = $storeRow['name'] ?? '';

@@ -11,7 +11,8 @@
 |
 */
 
-include_once('install_r.php');
+// install_r.php (installer + /install/update) removed 11/15/26: public routes could run
+// migrate:fresh on production. Installs/migrations run via scripts/deploy.sh only.
 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -19,9 +20,6 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SellPosController;
 
-Route::get('/ebay/search-product-price', [ProductController::class, 'searchEbayProductPrice']);
-Route::get('/discogs/search-product-price', [ProductController::class, 'searchDiscogsProductPrice']);
-Route::get('/discogs/search-product-price-2', [ProductController::class, 'searchDiscogsProductPrice2']);
 
 // Public events feed for nivessa.com (no auth). Off the /api/ path because
 // nginx hijacks /api/*. The website reads listening-party / event detail
@@ -37,7 +35,7 @@ Route::get('/genre-bible.json', [\App\Http\Controllers\Api\NivessaGenreBibleCont
 // Texted order links: public preview page (signed), then on to the order.
 Route::get('/o/{id}/{sig}', 'WebsiteOrdersController@sharePreview')->name('website-orders.share');
 // Short form (Sarah 10/22 "shorten these urls"): /o/100103-ab12cd
-Route::get('/o/{code}', 'WebsiteOrdersController@sharePreviewShort')->where('code', '[0-9]+-[a-f0-9]{6}');
+Route::get('/o/{code}', 'WebsiteOrdersController@sharePreviewShort')->where('code', '[0-9]+-[a-f0-9]{6}')->middleware('throttle:20,1');
 Route::get('/products-feed.json', [\App\Http\Controllers\Api\NivessaProductsFeedController::class, 'publicFeed']);
 // A-class product ids (sales-based ABC import) for the nivessa.com New Arrivals ordering.
 Route::get('/abc-a-products.json', [\App\Http\Controllers\Api\NivessaProductsFeedController::class, 'abcAProducts']);
@@ -117,7 +115,7 @@ Route::middleware(['setData'])->group(function () {
         Route::post('/sell-quote/start', 'SellQuoteController@start');
         Route::get('/sell-quote/search', 'SellQuoteController@search');
         Route::get('/sell-quote/release-value', 'SellQuoteController@releaseValue');
-        Route::get('/sell-quote/discogs-collection', 'SellQuoteController@discogsCollection');
+        Route::get('/sell-quote/discogs-collection', 'SellQuoteController@discogsCollection')->middleware('throttle:10,1');
         Route::post('/sell-quote/{token}/price', 'SellQuoteController@price')->where('token', '[A-Za-z0-9]{32}');
         Route::post('/sell-quote/{token}/store', 'SellQuoteController@chooseStore')->where('token', '[A-Za-z0-9]{32}');
         Route::get('/sell-quote/{token}', 'SellQuoteController@show')->where('token', '[A-Za-z0-9]{32}');
@@ -2489,11 +2487,13 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone'])
 });
 
 
-Route::get('/download-barcode' , [\App\Http\Controllers\ProductController::class , 'downloadBarCode']);
-
-Route::get('/purchases-download-demo-excel', 'PurchaseController@downloadDemoExcel')->name('purchases.download-demo-excel');
-Route::post('store-purchase-excel', 'PurchaseController@importExcel')->name('purchases.store-excel');
-Route::get('/import-purchase-excel-file', 'PurchaseController@importExcelFile')->name('purchases.import-excel-file');
+// Were public until 11/15/26 (audit): now staff login required.
+Route::middleware(['setData', 'auth', 'SetSessionData'])->group(function () {
+    Route::get('/download-barcode' , [\App\Http\Controllers\ProductController::class , 'downloadBarCode']);
+    Route::get('/purchases-download-demo-excel', 'PurchaseController@downloadDemoExcel')->name('purchases.download-demo-excel');
+    Route::post('store-purchase-excel', 'PurchaseController@importExcel')->name('purchases.store-excel');
+    Route::get('/import-purchase-excel-file', 'PurchaseController@importExcelFile')->name('purchases.import-excel-file');
+});
 
 Route::post('updateStock' , [\App\Http\Controllers\ProductController::class , 'updateStock'])->middleware(['auth']);
 
