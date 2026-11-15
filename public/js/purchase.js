@@ -1217,6 +1217,10 @@ function update_table_sr_number() {
 
 $(document).on('click', 'button#submit_purchase_form, button#submit_purchase_form_print_labels', function(e) {
     e.preventDefault();
+    // One save per page (Sarah 2026-11-14): repeat clicks on Save / Save &
+    // Print Labels while a save was in flight created duplicate purchases
+    // and products.
+    if (window.__purchaseSaving) return false;
     $('#purchase_save_action').val($(this).attr('id') == 'submit_purchase_form_print_labels' ? 'print_labels' : 'save');
 
     //Check if product is present or not.
@@ -1329,9 +1333,18 @@ $(document).on('click', 'button#submit_purchase_form, button#submit_purchase_for
     if ($('form#add_purchase_form').valid()) {
         var $purchase_btns = $('button#submit_purchase_form, button#submit_purchase_form_print_labels');
         $purchase_btns.attr('disabled', true);
+        window.__purchaseSaving = true;
         __purchase_duplicate_check(function() {
+            $purchase_btns.attr('disabled', true);
+            // If the page is still here after 20s (validation bounced the
+            // save), unlock so they can fix it and try again.
+            setTimeout(function() {
+                window.__purchaseSaving = false;
+                $purchase_btns.attr('disabled', false);
+            }, 20000);
             $('form#add_purchase_form').submit();
         }, function() {
+            window.__purchaseSaving = false;
             $purchase_btns.attr('disabled', false);
         });
     }

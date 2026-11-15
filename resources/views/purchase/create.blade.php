@@ -643,6 +643,8 @@
 				return isNaN(n) ? 0 : n;
 			}
 			function refreshPriceGuard() {
+				// Mid-save: keep Save locked (purchase.js sets this flag).
+				if (window.__purchaseSaving) return;
 				var $rows = $('#purchase_entry_table tbody tr');
 				var donated = $('#is_donated_checkbox').is(':checked');
 				var bad = 0;
