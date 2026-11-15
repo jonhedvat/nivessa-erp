@@ -1,0 +1,32 @@
+# One-off, read-only: verifies Bulk Product Entry store-price check (blade compiles, sample results). SELECTs only.
+
+name: Diag bulk entry store-price check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKLy8gMS4gQmxhZGUgY29tcGlsZXMgKyBQSFAtbGludHMKJGMgPSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xCbGFkZTo6Y29tcGlsZVN0cmluZyhmaWxlX2dldF9jb250ZW50cygncmVzb3VyY2VzL3ZpZXdzL3Byb2R1Y3QvbWFzcy1jcmVhdGUuYmxhZGUucGhwJykpOwpmaWxlX3B1dF9jb250ZW50cygnL3RtcC9tY19jb21waWxlZC5waHAnLCAkYyk7CmVjaG8gImJsYWRlIGxpbnQ6ICI7IHBhc3N0aHJ1KCdwaHAgLWwgL3RtcC9tY19jb21waWxlZC5waHAnKTsgQHVubGluaygnL3RtcC9tY19jb21waWxlZC5waHAnKTsKLy8gMi4gUnVuIHRoZSBjaGVjayBvbiBmcmVxdWVudGx5LXNvbGQgaXRlbXMgYXQgNjAlIG9mIHRoZWlyIHVzdWFsIHByaWNlCiRiaWQgPSBEQjo6dGFibGUoJ2J1c2luZXNzJyktPnZhbHVlKCdpZCcpOwokcm93cyA9IERCOjpzZWxlY3QoIlNFTEVDVCBwLm5hbWUsIHAuYXJ0aXN0LCBwLnNrdSwgYy5uYW1lIGNhdCwgQ09VTlQoKikgbiwgQVZHKHRzbC51bml0X3ByaWNlX2luY190YXgpIGF2Z3AKICBGUk9NIHRyYW5zYWN0aW9uX3NlbGxfbGluZXMgdHNsIEpPSU4gdHJhbnNhY3Rpb25zIHQgT04gdC5pZD10c2wudHJhbnNhY3Rpb25faWQgSk9JTiBwcm9kdWN0cyBwIE9OIHAuaWQ9dHNsLnByb2R1Y3RfaWQKICBMRUZUIEpPSU4gY2F0ZWdvcmllcyBjIE9OIGMuaWQ9cC5jYXRlZ29yeV9pZAogIFdIRVJFIHQudHlwZT0nc2VsbCcgQU5EIHQuc3RhdHVzPSdmaW5hbCcgQU5EIHQudHJhbnNhY3Rpb25fZGF0ZSA+PSBOT1coKSAtIElOVEVSVkFMIDEgWUVBUiBBTkQgdHNsLnVuaXRfcHJpY2VfaW5jX3RheCA+IDUKICBHUk9VUCBCWSBwLmlkIE9SREVSIEJZIG4gREVTQyBMSU1JVCAxMiIpOwokY3RsID0gYXBwKEFwcFxIdHRwXENvbnRyb2xsZXJzXFByb2R1Y3RDb250cm9sbGVyOjpjbGFzcyk7CiRtID0gbmV3IFJlZmxlY3Rpb25NZXRob2QoJGN0bCwgJ2J1bGtFbnRyeVN0b3JlUHJpY2VDaGVjaycpOyAkbS0+c2V0QWNjZXNzaWJsZSh0cnVlKTsKZm9yZWFjaCAoJHJvd3MgYXMgJHIpIHsKICAkdDAgPSBtaWNyb3RpbWUodHJ1ZSk7CiAgZm9yZWFjaCAoW1snYnkgbmFtZScsICcnXSwgWydieSBza3UnLCAkci0+c2t1XV0gYXMgWyRsYWJlbCwgJHNrdV0pIHsKICAgICRyZXMgPSAkbS0+aW52b2tlKCRjdGwsICRiaWQsIFsnbmFtZSc9PiRyLT5uYW1lLCdhcnRpc3QnPT4kci0+YXJ0aXN0LCdza3UnPT4kc2t1LCdjYXRlZ29yeSc9PiRyLT5jYXQsJ3ByaWNlJz0+cm91bmQoJHItPmF2Z3AqMC42LDIpXSk7CiAgICBwcmludGYoIiUtNDVzIHwgJS0yMnMgfCBzb2xkICVkIGF2ZyAlLjJmIHwgdGVzdCAkJS4yZiAlcyAtPiAlcyAoJS4wZm1zKVxuIiwgc3Vic3RyKCRyLT5uYW1lLDAsNDUpLCBzdWJzdHIoKHN0cmluZykkci0+Y2F0LDAsMjIpLCAkci0+biwgJHItPmF2Z3AsICRyLT5hdmdwKjAuNiwgJGxhYmVsLCBqc29uX2VuY29kZSgkcmVzKSwgKG1pY3JvdGltZSh0cnVlKS0kdDApKjEwMDApOwogIH0KfQovLyAzLiBTaG91bGQgTk9UIHJhaXNlIHdoZW4gZW50ZXJlZCBwcmljZSBpcyBhdC9hYm92ZSB1c3VhbAokciA9ICRyb3dzWzBdOwplY2hvICJhdC1wcmljZTogIiwganNvbl9lbmNvZGUoJG0tPmludm9rZSgkY3RsLCAkYmlkLCBbJ25hbWUnPT4kci0+bmFtZSwnYXJ0aXN0Jz0+JHItPmFydGlzdCwnc2t1Jz0+JycsJ2NhdGVnb3J5Jz0+JHItPmNhdCwncHJpY2UnPT5yb3VuZCgkci0+YXZncCwyKV0pKSwgIlxuIjsK' | base64 -d > /tmp/diag_bulk_price.php
+            php /tmp/diag_bulk_price.php
+            rm -f /tmp/diag_bulk_price.php
