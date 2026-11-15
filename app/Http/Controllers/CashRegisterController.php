@@ -1699,7 +1699,8 @@ class CashRegisterController extends Controller
                     $request->session()->get('user.business_id'),
                     $user_id,
                     $openRegister->id,
-                    (array) $request->input('task_end', [])
+                    (array) $request->input('task_end', []),
+                    (array) $request->input('task_end_reason', [])
                 );
             }
 
