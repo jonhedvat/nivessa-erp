@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Category;
 use GuzzleHttp\Client;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Sarah 2026-11-15: "Price it for me" on Mass Add → Bulk Product Entry.
@@ -52,7 +53,9 @@ class MassAddAiPriceController extends Controller
         $system = "You price used and new items for Nivessa, a retail record store with shops on Pico Blvd and in Hollywood, Los Angeles. "
             . "Staff type a rough list of items they are adding to inventory. For each item, work out the product name and artist, "
             . "pick the best category and subcategory, and give a fair in-store retail price based on current market value (Discogs / eBay sold prices) for the format and condition given. "
-            . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl.\n\n"
+            . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl.\n"
+            . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
+            . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n\n"
             . "Return ONLY one line per item, in this exact format, with no header, no numbering, no commentary and no code fences:\n"
             . "Product Name,Artist,Category,Subcategory,SKU,Price,\n"
             . "Leave SKU empty. Price is a plain number like 24.99. Do not use commas inside names (drop them or use a space). "
@@ -121,10 +124,105 @@ class MassAddAiPriceController extends Controller
                 return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
             }
 
-            return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines)]);
+            // Sarah 2026-11-15: check OUR sales history so the AI never underprices
+            // something we already sell for more, or something that flies off the shelf.
+            $notes = [];
+            foreach ($lines as $i => $line) {
+                $cols = str_getcsv($line);
+                if (count($cols) < 6) continue;
+                $h = $this->storeHistory($businessId, trim($cols[0]), trim($cols[1]), trim($cols[2]));
+                if (!$h) continue;
+                $ai = (float) preg_replace('/[^0-9.]/', '', $cols[5]);
+                $floor = $h['fast'] ? $h['p75'] : $h['median'];
+                $note = ['item' => trim($cols[0]) . (trim($cols[1]) !== '' ? ' - ' . trim($cols[1]) : ''),
+                    'ai' => $ai, 'price' => $ai, 'sales' => $h['sales'], 'median' => $h['median'],
+                    'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
+                if ($floor > 0 && $floor > $ai) {
+                    $cols[5] = number_format($floor, 2, '.', '');
+                    $lines[$i] = implode(',', $cols);
+                    $note['price'] = (float) $cols[5];
+                }
+                $notes[] = $note;
+            }
+
+            return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines), 'history' => $notes]);
         } catch (\Exception $e) {
             \Log::warning('MassAddAiPrice failed', ['error' => $e->getMessage()]);
             return response()->json(['ok' => false, 'error' => "Couldn't reach the AI service. Try again in a minute."]);
+        }
+    }
+
+    /**
+     * What we've actually sold this item for in the last 2 years, and how fast.
+     * Match: same product name + same category (CD vs vinyl vs DVD price very
+     * differently), artist must match when both sides have one. Needs 2+ sales.
+     * "fast" = copies usually sell within 30 days of being added; for fast
+     * sellers the floor is the 75th-percentile sale price, otherwise the median.
+     */
+    private function storeHistory($businessId, $name, $artist, $category)
+    {
+        if (mb_strlen($name) < 2) return null;
+        try {
+            $pq = DB::table('products as p')
+                ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+                ->where('p.business_id', $businessId)
+                ->where('p.name', $name);
+            if ($category !== '') {
+                $pq->where('c.name', $category);
+            }
+            if ($artist !== '') {
+                $pq->where(function ($a) use ($artist) {
+                    $a->whereNull('p.artist')->orWhere('p.artist', '')->orWhere('p.artist', $artist);
+                });
+            }
+            $products = $pq->limit(200)->get(['p.id', 'p.created_at']);
+            if ($products->isEmpty()) return null;
+            $created = $products->pluck('created_at', 'id');
+
+            $sales = DB::table('transaction_sell_lines as tsl')
+                ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+                ->whereIn('tsl.product_id', $created->keys()->all())
+                ->where('t.business_id', $businessId)
+                ->where('t.type', 'sell')
+                ->where('t.status', 'final')
+                ->whereNull('tsl.parent_sell_line_id')
+                ->where('t.transaction_date', '>=', now()->subYears(2))
+                ->where('tsl.unit_price_inc_tax', '>', 0)
+                ->get(['tsl.product_id', 'tsl.unit_price_inc_tax as price', 't.transaction_date']);
+            if ($sales->count() < 2) return null;
+
+            $prices = $sales->pluck('price')->map(function ($p) { return (float) $p; })->sort()->values()->all();
+            $n = count($prices);
+            $median = $n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2;
+            $p75 = $prices[min($n - 1, (int) floor(0.75 * ($n - 1) + 0.5))];
+
+            // Days from the copy being added to its first sale, per product.
+            $days = [];
+            foreach ($sales->groupBy('product_id') as $pid => $rows) {
+                $c = $created[$pid] ?? null;
+                if (!$c) continue;
+                $first = $rows->min('transaction_date');
+                $d = (strtotime($first) - strtotime($c)) / 86400;
+                if ($d >= 0) $days[] = $d;
+            }
+            sort($days);
+            $medDays = $days ? (int) round($days[intdiv(count($days), 2)]) : null;
+
+            $inStock = (float) DB::table('variation_location_details')
+                ->whereIn('product_id', $created->keys()->all())
+                ->sum('qty_available');
+
+            return [
+                'sales' => $n,
+                'median' => round($median, 2),
+                'p75' => round($p75, 2),
+                'days' => $medDays,
+                'fast' => $medDays !== null && $medDays <= 30,
+                'in_stock' => (int) $inStock,
+            ];
+        } catch (\Exception $e) {
+            \Log::warning('MassAddAiPrice history failed', ['error' => $e->getMessage()]);
+            return null;
         }
     }
 }

@@ -454,8 +454,9 @@
                     <i class="fa fa-magic"></i> Type what you have &mdash; we&rsquo;ll price it
                 </div>
                 <div style="font-size:14px; color:#555; margin-bottom:10px;">
-                    One item per line, like you would type to ChatGPT. Add the format and condition if you know them.
-                    AI fills in the artist, category and price, then adds everything to the table below for you to check.
+                    One item per line, like you would type to ChatGPT. You can start with a note like
+                    <em>&ldquo;here are a few DVDs I want to price&rdquo;</em>. AI fills in the artist, category and price,
+                    checks what we&rsquo;ve sold it for and how fast it sells so it never goes under that, then adds everything to the table below.
                 </div>
                 <textarea
                     id="bulk_product_text"
@@ -469,6 +470,7 @@
                     </button>
                     <span class="text-muted" id="bulk_parse_status"></span>
                 </div>
+                <div id="ai_price_history" style="display:none; margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e3e3e8; border-radius:8px; font-size:13px;"></div>
                 <div style="font-size:12px; color:#777; margin-top:8px;">
                     If our store usually sells an item for more (3+ sales, most higher), its price is raised and shows in
                     <span style="color:#15803d;font-weight:700;">green</span>. Fill anything left blank in the table, then hit <strong>Save All Products</strong>.
@@ -2649,6 +2651,22 @@
             if (!res || !res.ok) {
                 $('#bulk_parse_status').html('<span class="text-danger">' + $('<div>').text((res && res.error) || 'Something went wrong.').html() + '</span>');
                 return;
+            }
+            const esc = t => $('<div>').text(String(t)).html();
+            const money = v => '$' + Number(v).toFixed(2);
+            const hist = res.history || [];
+            if (hist.length) {
+                const rows = hist.map(h => {
+                    const speed = h.days === null ? '' : (h.days <= 1 ? ', sells same day' : ', sells in ~' + h.days + ' days');
+                    const raised = h.price > h.ai
+                        ? ' &rarr; <strong style="color:#15803d;">raised ' + money(h.ai) + ' to ' + money(h.price) + '</strong>' + (h.fast ? ' (fast seller)' : '')
+                        : ' &rarr; kept ' + money(h.price);
+                    return '<li><strong>' + esc(h.item) + '</strong>: sold ' + h.sales + 'x, usually ' + money(h.median) + speed
+                        + (h.in_stock > 0 ? ', ' + h.in_stock + ' in stock now' : '') + raised + '</li>';
+                }).join('');
+                $('#ai_price_history').html('<strong><i class="fa fa-line-chart"></i> Our sales history</strong><ul style="margin:6px 0 0; padding-left:18px;">' + rows + '</ul>').show();
+            } else {
+                $('#ai_price_history').html('<span class="text-muted">None of these have 2+ sales in our store in the last 2 years, so prices are the AI&rsquo;s market estimate.</span>').show();
             }
             $('#bulk_product_text').val(res.csv);
             $('#bulk_preview_container').hide();
