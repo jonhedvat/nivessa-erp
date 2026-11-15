@@ -454,6 +454,7 @@
                     <li>Use any of the formats shown below. The simplest is just <code>Product Name - Artist</code>.</li>
                     <li>Click <strong>Preview Parsed Data</strong> first to check the rows look right.</li>
                     <li>Click <strong>Parse &amp; Add Products</strong> to load them into the table.</li>
+                    <li>If our store has consistently sold the same item for more than the price you pasted (3+ sales, most of them higher), the price is raised to what we usually get. Raised prices show in <span style="color:#15803d;font-weight:700;">green</span> with the old price underneath, so you can change it back.</li>
                     <li>Fill in anything left blank in the table (price, category, location), then hit <strong>Save All Products</strong> at the bottom.</li>
                 </ol>
                 <hr style="margin: 10px 0;">
@@ -2241,6 +2242,40 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
         return products;
     }
     
+    // Past-sales lookup for parsed rows. Also returns store_price: when our
+    // store has consistently sold the same item for more than the pasted (AI)
+    // price, store_price.suggested is the price we actually get (Sarah 2026-11-15).
+    function lookupBulkPastSales(products) {
+        const items = products.map((p, i) => ({
+            idx:         i,
+            name:        p.name || '',
+            sku:         p.sku  || '',
+            artist:      p.artist || '',
+            category:    p.category || '',
+            subcategory: p.subcategory || '',
+            condition:   p.condition || '',
+            price:       p.price || '',
+        }));
+        // Native Promise; resolves null on failure (never rejects).
+        return new Promise(function (resolve) {
+            $.ajax({
+                url: "{{ route('product.massCreate.pastSalesLookup') }}",
+                type: 'POST',
+                data: JSON.stringify({ items: items }),
+                contentType: 'application/json',
+                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                timeout: 60000,
+                success: function (resp) { resolve((resp && resp.results) || {}); },
+                error: function () { resolve(null); },
+            });
+        });
+    }
+
+    function storePriceNote(sp) {
+        return 'Our store sold this ' + sp.sales + '\u00d7 (median $' + Number(sp.median).toFixed(2)
+            + ', $' + Number(sp.low).toFixed(2) + '\u2013$' + Number(sp.high).toFixed(2) + ')';
+    }
+
     // Show preview of parsed products
     function showBulkPreview(products) {
         const container = $('#bulk_preview_container');
@@ -2274,7 +2309,7 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                 <td>${escapeHtml(product.artist) || '<span class="text-muted">-</span>'}</td>
                 <td>${escapeHtml(product.category) || '<span class="text-muted">-</span>'}</td>
                 <td>${escapeHtml(product.sku) || '<span class="text-muted">-</span>'}</td>
-                <td>${product.price ? '$' + escapeHtml(product.price) : '<span class="text-muted">-</span>'}</td>
+                <td class="bulk-preview-price-cell" data-row-index="${index}">${product.price ? '$' + escapeHtml(product.price) : '<span class="text-muted">-</span>'}</td>
                 <td>${escapeHtml(product.bin_position) || '<span class="text-muted">-</span>'}</td>
                 <td class="bulk-preview-sold-cell" data-row-index="${index}"><span class="text-muted"><i class="fa fa-spinner fa-spin"></i></span></td>
             </tr>`;
@@ -2286,23 +2321,23 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
 
         // Fire generic past-sales lookup (name fuzzy + SKU exact). Best-effort:
         // a failure here leaves cells as a muted dash and never blocks add.
-        const items = products.map((p, i) => ({
-            idx:  i,
-            name: p.name || '',
-            sku:  p.sku  || '',
-        }));
-
-        $.ajax({
-            url: "{{ route('product.massCreate.pastSalesLookup') }}",
-            type: 'POST',
-            data: JSON.stringify({ items: items }),
-            contentType: 'application/json',
-            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-            success: function (resp) {
+        lookupBulkPastSales(products).then(function (results) {
                 if (window.__bulkPreviewToken !== renderToken) return; // stale render
-                const results = (resp && resp.results) || {};
+                if (!results) {
+                    table.find('.bulk-preview-sold-cell').html('<span class="text-muted">—</span>');
+                    return;
+                }
                 Object.keys(results).forEach(function (k) {
                     const r = results[k];
+                    const sp = r && r.store_price;
+                    if (sp && sp.suggested) {
+                        table.find('.bulk-preview-price-cell[data-row-index="' + k + '"]').html(
+                            '<s class="text-muted">$' + escapeHtml(products[k].price) + '</s> '
+                            + '<strong style="color:#15803d;">$' + Number(sp.suggested).toFixed(2) + '</strong>'
+                            + '<div style="font-size:11px;color:#15803d;" title="' + escapeHtml(storePriceNote(sp)) + '">'
+                            + 'we sell higher: ' + sp.above + '/' + sp.sales + ' sales</div>'
+                        );
+                    }
                     const $cell = table.find('.bulk-preview-sold-cell[data-row-index="' + k + '"]');
                     if (!$cell.length) return;
 
@@ -2321,11 +2356,6 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                         + '</span>'
                     );
                 });
-            },
-            error: function () {
-                if (window.__bulkPreviewToken !== renderToken) return;
-                table.find('.bulk-preview-sold-cell').html('<span class="text-muted">—</span>');
-            },
         });
     }
 
@@ -2440,9 +2470,17 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                     // the parsed value when a category_combo rule fires from the combo-change
                     // or blur triggers below.
                     if (productData.price) {
-                        $row.find('input[name*="[single_dsp_inc_tax]"]')
+                        const $sp = $row.find('input[name*="[single_dsp_inc_tax]"]')
                             .val(productData.price)
                             .attr('data-parsed-price', '1');
+                        if (productData.store_price_from) {
+                            $sp.css({ 'border-color': '#16a34a', 'background': '#f0fdf4' })
+                               .attr('title', 'Raised from $' + productData.store_price_from + '. ' + productData.store_price_note);
+                            $('<div class="store-price-raised" style="font-size:11px;color:#15803d;line-height:1.2;margin-top:2px;"></div>')
+                                .text('was $' + productData.store_price_from + ' \u2014 we sell at $' + productData.price)
+                                .attr('title', productData.store_price_note)
+                                .insertAfter($sp);
+                        }
                     }
 
                     // Media grade (optional 9th field): short grade or the full wording.
@@ -2566,6 +2604,25 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
         // ending with the first-typed product at the very top.
         products.reverse();
 
+        // Raise AI-entered prices where our store consistently sells higher.
+        // Best-effort: if the lookup fails, add rows with the pasted prices.
+        function applyStorePrices() {
+            return lookupBulkPastSales(products).then(function (results) {
+                let raised = 0;
+                if (!results) return 0;
+                products.forEach(function (p, i) {
+                    const sp = results[i] && results[i].store_price;
+                    if (sp && sp.suggested && p.price) {
+                        p.store_price_from = p.price;
+                        p.store_price_note = storePriceNote(sp);
+                        p.price = Number(sp.suggested).toFixed(2);
+                        raised++;
+                    }
+                });
+                return raised;
+            });
+        }
+
         let currentRowIndex = parseInt($('#product_rows_container .product-row').last().attr('data-row-index') || '0');
         let addedCount = 0;
         let errorCount = 0;
@@ -2581,6 +2638,9 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                 $('#parse_bulk_text').prop('disabled', false);
                 $('#preview_bulk_text').prop('disabled', false);
                 
+                if (raisedCount > 0) {
+                    toastr.info(`Raised ${raisedCount} price${raisedCount === 1 ? '' : 's'} to what our store usually sells ${raisedCount === 1 ? 'it' : 'them'} for (green prices in the table).`, '', { timeOut: 10000 });
+                }
                 if (errorCount === 0) {
                     toastr.success(`Added ${addedCount} products from bulk text.`);
                     $('#bulk_product_text').val('');
@@ -2606,7 +2666,12 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                 });
         }
         
-        addNextProduct(0);
+        let raisedCount = 0;
+        $('#bulk_parse_status').html('<i class="fa fa-spinner fa-spin"></i> Checking our past sale prices...');
+        applyStorePrices().then(function (n) {
+            raisedCount = n;
+            addNextProduct(0);
+        });
     });
 
     // Rows sent from "Store or Online?" (/store-or-discogs, checkboxes → Send to

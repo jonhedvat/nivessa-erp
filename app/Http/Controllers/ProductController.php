@@ -5158,10 +5158,114 @@ class ProductController extends Controller
                 'qty'       => $agg ? (int) $agg->qty_sum    : 0,
                 'last_sold' => $agg && $agg->last_sold ? substr((string) $agg->last_sold, 0, 10) : null,
                 'samples'   => $samples,
+                'store_price' => $agg && (int) $agg->line_count > 0
+                    ? $this->bulkEntryStorePriceCheck($business_id, $item)
+                    : null,
             ];
         }
 
         return response()->json(['success' => true, 'results' => $results]);
+    }
+
+    /**
+     * Sarah 2026-11-15: Bulk Product Entry prices usually come from ChatGPT/Claude.
+     * If OUR store has consistently sold the same item for more than the pasted
+     * price, suggest raising it to what we actually get.
+     *
+     * Strict match (unlike the fuzzy "Sold before?" count): exact SKU, or exact
+     * name (+ same artist when both sides have one), and sealed must match sealed.
+     * Needs 3+ sales in the last 2 years with 75%+ of them above the pasted price;
+     * the suggestion is the median of what we sold it for.
+     */
+    private function bulkEntryStorePriceCheck($business_id, array $item)
+    {
+        $name   = trim((string) ($item['name'] ?? ''));
+        $sku    = trim((string) ($item['sku'] ?? ''));
+        $artist = trim((string) ($item['artist'] ?? ''));
+        $entered = (float) preg_replace('/[^0-9.]/', '', (string) ($item['price'] ?? ''));
+
+        if (mb_strlen($name) < 3 && mb_strlen($sku) < 3) {
+            return null;
+        }
+
+        $hint = strtolower(implode(' ', [
+            $item['category'] ?? '', $item['subcategory'] ?? '', $item['condition'] ?? '', $name,
+        ]));
+        $wantSealed = strpos($hint, 'seal') !== false;
+
+        $q = DB::table('transaction_sell_lines as tsl')
+            ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+            ->leftJoin('products as p', 'p.id', '=', 'tsl.product_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+            ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+            ->where('t.business_id', $business_id)
+            ->where('t.type', 'sell')
+            ->where('t.status', 'final')
+            ->whereNull('tsl.parent_sell_line_id')
+            ->where('t.transaction_date', '>=', now()->subYears(2))
+            ->where('tsl.unit_price_inc_tax', '>', 0);
+
+        $lname = mb_strtolower($name);
+        $lartist = mb_strtolower($artist);
+        $q->where(function ($w) use ($sku, $lname, $lartist) {
+            if (mb_strlen($sku) >= 3) {
+                $w->orWhere('p.sku', $sku);
+            }
+            if (mb_strlen($lname) >= 3) {
+                $w->orWhere(function ($n) use ($lname, $lartist) {
+                    $n->whereRaw('LOWER(TRIM(p.name)) = ?', [$lname]);
+                    if ($lartist !== '') {
+                        $n->where(function ($a) use ($lartist) {
+                            $a->whereNull('p.artist')->orWhere('p.artist', '')
+                              ->orWhereRaw('LOWER(TRIM(p.artist)) = ?', [$lartist]);
+                        });
+                    }
+                })->orWhere(function ($n) use ($lname, $lartist) {
+                    $n->whereNull('tsl.product_id')
+                      ->whereRaw('LOWER(TRIM(tsl.legacy_title)) = ?', [$lname]);
+                    if ($lartist !== '') {
+                        $n->where(function ($a) use ($lartist) {
+                            $a->whereNull('tsl.legacy_artist')->orWhere('tsl.legacy_artist', '')
+                              ->orWhereRaw('LOWER(TRIM(tsl.legacy_artist)) = ?', [$lartist]);
+                        });
+                    }
+                });
+            }
+        });
+
+        $sealedSql = "(COALESCE(c.name, '') LIKE '%seal%' OR COALESCE(sc.name, '') LIKE '%seal%')";
+        if ($wantSealed) {
+            $q->whereRaw($sealedSql);
+        } else {
+            $q->whereRaw("NOT $sealedSql");
+        }
+
+        $prices = $q->orderByDesc('t.transaction_date')
+            ->limit(200)
+            ->pluck('tsl.unit_price_inc_tax')
+            ->map(function ($v) { return round((float) $v, 2); })
+            ->sort()
+            ->values()
+            ->all();
+
+        $n = count($prices);
+        if ($n < 3) {
+            return null;
+        }
+        $median = $n % 2 ? $prices[intdiv($n, 2)] : round(($prices[$n / 2 - 1] + $prices[$n / 2]) / 2, 2);
+
+        $out = ['sales' => $n, 'median' => $median, 'low' => $prices[0], 'high' => $prices[$n - 1], 'suggested' => null];
+
+        if ($entered > 0) {
+            $above = count(array_filter($prices, function ($p) use ($entered) { return $p > $entered; }));
+            // "Consistently higher": 3/4 of sales above, and worth at least $1 / 10% more.
+            if ($above / $n >= 0.75 && $median >= $entered + 1 && $median >= $entered * 1.10) {
+                $out['suggested'] = $median;
+                $out['above'] = $above;
+            }
+        }
+
+        return $out;
     }
 
 
