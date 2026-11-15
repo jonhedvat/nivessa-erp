@@ -37,6 +37,7 @@ class DeactivateEmptyDuplicateProducts extends Command
                             {--window=120 : Max seconds between copies}
                             {--min-age=3 : Skip products created in the last N days}
                             {--undo= : Undo log file to restore from}
+                            {--keep-sold : Keep the earliest SOLD copy (else the original) and deactivate every other copy, stocked or not}
                             {--commit : Actually write}';
 
     protected $description = 'Deactivate empty accidental duplicate products (dry-run default, undo log on commit).';
@@ -104,7 +105,46 @@ class DeactivateEmptyDuplicateProducts extends Command
         $byMonth = [];
         $byUser = [];
         $samples = [];
+        $keepSold = (bool) $this->option('keep-sold');
+        $openPo = $keepSold ? $this->openPoProductIds($ids) : [];
+        $onHand = [];
+        if ($keepSold) {
+            foreach (array_chunk($ids, 2000) as $chunk) {
+                foreach (DB::table('variation_location_details')->whereIn('product_id', $chunk)
+                    ->groupBy('product_id')->selectRaw('product_id, SUM(qty_available) q')->get() as $r) {
+                    if ($r->q > 0) $onHand[$r->product_id] = (float) $r->q;
+                }
+            }
+        }
+        $keptSold = 0;
+        $skippedPo = 0;
+        $hiddenUnits = 0;
+        $deactStocked = 0;
         foreach ($clusters as $c) {
+            if ($keepSold) {
+                $keeper = $c[0];
+                foreach ($c as $p) { if (isset($sold[$p->id])) { $keeper = $p; break; } }
+                if ($keeper !== $c[0]) $keptSold++;
+                $kSku = $this->normSku($keeper->sku);
+                $drop = [];
+                foreach ($c as $p) {
+                    if ($p === $keeper) continue;
+                    if (isset($openPo[$p->id])) { $skippedPo++; continue; }
+                    $sku = $this->normSku($p->sku);
+                    $real = $sku !== '' && $sku !== (string) $p->id;
+                    $kReal = $kSku !== '' && $kSku !== (string) $keeper->id;
+                    if ($real && $kReal && $sku !== $kSku) { $skippedBarcode++; continue; }
+                    $drop[] = $p;
+                    if (isset($sold[$p->id])) $deactSold++;
+                    if (isset($onHand[$p->id])) { $deactStocked++; $hiddenUnits += $onHand[$p->id]; }
+                    $deactivate[] = $p;
+                    $m = substr($p->created_at, 0, 7);
+                    $byMonth[$m] = ($byMonth[$m] ?? 0) + 1;
+                    $byUser[$p->created_by] = ($byUser[$p->created_by] ?? 0) + 1;
+                }
+                if ($drop && count($samples) < 40) $samples[] = [$c, $drop];
+                continue;
+            }
             $later = array_slice($c, 1);
             $origSku = $this->normSku($c[0]->sku);
             $drop = [];
@@ -123,10 +163,17 @@ class DeactivateEmptyDuplicateProducts extends Command
             if ($drop && count($samples) < 40) $samples[] = [$c, $drop];
         }
 
+        if ($keepSold) {
+            $this->line("kept per cluster: " . count($clusters) . " (a sold copy instead of the original in $keptSold)");
+            $this->line("copies to deactivate: " . count($deactivate) . " (sold: $deactSold, still showing stock: $deactStocked = " . round($hiddenUnits) . " units)");
+            $this->line("SKIPPED on an open purchase order: $skippedPo");
+            $this->line("SKIPPED with a different real barcode: $skippedBarcode");
+        } else {
         $this->line("originals kept (earliest of each cluster): " . count($clusters));
         $this->line("later copies to deactivate: " . count($deactivate) . " (of which sold out with sales history: $deactSold)");
         $this->line("later copies SKIPPED because they still have stock / open PO: $skippedStocked");
         $this->line("later copies SKIPPED because they have a different real barcode: $skippedBarcode");
+        }
         ksort($byMonth);
         $this->line("\nby month created:");
         foreach ($byMonth as $m => $n) $this->line("  $m  $n");
@@ -174,6 +221,23 @@ class DeactivateEmptyDuplicateProducts extends Command
                 ->where('qty_available', '>', 0)->distinct()->pluck('product_id') as $pid) {
                 $out[$pid] = true;
             }
+            foreach (DB::table('purchase_lines as pl')->join('transactions as t', 't.id', '=', 'pl.transaction_id')
+                ->whereIn('pl.product_id', $chunk)
+                ->where(function ($q) {
+                    $q->where('t.type', 'purchase_order')
+                      ->orWhere(function ($q2) { $q2->where('t.type', 'purchase')->where('t.status', '<>', 'received'); });
+                })->distinct()->pluck('pl.product_id') as $pid) {
+                $out[$pid] = true;
+            }
+        }
+        return $out;
+    }
+
+    /** Product ids on a purchase order / purchase not yet received. */
+    private function openPoProductIds(array $ids)
+    {
+        $out = [];
+        foreach (array_chunk($ids, 2000) as $chunk) {
             foreach (DB::table('purchase_lines as pl')->join('transactions as t', 't.id', '=', 'pl.transaction_id')
                 ->whereIn('pl.product_id', $chunk)
                 ->where(function ($q) {

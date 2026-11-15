@@ -10,6 +10,13 @@ on:
       days:
         description: 'Look-back window in days'
         default: '730'
+      window:
+        description: 'Max seconds between copies'
+        default: '120'
+      keep_sold:
+        description: 'Keep the sold copy (else original), remove every other copy even if stocked'
+        type: boolean
+        default: false
       undo:
         description: 'Undo log path to restore (ignores the rest)'
         default: ""
@@ -36,6 +43,8 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DAYS: ${{ github.event.inputs.days }}
+          WINDOW: ${{ github.event.inputs.window }}
+          KEEP_SOLD: ${{ github.event.inputs.keep_sold }}
           UNDO: ${{ github.event.inputs.undo }}
           COMMIT: ${{ github.event.inputs.commit }}
         with:
@@ -43,7 +52,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ steps.flags.outputs.ssh_port }}
-          envs: DAYS,UNDO,COMMIT
+          envs: DAYS,WINDOW,KEEP_SOLD,UNDO,COMMIT
           script_stop: false
           command_timeout: 30m
           script: |
@@ -53,7 +62,8 @@ jobs:
             if [ -n "$UNDO" ]; then
               set -- --undo="$UNDO"
             else
-              set -- --days="$DAYS"
+              set -- --days="$DAYS" --window="${WINDOW:-120}"
+              [ "$KEEP_SOLD" = "true" ] && set -- "$@" --keep-sold
             fi
             [ "$COMMIT" = "true" ] && set -- "$@" --commit
             echo "=== php artisan nivessa:dedupe-empty-products $* ==="
