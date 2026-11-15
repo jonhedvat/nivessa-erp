@@ -56,9 +56,8 @@ class MassAddAiPriceController extends Controller
             . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl.\n"
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
             . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n\n"
-            . "Return ONLY a JSON array, one object per item, nothing before or after it, no code fences, each item exactly once:\n"
-            . "[{\"name\": \"Rumours\", \"artist\": \"Fleetwood Mac\", \"category\": \"Vinyl - Used\", \"subcategory\": \"Rock\", \"price\": 24.99, \"condition\": \"VG+\"}]\n"
-            . "price is a plain number. condition is the grade staff gave (Sealed, M, NM, VG+, VG, G+, G, F, P), or \"\" if they gave none. "
+            . "Call the price_items tool once with every item, each exactly once. price is a plain number. "
+            . "condition is the grade ONLY if staff wrote one (Sealed, M, NM, VG+, VG, G+, G, F, P), otherwise an empty string. "
             . "If something is not music (a toy, a book, a card), use the closest category from the list.\n\n"
             . "Copy Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7\", 45 RPM:\n"
             . $categoryList;
@@ -75,6 +74,32 @@ class MassAddAiPriceController extends Controller
                     'model' => $model,
                     'max_tokens' => 8000,
                     'system' => $system,
+                    'tools' => [[
+                        'name' => 'price_items',
+                        'description' => 'Record the priced items.',
+                        'input_schema' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'items' => [
+                                    'type' => 'array',
+                                    'items' => [
+                                        'type' => 'object',
+                                        'properties' => [
+                                            'name' => ['type' => 'string'],
+                                            'artist' => ['type' => 'string'],
+                                            'category' => ['type' => 'string'],
+                                            'subcategory' => ['type' => 'string'],
+                                            'price' => ['type' => 'number'],
+                                            'condition' => ['type' => 'string'],
+                                        ],
+                                        'required' => ['name', 'artist', 'category', 'subcategory', 'price'],
+                                    ],
+                                ],
+                            ],
+                            'required' => ['items'],
+                        ],
+                    ]],
+                    'tool_choice' => ['type' => 'tool', 'name' => 'price_items'],
                     'messages' => [['role' => 'user', 'content' => "Items:\n" . $items]],
                 ],
                 'http_errors' => false,
@@ -105,17 +130,14 @@ class MassAddAiPriceController extends Controller
                 return response()->json(['ok' => false, 'error' => 'The AI service had an error. Try again in a minute.']);
             }
 
-            $text = '';
+            $rows = null;
             foreach (($data['content'] ?? []) as $block) {
-                if (($block['type'] ?? '') === 'text') {
-                    $text .= $block['text'];
+                if (($block['type'] ?? '') === 'tool_use' && isset($block['input']['items'])) {
+                    $rows = $block['input']['items'];
                 }
             }
-            // Pull the JSON array out (tolerates stray text / code fences).
-            $start = strpos($text, '[');
-            $end = strrpos($text, ']');
-            $rows = ($start !== false && $end > $start) ? json_decode(substr($text, $start, $end - $start + 1), true) : null;
             if (!is_array($rows) || empty($rows)) {
+                \Log::warning('MassAddAiPrice unreadable answer', ['content' => $data['content'] ?? null]);
                 return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
             }
 
