@@ -1,0 +1,33 @@
+# Read-only: runs a fixed list of sports cards through the Mass Add AI pricer
+# on prod and prints the prices it gives. No writes.
+
+name: Diag AI price cards (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X3RpbWVfbGltaXQoMCk7CiR1ID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ0pvbmF0aGFuJyktPndoZXJlKCdsYXN0X25hbWUnLCdsaWtlJywnSGVkdmF0JScpLT5maXJzdCgpOwppZiAoISR1KSB7IGVjaG8gIm5vIHVzZXJcbiI7IGV4aXQoMCk7IH0KSWxsdW1pbmF0ZVxTdXBwb3J0XEZhY2FkZXNcQXV0aDo6bG9naW5Vc2luZ0lkKCR1LT5pZCk7CiRpdGVtcyA9ICJ0aGVzZSBhcmUgYWxsIHNpbmdsZSBiYXNrZXRiYWxsIGNhcmRzLCByYXcgKG5vdCBncmFkZWQpIHVubGVzcyBpdCBzYXlzIFBTQVxuIgogLiAiTWljaGFlbCBKb3JkYW4gMTk5MS05MiBVcHBlciBEZWNrIChjcmVhc2UpXG5NaWNoYWVsIEpvcmRhbiAxOTkwLTkxIE5CQSBIb29wcyAjNjVcbk1pY2hhZWwgSm9yZGFuIDE5OTItOTMgRmxlZXIgVWx0cmEgIzI3XG4iCiAuICJNaWNoYWVsIEpvcmRhbiAxOTkzLTk0IFVwcGVyIERlY2tcbk1pY2hhZWwgSm9yZGFuIDE5ODktOTAgSG9vcHMgIzIwMFxuTWljaGFlbCBKb3JkYW4gMTk5MC05MSBTa3lCb3hcbiIKIC4gIk1pY2hhZWwgSm9yZGFuIDE5OTMtOTQgRmxlZXIgVWx0cmEgIzMwXG5NaWNoYWVsIEpvcmRhbiAxOTkzIE5CQSBQbGF5b2ZmcyBNYXkgMzFcbk1pY2hhZWwgSm9yZGFuIE1WUCAxOTkxLTkyIEhvb3BzICMzMFxuIgogLiAiTWljaGFlbCBKb3JkYW4gQXdhcmQgV2lubmVyIEhvbG9ncmFtIDE5OTEtOTIgVXBwZXIgRGVjayBBVzRcbk1pY2hhZWwgSm9yZGFuIDE5OTctOTggQ29sbGVjdG9yJ3MgQ2hvaWNlIFN0YXJRdWVzdCAjU1EzMFxuIgogLiAiMTk5MSBIb29wcyBNaWNoYWVsIEpvcmRhbiBQU0EgOVxuTWljaGFlbCBKb3JkYW4gY2FyZFxuU2NvdHRpZSBQaXBwZW4gMTk5MS05MiBVcHBlciBEZWNrXG5QaWthY2h1IFBva2Vtb24gY2FyZCBiYXNlIHNldCI7CmZvciAoJGkgPSAxOyAkaSA8PSAyOyAkaSsrKSB7CiAgJHJlcSA9IElsbHVtaW5hdGVcSHR0cFxSZXF1ZXN0OjpjcmVhdGUoJy9wcm9kdWN0L21hc3MtY3JlYXRlL2FpLXByaWNlJywgJ1BPU1QnLCBbJ2l0ZW1zJyA9PiAkaXRlbXNdKTsKICAkcyA9IGFwcCgnc2Vzc2lvbicpLT5kcml2ZXIoJ2FycmF5Jyk7ICRzLT5wdXQoJ3VzZXIuYnVzaW5lc3NfaWQnLCAkdS0+YnVzaW5lc3NfaWQpOyAkcmVxLT5zZXRMYXJhdmVsU2Vzc2lvbigkcyk7CiAgJHJlcyA9IGFwcChBcHBcSHR0cFxDb250cm9sbGVyc1xNYXNzQWRkQWlQcmljZUNvbnRyb2xsZXI6OmNsYXNzKS0+cHJpY2UoJHJlcSk7CiAgJGQgPSBqc29uX2RlY29kZSgkcmVzLT5nZXRDb250ZW50KCksIHRydWUpOwogIGVjaG8gIlxuIyMjIHJ1biAkaSBvaz0iIC4ganNvbl9lbmNvZGUoJGRbJ29rJ10gPz8gbnVsbCkgLiAnICcgLiAoJGRbJ2Vycm9yJ10gPz8gJycpIC4gIlxuIjsKICBlY2hvICgkZFsnY3N2J10gPz8gJycpIC4gIlxuLS0gaGlzdG9yeSBub3RlcyAtLVxuIjsKICBmb3JlYWNoICgoJGRbJ2hpc3RvcnknXSA/PyBbXSkgYXMgJGgpIGVjaG8ganNvbl9lbmNvZGUoJGgpIC4gIlxuIjsKfQo=' | base64 -d > /tmp/diag_ai_price_cards.php
+            php /tmp/diag_ai_price_cards.php
+            rm -f /tmp/diag_ai_price_cards.php
