@@ -11,14 +11,10 @@ use Illuminate\Support\Facades\DB;
  * A "double" = same name + artist, same business, same person, created within
  * --window seconds of the previous one (mostly a double-clicked Save).
  *
- * Only EMPTY copies are touched: zero stock at every location AND the product
- * (or any of its variations) appears in no table other than its own
- * definition rows (no sales, purchases, adjustments, transfers, BFC lines,
- * listings, ...). Copies that both hold stock are left alone because they may
- * be real separate copies.
- *
- * Per cluster: if any copy is real, every empty copy is deactivated; if all
- * are empty, the earliest is kept and the rest deactivated.
+ * Per cluster the EARLIEST copy (the original) is always kept. Later copies
+ * are deactivated, including sold-out ones (their sales history stays).
+ * A later copy that still has stock on hand, or stock on an open purchase
+ * order, is skipped so no sellable inventory gets hidden.
  *
  * Safe by design:
  *   - Dry-run default; --commit to write.
@@ -44,13 +40,6 @@ class DeactivateEmptyDuplicateProducts extends Command
 
     protected $description = 'Deactivate empty accidental duplicate products (dry-run default, undo log on commit).';
 
-    // Rows in these tables are the product's own definition, not usage.
-    private $ownTables = [
-        'products', 'variations', 'product_variations', 'variation_location_details',
-        'product_locations', 'variation_group_prices', 'product_racks',
-        'variation_value_templates',
-        'product_stock_cache', // derived copy of stock; kept in sync below
-    ];
 
     public function handle()
     {
@@ -97,29 +86,40 @@ class DeactivateEmptyDuplicateProducts extends Command
         $this->line("duplicate clusters: " . count($clusters) . " (products in them: " . count($ids) . ")");
         if (!$ids) return 0;
 
-        $used = $this->usedProductIds($ids);
+        $stocked = $this->stockedProductIds($ids);
+        $sold = [];
+        foreach (array_chunk($ids, 2000) as $chunk) {
+            foreach (DB::table('transaction_sell_lines')->whereIn('product_id', $chunk)->distinct()->pluck('product_id') as $pid) {
+                $sold[$pid] = true;
+            }
+        }
 
+        // Keep the earliest (original) copy; deactivate later copies unless
+        // they still hold stock (or stock on an open purchase order).
         $deactivate = [];
-        $keptAllEmpty = 0;
+        $skippedStocked = 0;
+        $deactSold = 0;
         $byMonth = [];
         $byUser = [];
         $samples = [];
         foreach ($clusters as $c) {
-            $empty = array_values(array_filter($c, function ($p) use ($used) { return !isset($used[$p->id]); }));
-            if (!$empty) continue;
-            if (count($empty) === count($c)) { array_shift($empty); $keptAllEmpty++; }
-            foreach ($empty as $p) {
+            $later = array_slice($c, 1);
+            $drop = [];
+            foreach ($later as $p) {
+                if (isset($stocked[$p->id])) { $skippedStocked++; continue; }
+                $drop[] = $p;
+                if (isset($sold[$p->id])) $deactSold++;
                 $deactivate[] = $p;
                 $m = substr($p->created_at, 0, 7);
                 $byMonth[$m] = ($byMonth[$m] ?? 0) + 1;
                 $byUser[$p->created_by] = ($byUser[$p->created_by] ?? 0) + 1;
             }
-            if (count($samples) < 40) $samples[] = [$c, $empty];
+            if ($drop && count($samples) < 40) $samples[] = [$c, $drop];
         }
 
-        $this->line("empty copies to deactivate: " . count($deactivate));
-        $this->line("clusters where every copy was empty (earliest kept): $keptAllEmpty");
-        $this->line("products left alone because they hold stock or history: " . (count($ids) - count($deactivate)));
+        $this->line("originals kept (earliest of each cluster): " . count($clusters));
+        $this->line("later copies to deactivate: " . count($deactivate) . " (of which sold out with sales history: $deactSold)");
+        $this->line("later copies SKIPPED because they still have stock / open PO: $skippedStocked");
         ksort($byMonth);
         $this->line("\nby month created:");
         foreach ($byMonth as $m => $n) $this->line("  $m  $n");
@@ -158,43 +158,25 @@ class DeactivateEmptyDuplicateProducts extends Command
         return 0;
     }
 
-    /** Product ids that hold stock or appear in any table besides their own definition rows. */
-    private function usedProductIds(array $ids)
+    /** Product ids with stock on hand anywhere, or on an open (not yet received) purchase. */
+    private function stockedProductIds(array $ids)
     {
-        $used = [];
+        $out = [];
         foreach (array_chunk($ids, 2000) as $chunk) {
             foreach (DB::table('variation_location_details')->whereIn('product_id', $chunk)
-                ->where('qty_available', '<>', 0)->distinct()->pluck('product_id') as $pid) {
-                $used[$pid] = true;
+                ->where('qty_available', '>', 0)->distinct()->pluck('product_id') as $pid) {
+                $out[$pid] = true;
+            }
+            foreach (DB::table('purchase_lines as pl')->join('transactions as t', 't.id', '=', 'pl.transaction_id')
+                ->whereIn('pl.product_id', $chunk)
+                ->where(function ($q) {
+                    $q->where('t.type', 'purchase_order')
+                      ->orWhere(function ($q2) { $q2->where('t.type', 'purchase')->where('t.status', '<>', 'received'); });
+                })->distinct()->pluck('pl.product_id') as $pid) {
+                $out[$pid] = true;
             }
         }
-
-        $varToProduct = [];
-        foreach (array_chunk($ids, 2000) as $chunk) {
-            foreach (DB::table('variations')->whereIn('product_id', $chunk)->get(['id', 'product_id']) as $v) {
-                $varToProduct[$v->id] = $v->product_id;
-            }
-        }
-
-        $db = DB::getDatabaseName();
-        $cols = DB::select("SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = ? AND COLUMN_NAME IN ('product_id', 'variation_id')
-            AND TABLE_NAME IN (SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE')", [$db, $db]);
-        foreach ($cols as $col) {
-            if (in_array($col->t, $this->ownTables, true)) continue;
-            $isVar = $col->c === 'variation_id';
-            $keys = $isVar ? array_keys($varToProduct) : $ids;
-            $hits = 0;
-            foreach (array_chunk($keys, 2000) as $chunk) {
-                foreach (DB::table($col->t)->whereIn($col->c, $chunk)->distinct()->pluck($col->c) as $k) {
-                    $pid = $isVar ? ($varToProduct[$k] ?? null) : $k;
-                    if ($pid && !isset($used[$pid])) { $used[$pid] = true; }
-                    $hits++;
-                }
-            }
-            if ($hits) $this->line("  referenced in {$col->t}.{$col->c}: $hits");
-        }
-        return $used;
+        return $out;
     }
 
     private function undo($file)
