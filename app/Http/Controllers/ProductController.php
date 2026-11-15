@@ -5173,7 +5173,8 @@ class ProductController extends Controller
      * price, suggest raising it to what we actually get.
      *
      * Strict match (unlike the fuzzy "Sold before?" count): exact SKU, or exact
-     * name (+ same artist when both sides have one), and sealed must match sealed.
+     * product name (+ same artist when both sides have one), sealed must match
+     * sealed. Legacy (pre-ERP) sell lines are skipped: they'd need a full scan.
      * Needs 3+ sales in the last 2 years with 75%+ of them above the pasted price;
      * the suggestion is the median of what we sold it for.
      */
@@ -5193,52 +5194,45 @@ class ProductController extends Controller
         ]));
         $wantSealed = strpos($hint, 'seal') !== false;
 
-        $q = DB::table('transaction_sell_lines as tsl')
-            ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
-            ->leftJoin('products as p', 'p.id', '=', 'tsl.product_id')
+        // Resolve matching products first (indexed lookups), then their sales.
+        // MySQL's default collation is case-insensitive, so plain = is fine.
+        $pq = DB::table('products as p')
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+            ->where('p.business_id', $business_id)
+            ->where(function ($w) use ($sku, $name, $artist) {
+                if (mb_strlen($sku) >= 3) {
+                    $w->orWhere('p.sku', $sku);
+                }
+                if (mb_strlen($name) >= 3) {
+                    $w->orWhere(function ($n) use ($name, $artist) {
+                        $n->where('p.name', $name);
+                        if ($artist !== '') {
+                            $n->where(function ($a) use ($artist) {
+                                $a->whereNull('p.artist')->orWhere('p.artist', '')->orWhere('p.artist', $artist);
+                            });
+                        }
+                    });
+                }
+            });
+
+        $sealedSql = "(COALESCE(c.name, '') LIKE '%seal%' OR COALESCE(sc.name, '') LIKE '%seal%')";
+        $pq->whereRaw($wantSealed ? $sealedSql : "NOT $sealedSql");
+
+        $productIds = $pq->limit(500)->pluck('p.id')->all();
+        if (empty($productIds)) {
+            return null;
+        }
+
+        $q = DB::table('transaction_sell_lines as tsl')
+            ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+            ->whereIn('tsl.product_id', $productIds)
             ->where('t.business_id', $business_id)
             ->where('t.type', 'sell')
             ->where('t.status', 'final')
             ->whereNull('tsl.parent_sell_line_id')
             ->where('t.transaction_date', '>=', now()->subYears(2))
             ->where('tsl.unit_price_inc_tax', '>', 0);
-
-        $lname = mb_strtolower($name);
-        $lartist = mb_strtolower($artist);
-        $q->where(function ($w) use ($sku, $lname, $lartist) {
-            if (mb_strlen($sku) >= 3) {
-                $w->orWhere('p.sku', $sku);
-            }
-            if (mb_strlen($lname) >= 3) {
-                $w->orWhere(function ($n) use ($lname, $lartist) {
-                    $n->whereRaw('LOWER(TRIM(p.name)) = ?', [$lname]);
-                    if ($lartist !== '') {
-                        $n->where(function ($a) use ($lartist) {
-                            $a->whereNull('p.artist')->orWhere('p.artist', '')
-                              ->orWhereRaw('LOWER(TRIM(p.artist)) = ?', [$lartist]);
-                        });
-                    }
-                })->orWhere(function ($n) use ($lname, $lartist) {
-                    $n->whereNull('tsl.product_id')
-                      ->whereRaw('LOWER(TRIM(tsl.legacy_title)) = ?', [$lname]);
-                    if ($lartist !== '') {
-                        $n->where(function ($a) use ($lartist) {
-                            $a->whereNull('tsl.legacy_artist')->orWhere('tsl.legacy_artist', '')
-                              ->orWhereRaw('LOWER(TRIM(tsl.legacy_artist)) = ?', [$lartist]);
-                        });
-                    }
-                });
-            }
-        });
-
-        $sealedSql = "(COALESCE(c.name, '') LIKE '%seal%' OR COALESCE(sc.name, '') LIKE '%seal%')";
-        if ($wantSealed) {
-            $q->whereRaw($sealedSql);
-        } else {
-            $q->whereRaw("NOT $sealedSql");
-        }
 
         $prices = $q->orderByDesc('t.transaction_date')
             ->limit(200)
