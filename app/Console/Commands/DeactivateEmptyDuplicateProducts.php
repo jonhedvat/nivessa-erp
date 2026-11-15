@@ -14,7 +14,8 @@ use Illuminate\Support\Facades\DB;
  * Per cluster the EARLIEST copy (the original) is always kept. Later copies
  * are deactivated, including sold-out ones (their sales history stays).
  * A later copy that still has stock on hand, or stock on an open purchase
- * order, is skipped so no sellable inventory gets hidden.
+ * order, is skipped so no sellable inventory gets hidden. So is a later copy
+ * whose real barcode differs from the original's (a different edition).
  *
  * Safe by design:
  *   - Dry-run default; --commit to write.
@@ -98,15 +99,20 @@ class DeactivateEmptyDuplicateProducts extends Command
         // they still hold stock (or stock on an open purchase order).
         $deactivate = [];
         $skippedStocked = 0;
+        $skippedBarcode = 0;
         $deactSold = 0;
         $byMonth = [];
         $byUser = [];
         $samples = [];
         foreach ($clusters as $c) {
             $later = array_slice($c, 1);
+            $origSku = $this->normSku($c[0]->sku);
             $drop = [];
             foreach ($later as $p) {
                 if (isset($stocked[$p->id])) { $skippedStocked++; continue; }
+                // A different real barcode = a different edition, not a double-click.
+                $sku = $this->normSku($p->sku);
+                if ($sku !== $origSku && $sku !== (string) $p->id) { $skippedBarcode++; continue; }
                 $drop[] = $p;
                 if (isset($sold[$p->id])) $deactSold++;
                 $deactivate[] = $p;
@@ -120,6 +126,7 @@ class DeactivateEmptyDuplicateProducts extends Command
         $this->line("originals kept (earliest of each cluster): " . count($clusters));
         $this->line("later copies to deactivate: " . count($deactivate) . " (of which sold out with sales history: $deactSold)");
         $this->line("later copies SKIPPED because they still have stock / open PO: $skippedStocked");
+        $this->line("later copies SKIPPED because they have a different real barcode: $skippedBarcode");
         ksort($byMonth);
         $this->line("\nby month created:");
         foreach ($byMonth as $m => $n) $this->line("  $m  $n");
@@ -177,6 +184,11 @@ class DeactivateEmptyDuplicateProducts extends Command
             }
         }
         return $out;
+    }
+
+    private function normSku($sku)
+    {
+        return strtolower(preg_replace('/[\s\-]+/', '', (string) $sku));
     }
 
     private function undo($file)
