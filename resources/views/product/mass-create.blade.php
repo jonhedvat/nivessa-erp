@@ -629,6 +629,7 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                         1873085 &nbsp;19.99 &nbsp;VG+ &nbsp;G+
                     </div>
                     <div style="margin-bottom: 6px;"><strong>1873085</strong> is the number at the end of the Discogs release link (you can paste the whole link instead). <strong>19.99</strong> is our price. <strong>VG+</strong> is the record, <strong>G+</strong> is the sleeve, with a space between them.</div>
+                    <div style="margin-bottom: 6px;">If our store has consistently sold that release for more than the price you typed (3+ sales, most of them higher), the price is raised to what we usually get and shows in <span style="color:#15803d;font-weight:700;">green</span> with the old price underneath.</div>
                     <div style="margin-bottom: 6px;"><strong>Always add the condition.</strong> It prints on the sticker and shows on the website, so the customer knows what they are getting.</div>
                     <table style="border-collapse: collapse; font-size: 14px; margin-top: 4px;">
                         <tr><td style="padding: 2px 12px 2px 0;"><code>Sealed</code></td><td>still in shrink</td></tr>
@@ -2255,6 +2256,7 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
             subcategory: p.subcategory || '',
             condition:   p.condition || '',
             price:       p.price || '',
+            discogs_release_id: p.discogs_release_id || '',
         }));
         // Native Promise; resolves null on failure (never rejects).
         return new Promise(function (resolve) {
@@ -2269,6 +2271,17 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                 error: function () { resolve(null); },
             });
         });
+    }
+
+    // Green price + "was $X" note on a table row whose price we raised.
+    function markStorePriceRaised($input, fromPrice, toPrice, note) {
+        $input.css({ 'border-color': '#16a34a', 'background': '#f0fdf4' })
+              .attr('title', 'Raised from $' + fromPrice + '. ' + note);
+        $input.siblings('.store-price-raised').remove();
+        $('<div class="store-price-raised" style="font-size:11px;color:#15803d;line-height:1.2;margin-top:2px;"></div>')
+            .text('was $' + fromPrice + ' \u2014 we sell at $' + toPrice)
+            .attr('title', note)
+            .insertAfter($input);
     }
 
     function storePriceNote(sp) {
@@ -2474,12 +2487,7 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                             .val(productData.price)
                             .attr('data-parsed-price', '1');
                         if (productData.store_price_from) {
-                            $sp.css({ 'border-color': '#16a34a', 'background': '#f0fdf4' })
-                               .attr('title', 'Raised from $' + productData.store_price_from + '. ' + productData.store_price_note);
-                            $('<div class="store-price-raised" style="font-size:11px;color:#15803d;line-height:1.2;margin-top:2px;"></div>')
-                                .text('was $' + productData.store_price_from + ' \u2014 we sell at $' + productData.price)
-                                .attr('title', productData.store_price_note)
-                                .insertAfter($sp);
+                            markStorePriceRaised($sp, productData.store_price_from, productData.price, productData.store_price_note);
                         }
                     }
 
@@ -2958,6 +2966,30 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                     // Guarded so a render failure never breaks the bulk queue.
                     try { renderSalesHistoryBadge($row, discogsData); }
                     catch (e) { console.warn('sales-history badge render failed', e); }
+
+                    // Raise the typed price if our store consistently sells this
+                    // release/title higher (same check as Bulk Product Entry).
+                    if (price) {
+                        const $price = $row.find('input[name*="[single_dsp_inc_tax]"]');
+                        const catText = $.trim($row.find('.category-combo-select option:selected').text() || '');
+                        lookupBulkPastSales([{
+                            name: productTitle || '',
+                            artist: discogsData.artist || '',
+                            sku: discogsData.sku || '',
+                            category: catText,
+                            condition: cond || '',
+                            price: price,
+                            discogs_release_id: discogsData.discogs_release_id || '',
+                        }]).then(function (results) {
+                            const sp = results && results[0] && results[0].store_price;
+                            // Skip if staff already changed the price meanwhile.
+                            if (!sp || !sp.suggested || String($price.val()) !== String(price)) return;
+                            const newPrice = Number(sp.suggested).toFixed(2);
+                            $price.val(newPrice).trigger('change');
+                            markStorePriceRaised($price, price, newPrice, storePriceNote(sp));
+                            toastr.info('Raised ' + (productTitle || 'item') + ' from $' + price + ' to $' + newPrice + ': our store usually sells it for that.');
+                        });
+                    }
 
                     $row.find('.select2').select2();
                     if (typeof window.setupProductNameSelect2 === 'function') {
