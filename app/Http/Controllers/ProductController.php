@@ -5158,7 +5158,7 @@ class ProductController extends Controller
                 'qty'       => $agg ? (int) $agg->qty_sum    : 0,
                 'last_sold' => $agg && $agg->last_sold ? substr((string) $agg->last_sold, 0, 10) : null,
                 'samples'   => $samples,
-                'store_price' => $agg && (int) $agg->line_count > 0
+                'store_price' => ($agg && (int) $agg->line_count > 0) || !empty($item['discogs_release_id'])
                     ? $this->bulkEntryStorePriceCheck($business_id, $item)
                     : null,
             ];
@@ -5184,8 +5184,9 @@ class ProductController extends Controller
         $sku    = trim((string) ($item['sku'] ?? ''));
         $artist = trim((string) ($item['artist'] ?? ''));
         $entered = (float) preg_replace('/[^0-9.]/', '', (string) ($item['price'] ?? ''));
+        $releaseId = (int) ($item['discogs_release_id'] ?? 0);
 
-        if (mb_strlen($name) < 3 && mb_strlen($sku) < 3) {
+        if (mb_strlen($name) < 3 && mb_strlen($sku) < 3 && $releaseId <= 0) {
             return null;
         }
 
@@ -5200,9 +5201,13 @@ class ProductController extends Controller
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
             ->where('p.business_id', $business_id)
-            ->where(function ($w) use ($sku, $name, $artist) {
+            ->where(function ($w) use ($sku, $name, $artist, $releaseId) {
                 if (mb_strlen($sku) >= 3) {
                     $w->orWhere('p.sku', $sku);
+                }
+                // Bulk Discogs IDs: same release = same item.
+                if ($releaseId > 0) {
+                    $w->orWhere('p.discogs_release_id', $releaseId);
                 }
                 if (mb_strlen($name) >= 3) {
                     $w->orWhere(function ($n) use ($name, $artist) {
