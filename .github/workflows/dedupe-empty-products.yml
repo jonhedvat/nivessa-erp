@@ -1,0 +1,62 @@
+# Deactivate EMPTY accidental double-adds (same name, same person, within 2
+# minutes; zero stock and no sales/purchases/history). Dry run by default.
+# Tick "commit" to write (undo log saved); pass its path in "undo" to revert.
+
+name: Dedupe empty duplicate products
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Look-back window in days'
+        default: '730'
+      undo:
+        description: 'Undo log path to restore (ignores the rest)'
+        default: ""
+      commit:
+        description: 'Actually write? (leave unchecked for a dry run)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run nivessa:dedupe-empty-products
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DAYS: ${{ github.event.inputs.days }}
+          UNDO: ${{ github.event.inputs.undo }}
+          COMMIT: ${{ github.event.inputs.commit }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          envs: DAYS,UNDO,COMMIT
+          script_stop: false
+          command_timeout: 30m
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app || { echo "cd failed"; exit 0; }
+            set --
+            if [ -n "$UNDO" ]; then
+              set -- --undo="$UNDO"
+            else
+              set -- --days="$DAYS"
+            fi
+            [ "$COMMIT" = "true" ] && set -- "$@" --commit
+            echo "=== php artisan nivessa:dedupe-empty-products $* ==="
+            php artisan nivessa:dedupe-empty-products "$@" 2>&1
+            echo "=== artisan exit code: $? ==="
+            exit 0
