@@ -25,7 +25,7 @@ class StoreManagerDashboardController extends Controller
     const STORES = ['pico' => 'Pico', 'hollywood' => 'Hollywood'];
     const DAY_CHOICES = [7, 14, 30, 90];
     const LATE_MIN = 10;          // opened the ERP more than this many minutes after shift start
-    const LOW_WEEKS = 4;          // under this many weeks of stock = low
+    const LOW_WEEKS = 8;          // under this many weeks of stock = low
     const LOW_MIN_SOLD = 13;      // needs ~1 sale a week over 90 days to be flagged
     const CACHE_SECONDS = 600;
 
@@ -626,6 +626,18 @@ class StoreManagerDashboardController extends Controller
                 ->select('user_id', DB::raw('MIN(clock_in_at) as at'))->get();
             foreach ($punches as $r) {
                 $note($r->user_id, $r->at);
+            }
+        }
+
+        // Anything they did in the ERP (sales, duty pick, edits) also counts as
+        // having it open, so staying logged in overnight isn't read as late.
+        if (Schema::hasTable('activity_log')) {
+            $acts = DB::table('activity_log')->whereIn('causer_id', $ids)
+                ->where('created_at', '>=', $fromStr)
+                ->groupBy('causer_id', DB::raw('DATE(created_at)'))
+                ->select('causer_id', DB::raw('MIN(created_at) as at'))->get();
+            foreach ($acts as $r) {
+                $note($r->causer_id, $r->at);
             }
         }
 
