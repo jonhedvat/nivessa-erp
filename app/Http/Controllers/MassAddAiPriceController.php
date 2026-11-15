@@ -50,6 +50,8 @@ class MassAddAiPriceController extends Controller
             })
             ->implode("\n");
 
+        $cardStats = $this->cardStats($businessId);
+
         $system = "You price used and new items for Nivessa, a retail record store with shops on Pico Blvd and in Hollywood, Los Angeles. "
             . "Staff type a rough list of items they are adding to inventory. For each item, work out the product name and artist, "
             . "pick the best category and subcategory, and give a fair in-store retail price based on current market value (Discogs / eBay sold prices) for the format and condition given. "
@@ -61,7 +63,7 @@ class MassAddAiPriceController extends Controller
             . "If something is not music (a toy, a book, a card), use the closest category from the list.\n\n"
             . "Copy Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7\", 45 RPM:\n"
             . $categoryList
-            . $this->cardPriceGuide($businessId);
+            . $this->cardPriceGuide($cardStats);
 
         $call = function ($model) use ($apiKey, $system, $items) {
             $client = new Client(['timeout' => 90]);
@@ -92,6 +94,10 @@ class MassAddAiPriceController extends Controller
                                             'subcategory' => ['type' => 'string'],
                                             'price' => ['type' => 'number'],
                                             'condition' => ['type' => 'string'],
+                                            'premium' => [
+                                                'type' => 'boolean',
+                                                'description' => 'Trading cards only: true if the card is graded / slabbed, a true rookie card, autographed, a scarce insert or parallel, or a sealed box. false for ordinary raw cards and for everything that is not a card.',
+                                            ],
                                         ],
                                         'required' => ['name', 'artist', 'category', 'subcategory', 'price'],
                                     ],
@@ -166,6 +172,16 @@ class MassAddAiPriceController extends Controller
                     $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
                         'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
+                } elseif (empty($r['premium']) && isset($cardStats[$cat . ($sub !== '' ? ' > ' . $sub : '')])) {
+                    // Ordinary raw card we have no exact history for: the AI's online
+                    // price runs well above walk-in prices, so meet in the middle
+                    // with what this kind of card usually sells for here.
+                    $cs = $cardStats[$cat . ($sub !== '' ? ' > ' . $sub : '')];
+                    if ($ai > $cs['median']) {
+                        $price = (float) round(min(($ai + $cs['median']) / 2, max($cs['p90'], $cs['median'])));
+                        $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
+                            'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat];
+                    }
                 }
                 // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
                 $lines[] = implode(' | ', [$name, $artist, $cat, $sub, '', $price > 0 ? number_format($price, 2, '.', '') : '', '', '', $cond]);
@@ -185,12 +201,13 @@ class MassAddAiPriceController extends Controller
      * Sarah 2026-11-15: the AI priced common Michael Jordan cards at $18-45 when
      * we sell them for $4-12 (online card prices run far above walk-in prices,
      * and single cards almost never match storeHistory() by exact name).
-     * Give it what each kind of card really sells for here so it lands in between.
+     * What each kind of card ("Trading Cards > Michael Jordan Cards") really sold
+     * for here in the last 2 years: sales, median, 90th percentile. 8+ sales only.
      */
-    private function cardPriceGuide($businessId)
+    private function cardStats($businessId)
     {
         try {
-            $lines = \Cache::remember('mass_add_ai_card_guide_' . $businessId, now()->addHours(6), function () use ($businessId) {
+            return \Cache::remember('mass_add_ai_card_stats_' . $businessId, now()->addHours(6), function () use ($businessId) {
                 $rows = DB::table('transaction_sell_lines as tsl')
                     ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
                     ->join('products as p', 'p.id', '=', 'tsl.product_id')
@@ -205,30 +222,35 @@ class MassAddAiPriceController extends Controller
                     ->where('c.name', 'like', 'Trading Card%')
                     ->get(['c.name as cat', 'sc.name as sub', 'tsl.unit_price_inc_tax as price']);
                 $out = [];
-                foreach ($rows->groupBy(function ($r) { return $r->cat . ($r->sub ? ' > ' . $r->sub : ''); }) as $label => $g) {
+                foreach ($rows->groupBy(function ($r) { return trim($r->cat) . ($r->sub ? ' > ' . trim($r->sub) : ''); }) as $label => $g) {
                     $prices = $g->pluck('price')->map(function ($p) { return (float) $p; })->sort()->values()->all();
                     $n = count($prices);
                     if ($n < 8) continue;
-                    $median = $prices[intdiv($n, 2)];
+                    $median = $n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2;
                     $p90 = $prices[min($n - 1, (int) floor(0.9 * ($n - 1) + 0.5))];
-                    $out[] = $label . ': ' . $n . ' sold, half at $' . round($median) . ' or less, 9 in 10 at $' . round($p90) . ' or less';
+                    $out[$label] = ['sales' => $n, 'median' => round($median, 2), 'p90' => round($p90, 2)];
                 }
                 return $out;
             });
-            if (empty($lines)) return '';
-            return "\n\nTrading cards: online prices for single cards run well above what walk-in customers pay in our shops. "
-                . "This is what we have actually sold cards for in the last 2 years:\n" . implode("\n", $lines) . "\n"
-                . "For an ordinary raw (ungraded) single card - base cards, common inserts, junk-wax era (1986-1995) cards - price it at a middle ground: "
-                . "about halfway between our usual price for that kind of card and the realistic online SOLD price, and not above the '9 in 10' figure. "
-                . "That middle ground and the '9 in 10' cap are ONLY for ordinary raw cards. Cards that really are worth more - graded / slabbed (PSA, BGS, SGC), "
-                . "true rookie cards, autographs, scarce inserts or parallels, sealed boxes - get the full realistic online SOLD price, with no cap. "
-                . "A crease or other damage lowers the price. "
-                . "Card names: keep the player's name in the product name ('Michael Jordan 1990-91 NBA Hoops #65'), and keep any grading in the name too ('... PSA 9') "
-                . "since PSA / BGS grades do not fit the condition field. Artist is the player (or the franchise, e.g. Pokemon).";
         } catch (\Exception $e) {
-            \Log::warning('MassAddAiPrice card guide failed', ['error' => $e->getMessage()]);
-            return '';
+            \Log::warning('MassAddAiPrice card stats failed', ['error' => $e->getMessage()]);
+            return [];
         }
+    }
+
+    /** Prompt text for trading cards. We do the middle-ground math ourselves (see price()). */
+    private function cardPriceGuide($cardStats)
+    {
+        if (empty($cardStats)) return '';
+        $lines = [];
+        foreach ($cardStats as $label => $cs) {
+            $lines[] = $label . ': usually $' . round($cs['median']) . ', rarely above $' . round($cs['p90']);
+        }
+        return "\n\nTrading cards: give the realistic online SOLD price (not asking prices) for the exact card in the condition given; a crease or other damage lowers it. "
+            . "Walk-in prices in our shops are lower than online; for reference, what we usually sell cards for:\n" . implode("\n", $lines) . "\n"
+            . "Set premium=true only for cards that really are worth more: graded / slabbed (PSA, BGS, SGC), true rookie cards, autographs, scarce inserts or parallels, sealed boxes. "
+            . "Card names: keep the player's name in the product name ('Michael Jordan 1990-91 NBA Hoops #65'), and keep any grading in the name too ('... PSA 9') "
+            . "since PSA / BGS grades do not fit the condition field. Artist is the player (or the franchise, e.g. Pokemon).";
     }
 
     /**
