@@ -60,7 +60,8 @@ class MassAddAiPriceController extends Controller
             . "condition is the grade ONLY if staff wrote one (Sealed, M, NM, VG+, VG, G+, G, F, P), otherwise an empty string. "
             . "If something is not music (a toy, a book, a card), use the closest category from the list.\n\n"
             . "Copy Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7\", 45 RPM:\n"
-            . $categoryList;
+            . $categoryList
+            . $this->cardPriceGuide($businessId);
 
         $call = function ($model) use ($apiKey, $system, $items) {
             $client = new Client(['timeout' => 90]);
@@ -177,6 +178,53 @@ class MassAddAiPriceController extends Controller
         } catch (\Exception $e) {
             \Log::warning('MassAddAiPrice failed', ['error' => $e->getMessage()]);
             return response()->json(['ok' => false, 'error' => "Couldn't reach the AI service. Try again in a minute."]);
+        }
+    }
+
+    /**
+     * Sarah 2026-11-15: the AI priced common Michael Jordan cards at $18-45 when
+     * we sell them for $4-12 (online card prices run far above walk-in prices,
+     * and single cards almost never match storeHistory() by exact name).
+     * Give it what each kind of card really sells for here so it lands in between.
+     */
+    private function cardPriceGuide($businessId)
+    {
+        try {
+            $lines = \Cache::remember('mass_add_ai_card_guide_' . $businessId, now()->addHours(6), function () use ($businessId) {
+                $rows = DB::table('transaction_sell_lines as tsl')
+                    ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+                    ->join('products as p', 'p.id', '=', 'tsl.product_id')
+                    ->join('categories as c', 'c.id', '=', 'p.category_id')
+                    ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+                    ->where('t.business_id', $businessId)
+                    ->where('t.type', 'sell')
+                    ->where('t.status', 'final')
+                    ->whereNull('tsl.parent_sell_line_id')
+                    ->where('t.transaction_date', '>=', now()->subYears(2))
+                    ->where('tsl.unit_price_inc_tax', '>', 0)
+                    ->where('c.name', 'like', 'Trading Card%')
+                    ->get(['c.name as cat', 'sc.name as sub', 'tsl.unit_price_inc_tax as price']);
+                $out = [];
+                foreach ($rows->groupBy(function ($r) { return $r->cat . ($r->sub ? ' > ' . $r->sub : ''); }) as $label => $g) {
+                    $prices = $g->pluck('price')->map(function ($p) { return (float) $p; })->sort()->values()->all();
+                    $n = count($prices);
+                    if ($n < 8) continue;
+                    $median = $prices[intdiv($n, 2)];
+                    $p90 = $prices[min($n - 1, (int) floor(0.9 * ($n - 1) + 0.5))];
+                    $out[] = $label . ': ' . $n . ' sold, half at $' . round($median) . ' or less, 9 in 10 at $' . round($p90) . ' or less';
+                }
+                return $out;
+            });
+            if (empty($lines)) return '';
+            return "\n\nTrading cards: online prices for single cards run well above what walk-in customers pay in our shops. "
+                . "This is what we have actually sold cards for in the last 2 years:\n" . implode("\n", $lines) . "\n"
+                . "For an ordinary raw (ungraded) single card - base cards, common inserts, junk-wax era (1986-1995) cards - price it at a middle ground: "
+                . "about halfway between our usual price for that kind of card and the realistic online SOLD price, and not above the '9 in 10' figure. "
+                . "Only price above that for cards that really are worth more: graded / slabbed, true rookie cards, autographs, scarce inserts or parallels, sealed packs and boxes. "
+                . "A crease or other damage lowers the price. For a card, artist is the player (or the franchise, e.g. Pokemon).";
+        } catch (\Exception $e) {
+            \Log::warning('MassAddAiPrice card guide failed', ['error' => $e->getMessage()]);
+            return '';
         }
     }
 
