@@ -1570,6 +1570,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/tasks/staff-phones', 'StaffPhonesController@index')->name('staff-phones.index');
     Route::post('/tasks/staff-phones', 'StaffPhonesController@save')->name('staff-phones.save');
     Route::get('/tasks/start-shift', 'TaskController@startShift')->name('tasks.start-shift');
+    Route::post('/tasks/start-shift', 'TaskController@postStartShiftAck')->name('tasks.start-shift.ack');
+    Route::get('/tasks/shift-checkins', 'TaskController@shiftCheckins')->name('tasks.shift-checkins');
     Route::get('/tasks/create', 'TaskController@create')->name('tasks.create');
     Route::post('/tasks', 'TaskController@store')->name('tasks.store');
     Route::get('/tasks/{id}/edit', 'TaskController@edit')->name('tasks.edit');
