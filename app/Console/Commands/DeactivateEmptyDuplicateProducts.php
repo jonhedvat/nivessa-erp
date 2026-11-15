@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Deactivate accidental double-adds (Sarah 2026-11-14: "fix over 2 years").
  *
- * A "double" = same name, same business, same person, created within
+ * A "double" = same name + artist, same business, same person, created within
  * --window seconds of the previous one (mostly a double-clicked Save).
  *
  * Only EMPTY copies are touched: zero stock at every location AND the product
@@ -49,6 +49,7 @@ class DeactivateEmptyDuplicateProducts extends Command
         'products', 'variations', 'product_variations', 'variation_location_details',
         'product_locations', 'variation_group_prices', 'product_racks',
         'variation_value_templates',
+        'product_stock_cache', // derived copy of stock; kept in sync below
     ];
 
     public function handle()
@@ -69,7 +70,7 @@ class DeactivateEmptyDuplicateProducts extends Command
             ->where('created_at', '>=', now()->subDays($days))
             ->where('created_at', '<=', now()->subDays($minAge))
             ->orderBy('created_at')->orderBy('id')
-            ->get(['id', 'name', 'sku', 'created_by', 'created_at']);
+            ->get(['id', 'name', 'artist', 'sku', 'created_by', 'created_at']);
         $this->line("scanned products: " . $rows->count());
 
         // Cluster: same person + same normalized name, chained within $window seconds.
@@ -77,7 +78,8 @@ class DeactivateEmptyDuplicateProducts extends Command
         foreach ($rows as $r) {
             $nm = mb_strtolower(trim(preg_replace('/\s+/', ' ', (string) $r->name)));
             if (mb_strlen($nm) < 2) continue;
-            $groups[$r->created_by . '|' . $nm][] = $r;
+            $ar = mb_strtolower(trim(preg_replace('/\s+/', ' ', (string) $r->artist)));
+            $groups[$r->created_by . '|' . $nm . '|' . $ar][] = $r;
         }
         $clusters = [];
         foreach ($groups as $list) {
@@ -135,7 +137,7 @@ class DeactivateEmptyDuplicateProducts extends Command
             $parts = array_map(function ($p) use ($drop) {
                 return (isset($drop[$p->id]) ? 'X' : 'K') . "#{$p->id} {$p->sku} " . substr($p->created_at, 11);
             }, $c);
-            $this->line('  ' . substr($c[0]->created_at, 0, 10) . ' "' . mb_substr($c[0]->name, 0, 50) . '"  ' . implode(', ', $parts));
+            $this->line('  ' . substr($c[0]->created_at, 0, 10) . ' "' . mb_substr($c[0]->artist . ' - ' . $c[0]->name, 0, 60) . '"  ' . implode(', ', $parts));
         }
 
         if (!$this->option('commit')) {
@@ -150,6 +152,7 @@ class DeactivateEmptyDuplicateProducts extends Command
         foreach (array_chunk($dropIds, 1000) as $chunk) {
             $n += DB::table('products')->whereIn('id', $chunk)->where('is_inactive', 0)
                 ->update(['is_inactive' => 1, 'updated_at' => now()]);
+            DB::table('product_stock_cache')->whereIn('product_id', $chunk)->update(['is_inactive' => 1]);
         }
         $this->line("\nDeactivated $n products. Undo log: $file");
         return 0;
@@ -203,6 +206,7 @@ class DeactivateEmptyDuplicateProducts extends Command
         foreach (array_chunk($ids, 1000) as $chunk) {
             $n += DB::table('products')->whereIn('id', $chunk)
                 ->update(['is_inactive' => 0, 'updated_at' => now()]);
+            DB::table('product_stock_cache')->whereIn('product_id', $chunk)->update(['is_inactive' => 0]);
         }
         $this->line("Reactivated $n of " . count($ids) . " products from $path");
         return 0;
