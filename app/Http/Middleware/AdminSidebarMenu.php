@@ -39,6 +39,12 @@ class AdminSidebarMenu
             //admins approve fixes here (Sarah 2026-11-09).
             $menu->url(url('/bug-fixes'), 'Bug Fixes', ['icon' => 'fa fas fa-bug', 'active' => request()->segment(1) == 'bug-fixes'])->order(6);
 
+            //Manager Dashboard: the two store managers (each locked to their own
+            //store) plus admins/owners.
+            if (\App\Http\Controllers\StoreManagerDashboardController::canView()) {
+                $menu->url(url('/manager-dashboard'), 'Manager Dashboard', ['icon' => 'fa fas fa-chart-bar', 'active' => request()->segment(1) == 'manager-dashboard'])->order(6);
+            }
+
             //EOS: leadership team only (admins + store managers).
             if ($is_admin || \App\Http\Controllers\ManagerChecklistController::currentManagerKey()) {
                 $menu->url(url('/eos'), 'EOS', ['icon' => 'fa fas fa-compass', 'active' => request()->segment(1) == 'eos'])->order(7);

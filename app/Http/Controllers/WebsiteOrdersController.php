@@ -2411,6 +2411,45 @@ class WebsiteOrdersController extends Controller
         return array_values($out);
     }
 
+    /**
+     * Paid shipping orders not shipped yet (To Ship + Ready to Ship), split by
+     * the store that ships them, for the Manager Dashboard. Null when the
+     * website can't be reached.
+     * ['pico' => ['orders' => n, 'items' => n, 'to_pull' => n], 'hollywood' => [...]]
+     */
+    public function unshippedByStore(): ?array
+    {
+        $resp = $this->websiteApi('GET', '/erp/orders/console?limit=300&includeArchived=1&payment_status=completed');
+        if ($resp === null || ($resp['success'] ?? true) === false) {
+            return null;
+        }
+        $orders = $resp['data'] ?? [];
+        $this->loadBinMap();
+        self::$erpCache = self::erpLocations($orders);
+        $blank = ['orders' => 0, 'items' => 0, 'to_pull' => 0];
+        $out = ['pico' => $blank, 'hollywood' => $blank];
+        foreach ($orders as $o) {
+            if (($o['payment_status'] ?? '') !== 'completed' || ($o['fulfillment_method'] ?? null) !== 'shipping') continue;
+            $toShip = self::matchesTab($o, 'to_ship');
+            if (!$toShip && !self::matchesTab($o, 'ready_ship')) continue;
+            $store = self::shipStore($o);
+            $out[$store]['orders']++;
+            $items = 0;
+            foreach (($o['items'] ?? []) as $it) {
+                if (!empty($it['cancelled']) || !empty($it['is_gift_card'])) continue;
+                $items += (int) ($it['quantity'] ?? 1);
+            }
+            $out[$store]['items'] += $items;
+            if ($toShip) {
+                $p = $o['pick_progress'] ?? null;
+                $out[$store]['to_pull'] += is_array($p)
+                    ? max(0, (int) ($p['total'] ?? 0) - (int) ($p['picked'] ?? 0))
+                    : $items;
+            }
+        }
+        return $out;
+    }
+
     protected function websiteApi(string $method, string $path, array $body = null, int $timeout = 10): ?array
     {
         $key = $this->erpApiKey();
