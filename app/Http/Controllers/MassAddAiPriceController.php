@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Sarah 2026-11-15: "Price it for me" on Mass Add → Bulk Product Entry.
  * Staff type a rough list ("Rumours LP VG+, Thriller sealed") and Claude
- * returns the CSV lines the bulk parser already understands
- * (Product Name,Artist,Category,Subcategory,SKU,Price,) — the same thing
+ * returns JSON that we turn into the pipe lines the bulk parser already reads
+ * (Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Grade) — the same thing
  * staff used to get by pasting a prompt into ChatGPT by hand.
  *
  * Uses the same Anthropic key as the "Ask the ERP" help assistant.
@@ -56,9 +56,9 @@ class MassAddAiPriceController extends Controller
             . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl.\n"
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
             . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n\n"
-            . "Return ONLY one line per item, in this exact format, with no header, no numbering, no commentary and no code fences:\n"
-            . "Product Name,Artist,Category,Subcategory,SKU,Price,\n"
-            . "Leave SKU empty. Price is a plain number like 24.99. Do not use commas inside names (drop them or use a space). "
+            . "Return ONLY a JSON array, one object per item, nothing before or after it, no code fences, each item exactly once:\n"
+            . "[{\"name\": \"Rumours\", \"artist\": \"Fleetwood Mac\", \"category\": \"Vinyl - Used\", \"subcategory\": \"Rock\", \"price\": 24.99, \"condition\": \"VG+\"}]\n"
+            . "price is a plain number. condition is the grade staff gave (Sealed, M, NM, VG+, VG, G+, G, F, P), or \"\" if they gave none. "
             . "If something is not music (a toy, a book, a card), use the closest category from the list.\n\n"
             . "Copy Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7\", 45 RPM:\n"
             . $categoryList;
@@ -111,38 +111,44 @@ class MassAddAiPriceController extends Controller
                     $text .= $block['text'];
                 }
             }
-            // Strip any code fences / header line the model adds anyway.
-            $lines = [];
-            foreach (preg_split('/\r?\n/', $text) as $line) {
-                $line = trim($line);
-                if ($line === '' || strpos($line, '```') === 0) continue;
-                if (preg_match('/^"?(product\s*)?name"?\s*,\s*"?artist/i', $line)) continue;
-                if (substr_count($line, ',') < 5) continue;
-                $lines[] = $line;
-            }
-            if (empty($lines)) {
+            // Pull the JSON array out (tolerates stray text / code fences).
+            $start = strpos($text, '[');
+            $end = strrpos($text, ']');
+            $rows = ($start !== false && $end > $start) ? json_decode(substr($text, $start, $end - $start + 1), true) : null;
+            if (!is_array($rows) || empty($rows)) {
                 return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
             }
 
             // Sarah 2026-11-15: check OUR sales history so the AI never underprices
             // something we already sell for more, or something that flies off the shelf.
+            // Output is pipe-separated: some subcategories contain commas ("R&B, Soul & Funk").
+            $clean = function ($v) { return trim(str_replace(['|', "\n", "\r"], ' ', (string) $v)); };
+            $lines = [];
             $notes = [];
-            foreach ($lines as $i => $line) {
-                $cols = str_getcsv($line);
-                if (count($cols) < 6) continue;
-                $h = $this->storeHistory($businessId, trim($cols[0]), trim($cols[1]), trim($cols[2]));
-                if (!$h) continue;
-                $ai = (float) preg_replace('/[^0-9.]/', '', $cols[5]);
-                $floor = $h['fast'] ? $h['p75'] : $h['median'];
-                $note = ['item' => trim($cols[0]) . (trim($cols[1]) !== '' ? ' - ' . trim($cols[1]) : ''),
-                    'ai' => $ai, 'price' => $ai, 'sales' => $h['sales'], 'median' => $h['median'],
-                    'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
-                if ($floor > 0 && $floor > $ai) {
-                    $cols[5] = number_format($floor, 2, '.', '');
-                    $lines[$i] = implode(',', $cols);
-                    $note['price'] = (float) $cols[5];
+            foreach ($rows as $r) {
+                if (!is_array($r)) continue;
+                $name = $clean($r['name'] ?? '');
+                if ($name === '') continue;
+                $artist = $clean($r['artist'] ?? '');
+                $cat = $clean($r['category'] ?? '');
+                $sub = $clean($r['subcategory'] ?? '');
+                $cond = $clean($r['condition'] ?? '');
+                $ai = round((float) preg_replace('/[^0-9.]/', '', (string) ($r['price'] ?? '')), 2);
+                $price = $ai;
+
+                $h = $this->storeHistory($businessId, $name, $artist, $cat);
+                if ($h) {
+                    $floor = $h['fast'] ? $h['p75'] : $h['median'];
+                    if ($floor > $price) $price = $floor;
+                    $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
+                        'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
+                        'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
                 }
-                $notes[] = $note;
+                // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
+                $lines[] = implode(' | ', [$name, $artist, $cat, $sub, '', $price > 0 ? number_format($price, 2, '.', '') : '', '', '', $cond]);
+            }
+            if (empty($lines)) {
+                return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
             }
 
             return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines), 'history' => $notes]);
