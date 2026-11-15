@@ -1,0 +1,50 @@
+# Check products deactivated by dedupe-empty-products: each must have an ACTIVE
+# twin by the same person with the same name + category + subcategory created
+# within a few minutes. Report only by default; tick "commit" to reactivate
+# the ones that fail.
+
+name: Audit dedupe products
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Reactivate the ones that fail? (unchecked = report only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run nivessa:audit-dedupe
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          COMMIT: ${{ github.event.inputs.commit }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          envs: COMMIT
+          script_stop: false
+          command_timeout: 30m
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app || { echo "cd failed"; exit 0; }
+            set --
+            [ "$COMMIT" = "true" ] && set -- --commit
+            echo "=== php artisan nivessa:audit-dedupe $* ==="
+            php artisan nivessa:audit-dedupe "$@" 2>&1
+            echo "=== artisan exit code: $? ==="
+            exit 0
