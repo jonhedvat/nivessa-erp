@@ -493,19 +493,195 @@ class TaskController extends Controller
         $storeLabels = $this->availableStores();
         $store = $this->resolveStore($request, $storeLabels);
 
-        $dueTasks = self::dueTodayForStore($business_id, $store, auth()->id())
+        $dueTasks = self::shiftTasks($business_id, auth()->id(), $store)
             ->map(function ($t) {
                 return [
                     'id' => $t->id,
                     'title' => $t->title,
                     'priority' => $t->priority,
                     'status' => $t->status,
+                    'description' => $t->description,
                 ];
             })->values()->all();
 
         $continueUrl = action('SellPosController@create', array_filter(['sub_type' => $request->input('sub_type')]));
+        // Non-admin staff (cashiers / floor) must tick "I understand" on
+        // every task before they can get to the POS (2026-11-15).
+        $requireAck = !$this->isAdmin();
 
-        return view('tasks.start_shift', compact('dueTasks', 'storeLabels', 'store', 'continueUrl'));
+        return view('tasks.start_shift', compact('dueTasks', 'storeLabels', 'store', 'continueUrl', 'requireAck'));
+    }
+
+    /**
+     * Saves the start-of-shift "I understand" ticks, then sends them on to
+     * the POS. Only tasks that are actually on this person's shift list are
+     * recorded, and every one of them must be ticked.
+     */
+    public function postStartShiftAck(Request $request)
+    {
+        $business_id = $request->session()->get('user.business_id');
+        $userId = auth()->id();
+        $storeLabels = $this->availableStores();
+        $store = $this->resolveStore($request, $storeLabels);
+        $continueUrl = action('SellPosController@create', array_filter(['sub_type' => $request->input('sub_type')]));
+
+        $tasks = self::shiftTasks($business_id, $userId, $store);
+        $acked = array_map('intval', (array) $request->input('ack', []));
+        $missing = $tasks->filter(function ($t) use ($acked) {
+            return !in_array((int) $t->id, $acked, true);
+        });
+        if ($missing->isNotEmpty() && !$this->isAdmin()) {
+            return redirect()->back()->with('status', ['success' => false, 'msg' => 'Tick "I understand" on every task before continuing.']);
+        }
+
+        $registerId = self::openRegisterId($userId);
+        foreach ($tasks as $t) {
+            if (!in_array((int) $t->id, $acked, true)) {
+                continue;
+            }
+            \App\TaskShiftCheckin::create([
+                'business_id' => $business_id,
+                'user_id' => $userId,
+                'weekly_task_id' => $t->id,
+                'cash_register_id' => $registerId,
+                'phase' => 'start',
+                'response' => 'understood',
+                'task_title' => mb_substr((string) $t->title, 0, 200),
+            ]);
+        }
+
+        return redirect($continueUrl);
+    }
+
+    /**
+     * Everything on a person's plate this shift: today's daily tasks for
+     * their store (unassigned or theirs) plus every open task assigned to
+     * them. One list so the start-of-shift "I understand" and the close
+     * "did it / didn't" cover the same tasks.
+     */
+    public static function shiftTasks($business_id, $userId, $store = null)
+    {
+        $due = self::dueTodayForStore($business_id, $store, $userId);
+        $mine = self::myOpenAssignedTasks($business_id, $userId, $store);
+        return $due->concat($mine)->unique('id')
+            ->sortBy(function ($t) {
+                return ['high' => 0, 'medium' => 1, 'low' => 2][$t->priority] ?? 3;
+            })->values();
+    }
+
+    /** id of the user's currently open cash register, or null. */
+    public static function openRegisterId($userId)
+    {
+        try {
+            return \App\CashRegister::where('user_id', $userId)->where('status', 'open')->latest('id')->value('id');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Tasks to ask "did you do it?" about at register close: this shift's
+     * list plus anything they ticked "I understand" on at open for this
+     * register (even if it got completed or reassigned since).
+     */
+    public static function endOfShiftTasks($business_id, $userId, $store, $registerId)
+    {
+        $tasks = self::shiftTasks($business_id, $userId, $store);
+        if (!empty($registerId)) {
+            $ackedIds = \App\TaskShiftCheckin::where('cash_register_id', $registerId)
+                ->where('user_id', $userId)->where('phase', 'start')
+                ->pluck('weekly_task_id')->all();
+            $extra = WeeklyTask::where('business_id', $business_id)
+                ->whereIn('id', $ackedIds)
+                ->whereNotIn('id', $tasks->pluck('id')->all())->get();
+            $tasks = $tasks->concat($extra);
+        }
+        return $tasks->values();
+    }
+
+    /**
+     * Saves the close-register "I did it / I didn't do it" answers.
+     * "Did it" also completes the task (unless it needs a photo confirm,
+     * which only the edit page can do). Never throws — the register close
+     * must never break because of this.
+     */
+    public static function recordEndOfShift($business_id, $userId, $registerId, $responses)
+    {
+        if (!is_array($responses) || empty($responses)) {
+            return;
+        }
+        try {
+            $tasks = WeeklyTask::where('business_id', $business_id)
+                ->whereIn('id', array_map('intval', array_keys($responses)))->get();
+            foreach ($tasks as $task) {
+                $resp = $responses[$task->id] ?? null;
+                if (!in_array($resp, ['done', 'not_done'], true)) {
+                    continue;
+                }
+                \App\TaskShiftCheckin::create([
+                    'business_id' => $business_id,
+                    'user_id' => $userId,
+                    'weekly_task_id' => $task->id,
+                    'cash_register_id' => $registerId,
+                    'phase' => 'end',
+                    'response' => $resp,
+                    'task_title' => mb_substr((string) $task->title, 0, 200),
+                ]);
+                if ($resp === 'done' && $task->status !== 'complete'
+                    && (!$task->requires_photo || $task->photo_confirmed_at)) {
+                    $task->status = 'complete';
+                    $task->completed_by = $userId;
+                    $task->completed_at = now();
+                    $task->save();
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('recordEndOfShift failed: ' . $e->getMessage());
+        }
+    }
+
+    /** Admin view: who acknowledged / did / didn't do what, by shift. */
+    public function shiftCheckins(Request $request)
+    {
+        if (!$this->isAdmin()) {
+            abort(403, 'Unauthorized action.');
+        }
+        $business_id = $request->session()->get('user.business_id');
+        $days = max(1, min(60, (int) $request->input('days', 7)));
+        $rows = \App\TaskShiftCheckin::with('user')
+            ->where('business_id', $business_id)
+            ->where('created_at', '>=', now()->subDays($days)->startOfDay())
+            ->orderByDesc('created_at')->get();
+
+        // One line per person + task + shift (register, or day when none).
+        $lines = [];
+        foreach ($rows as $r) {
+            $key = $r->user_id . '|' . $r->weekly_task_id . '|' . ($r->cash_register_id ?: $r->created_at->toDateString());
+            if (!isset($lines[$key])) {
+                $lines[$key] = [
+                    'date' => $r->created_at,
+                    'user' => $r->user ? trim($r->user->first_name . ' ' . $r->user->last_name) : ('#' . $r->user_id),
+                    'task' => $r->task_title,
+                    'task_id' => $r->weekly_task_id,
+                    'understood_at' => null,
+                    'end' => null,
+                    'end_at' => null,
+                ];
+            }
+            if ($r->phase === 'start' && !$lines[$key]['understood_at']) {
+                $lines[$key]['understood_at'] = $r->created_at;
+            }
+            if ($r->phase === 'end' && !$lines[$key]['end']) {
+                $lines[$key]['end'] = $r->response;
+                $lines[$key]['end_at'] = $r->created_at;
+            }
+            if ($r->created_at->lt($lines[$key]['date'])) {
+                $lines[$key]['date'] = $r->created_at;
+            }
+        }
+        $lines = collect(array_values($lines))->sortByDesc('date')->values();
+
+        return view('tasks.shift_checkins', compact('lines', 'days'));
     }
 
     public function create(Request $request)

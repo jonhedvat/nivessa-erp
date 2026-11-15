@@ -354,9 +354,9 @@ class CashRegisterController extends Controller
         try {
             $storeKey = $this->storeKeyForLocation($location_id);
             if ($storeKey) {
-                $hasDueToday = \App\Http\Controllers\TaskController::dueTodayForStore($business_id, $storeKey, $user_id)->isNotEmpty();
+                $hasDueToday = \App\Http\Controllers\TaskController::shiftTasks($business_id, $user_id, $storeKey)->isNotEmpty();
                 if ($hasDueToday) {
-                    return redirect()->action('TaskController@startShift', ['sub_type' => $sub_type]);
+                    return redirect()->action('TaskController@startShift', ['sub_type' => $sub_type, 'store' => $storeKey]);
                 }
             }
         } catch (\Throwable $ex) {
@@ -637,19 +637,42 @@ class CashRegisterController extends Controller
             \Log::warning('close_register due_tasks failed: ' . $ex->getMessage());
         }
 
+        // Non-admin staff must answer "I did it / I didn't do it" for every
+        // task on this shift's list before closing (2026-11-15). Admins keep
+        // the plain status bubble above. Never breaks the close.
+        $end_tasks = [];
+        try {
+            if (!app(\App\Utils\BusinessUtil::class)->is_admin(auth()->user())) {
+                $storeKey = $this->storeKeyForLocation($register_details->location_id);
+                $registerId = \App\Http\Controllers\TaskController::openRegisterId($user_id);
+                $end_tasks = \App\Http\Controllers\TaskController::endOfShiftTasks($business_id, $user_id, $storeKey, $registerId)
+                    ->map(function ($t) {
+                        return [
+                            'id' => $t->id,
+                            'title' => $t->title,
+                            'priority' => $t->priority,
+                            'status' => $t->status,
+                        ];
+                    })->values()->all();
+            }
+        } catch (\Throwable $ex) {
+            \Log::warning('close_register end_tasks failed: ' . $ex->getMessage());
+        }
+
         // Render eagerly so a runtime error inside the (new) shift-summary
         // block can't escape into the middleware as a 500 — the .btn-modal
         // AJAX has no error handler, so a 500 here shows the cashier nothing
         // ("clicking Close Register does nothing"). If the modal fails to
         // render for any reason, fall back to the legacy modal with no
         // summary. The close flow MUST never break.
-        $view_data = compact('register_details', 'details', 'payment_types', 'pos_settings', 'keying_errors', 'next_deposit_seq', 'cashier_name', 'shift_summary', 'due_tasks');
+        $view_data = compact('register_details', 'details', 'payment_types', 'pos_settings', 'keying_errors', 'next_deposit_seq', 'cashier_name', 'shift_summary', 'due_tasks', 'end_tasks');
         try {
             return view('cash_register.close_register_modal')->with($view_data)->render();
         } catch (\Throwable $ex) {
             \Log::error('close_register_modal render failed, falling back to legacy: ' . $ex->getMessage());
             $view_data['shift_summary'] = null;
             $view_data['due_tasks'] = [];
+            $view_data['end_tasks'] = [];
             return view('cash_register.close_register_modal')->with($view_data)->render();
         }
     }
@@ -1667,6 +1690,17 @@ class CashRegisterController extends Controller
                 } catch (\Throwable $ex) {
                     \Log::warning('persistShiftNote failed: ' . $ex->getMessage());
                 }
+            }
+
+            // End-of-shift task check-off ("I did it / I didn't do it").
+            // Isolated — never breaks the close.
+            if ($openRegister) {
+                \App\Http\Controllers\TaskController::recordEndOfShift(
+                    $request->session()->get('user.business_id'),
+                    $user_id,
+                    $openRegister->id,
+                    (array) $request->input('task_end', [])
+                );
             }
 
             // Time clock: closing the register no longer clocks the cashier

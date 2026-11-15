@@ -354,7 +354,20 @@
 			     after. Same checklist/status buttons as the standalone
 			     /tasks/end-shift page, just a broader "everything assigned
 			     to you" list instead of only what's due today. --}}
-			@if(!empty($due_tasks))
+			@if(!empty($end_tasks))
+				<div id="end_shift_tasks" style="background:#FFF3E0;border:1px solid #F0C27B;border-left:6px solid #E8912B;border-radius:12px;padding:16px 20px;margin:0 0 15px;">
+					<div style="font-size:16px;font-weight:800;color:#5A4410;">Your tasks this shift</div>
+					<div style="font-size:13px;color:#7a6a3a;margin-bottom:10px;">Check off each one: did you do it or not? Required to close.</div>
+					@foreach($end_tasks as $t)
+					<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #F0DDBE;border-radius:8px;padding:8px 12px;margin-bottom:8px;">
+						<span class="label label-{{ ['high'=>'danger','medium'=>'warning','low'=>'default'][$t['priority']] ?? 'default' }}">{{ ucfirst($t['priority']) }}</span>
+						<span style="flex:1 1 180px;font-weight:600;color:#333;">{{ $t['title'] }}</span>
+						<label style="font-weight:600;color:#2e7d32;margin:0;cursor:pointer;"><input type="radio" name="task_end[{{ $t['id'] }}]" value="done" required @if($t['status']==='complete') checked @endif> I did it</label>
+						<label style="font-weight:600;color:#c62828;margin:0 0 0 8px;cursor:pointer;"><input type="radio" name="task_end[{{ $t['id'] }}]" value="not_done" required> I didn't do it</label>
+					</div>
+					@endforeach
+				</div>
+			@elseif(!empty($due_tasks))
 				@include('tasks.partials.due_today_bubble', [
 					'dueTodayTasks' => $due_tasks,
 					'bubbleTitle' => 'Your assigned tasks',
