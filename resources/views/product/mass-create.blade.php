@@ -446,147 +446,58 @@
             </div>
         </div>
         <div class="box-body" style="display: none;">
-            {{-- Sarah 2026-07-14: quick how-to for staff using Bulk Product Entry. --}}
-            <div class="alert alert-success" style="margin-bottom: 15px; padding: 12px;">
-                <strong><i class="fa fa-graduation-cap"></i> How to use Bulk Product Entry</strong>
-                <ol style="margin-bottom: 0; margin-top: 8px; padding-left: 20px;">
-                    <li>Type or paste your products in the box below &mdash; <strong>one product per line</strong>.</li>
-                    <li>Use any of the formats shown below. The simplest is just <code>Product Name - Artist</code>.</li>
-                    <li>Click <strong>Preview Parsed Data</strong> first to check the rows look right.</li>
-                    <li>Click <strong>Parse &amp; Add Products</strong> to load them into the table.</li>
-                    <li>If our store has consistently sold the same item for more than the price you pasted (3+ sales, most of them higher), the price is raised to what we usually get. Raised prices show in <span style="color:#15803d;font-weight:700;">green</span> with the old price underneath, so you can change it back.</li>
-                    <li>Fill in anything left blank in the table (price, category, location), then hit <strong>Save All Products</strong> at the bottom.</li>
-                </ol>
-                <hr style="margin: 10px 0;">
-                <strong><i class="fa fa-magic"></i> Tip: let ChatGPT or Claude price &amp; format your list</strong>
-                <p style="margin: 6px 0;">
-                    Paste your rough list of items into <strong>ChatGPT</strong> or <strong>Claude</strong> and ask it to price them for the store, then paste its answer straight back here. For example:
-                </p>
-                <div style="background:#fff; border:1px solid #cfe8d4; border-radius:4px; padding:10px; font-family:'Courier New', monospace; font-size:12px; line-height:1.5;">
-                    Price these items for a Hollywood / Pico Blvd retail record store, using fair current market value (Discogs / eBay) for the condition. Fill in the best category and subcategory for each, and leave SKU blank. Return one item per line in this exact format, nothing else:<br>
-                    <code>Product Name,Artist,Category,Subcategory,SKU,Price,</code><br>
-                    <br>
-                    Copy the Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7", 45 RPM:<br>
-                    <em class="text-muted">[our full category list, added when you click Copy prompt]</em><br>
-                    <br>
-                    Items:<br>
-                    a, b, c, d, e
+            {{-- Sarah 2026-11-15: chat-style entry. Staff type a rough list and the
+                 server asks Claude to price + format it (MassAddAiPriceController),
+                 instead of copy-pasting a prompt into ChatGPT. --}}
+            <div style="padding:16px; background:#f7f7f8; border:1px solid #e3e3e8; border-radius:12px; max-width:900px;">
+                <div style="font-size:18px; font-weight:800; color:#111; margin-bottom:4px;">
+                    <i class="fa fa-magic"></i> Type what you have &mdash; we&rsquo;ll price it
                 </div>
-                {{-- Sarah 2026-10-28: the prompt carries the store's exact category
-                     names, so ChatGPT stops inventing ones like "Sports Cards". --}}
-                <textarea id="mass_ai_prompt" style="position:absolute; left:-9999px;" aria-hidden="true" tabindex="-1">Price these items for a Hollywood / Pico Blvd retail record store, using fair current market value (Discogs / eBay) for the condition. Fill in the best category and subcategory for each, and leave SKU blank. Return one item per line in this exact format, nothing else:
-Product Name,Artist,Category,Subcategory,SKU,Price,
-
-Copy the Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7", 45 RPM:
-{{ collect($category_combos ?? [])->groupBy(function ($c) { return explode(' > ', $c['label'], 2)[0]; })->map(function ($g, $cat) { $subs = $g->map(function ($c) { return explode(' > ', $c['label'], 2)[1] ?? null; })->filter()->implode('; '); return $cat . ($subs !== '' ? ': ' . $subs : ''); })->implode("\n") }}
-
-Items:
-a, b, c, d, e</textarea>
-                <button type="button" class="btn btn-success btn-sm" id="mass_ai_prompt_copy" style="margin-top:6px;"><i class="fa fa-clipboard"></i> Copy prompt</button>
-                <span id="mass_ai_prompt_copied" class="text-success" style="display:none; margin-left:6px;">Copied. Paste it into ChatGPT and swap a, b, c, d, e for your items.</span>
-                <script>
-                    document.getElementById('mass_ai_prompt_copy').addEventListener('click', function () {
-                        var t = document.getElementById('mass_ai_prompt');
-                        var done = function () { document.getElementById('mass_ai_prompt_copied').style.display = 'inline'; };
-                        if (navigator.clipboard && navigator.clipboard.writeText) {
-                            navigator.clipboard.writeText(t.value).then(done, function () { t.select(); document.execCommand('copy'); done(); });
-                        } else { t.select(); document.execCommand('copy'); done(); }
-                    });
-                </script>
-                <small class="text-muted" style="display:block; margin-top:6px;">
-                    Swap <code>a, b, c, d, e</code> for your actual items &mdash; add the format (LP, CD, cassette) and condition (sealed, VG+, etc.) where you can, so the price is accurate. The reply comes back in the CSV format above, ready to paste into the box below.
-                </small>
-
-                {{-- Sarah 2026-07-14: worked example styled to look like a real
-                     ChatGPT window (browser chrome + OpenAI avatar + dark code block)
-                     so staff recognise it at a glance. --}}
-                <p style="font-size:12px; color:#777; margin:14px 0 6px;">
-                    <i class="fa fa-picture-o"></i> Here's what it looks like in ChatGPT:
-                </p>
-                <div style="max-width:600px; border:1px solid #d9d9e3; border-radius:12px; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,0.10); font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-                    <!-- browser/window chrome -->
-                    <div style="display:flex; align-items:center; padding:9px 13px; background:#f7f7f8; border-bottom:1px solid #ececf1;">
-                        <span style="width:11px; height:11px; border-radius:50%; background:#ff5f57; display:inline-block; margin-right:7px;"></span>
-                        <span style="width:11px; height:11px; border-radius:50%; background:#febc2e; display:inline-block; margin-right:7px;"></span>
-                        <span style="width:11px; height:11px; border-radius:50%; background:#28c840; display:inline-block;"></span>
-                        <span style="margin:0 auto; font-size:12px; color:#6e6e80; font-weight:600; letter-spacing:.2px;">ChatGPT</span>
-                    </div>
-
-                    <!-- user turn -->
-                    <div style="display:flex; gap:12px; padding:16px 16px 14px; background:#ffffff;">
-                        <div style="flex:0 0 30px; height:30px; border-radius:4px; background:#ab68ff; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;">S</div>
-                        <div style="font-size:13.5px; line-height:1.6; color:#343541;">
-                            Price these items for a Hollywood / Pico Blvd retail record store, using fair current market value for the condition. Fill in the best category and subcategory for each, and leave SKU blank. Return one item per line in this exact format, nothing else:<br>
-                            <span style="font-family:'Courier New',monospace; font-size:12px; color:#6e6e80;">Product Name,Artist,Category,Subcategory,SKU,Price,</span><br><br>
-                            Items: Rumours (LP, VG+), Thriller (sealed LP), Kind of Blue (used CD), Nevermind (cassette)
-                        </div>
-                    </div>
-
-                    <!-- assistant turn -->
-                    <div style="display:flex; gap:12px; padding:16px; background:#f7f7f8; border-top:1px solid #ececf1;">
-                        <div style="flex:0 0 30px; height:30px; border-radius:4px; background:#10a37f; display:flex; align-items:center; justify-content:center;">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.1419.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.1419.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></svg>
-                        </div>
-                        <div style="flex:1; min-width:0;">
-                            <div style="font-size:13.5px; line-height:1.6; color:#343541; margin-bottom:10px;">Here you go &mdash; ready to paste into the box below:</div>
-                            <!-- dark code block, ChatGPT style -->
-                            <div style="border-radius:6px; overflow:hidden;">
-                                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 12px; background:#2f2f2f; color:#b4b4c4; font-size:11px;">
-                                    <span>csv</span>
-                                    <span><i class="fa fa-clipboard"></i> Copy code</span>
-                                </div>
-                                <pre style="margin:0; padding:12px; background:#0d0d0d; color:#e6e6e6; font-family:'Courier New',monospace; font-size:12px; line-height:1.85; overflow-x:auto; white-space:pre;">Rumours,Fleetwood Mac,Vinyl - Used,Rock,,32.00,
-Thriller,Michael Jackson,Vinyl - Sealed,Pop,,45.00,
-Kind of Blue,Miles Davis,CD - Used,Jazz,,12.00,
-Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
-                            </div>
-                        </div>
-                    </div>
+                <div style="font-size:14px; color:#555; margin-bottom:10px;">
+                    One item per line, like you would type to ChatGPT. Add the format and condition if you know them.
+                    AI fills in the artist, category and price, then adds everything to the table below for you to check.
                 </div>
-                <p style="margin-top:10px; font-size:12px; color:#3c763d;">
-                    <i class="fa fa-clipboard"></i> Copy the CSV it gives you, paste it into the Bulk Product Entry box below, then click <strong>Preview</strong> and <strong>Parse &amp; Add</strong>.
-                </p>
-            </div>
-            <div class="form-group">
-                <label for="bulk_product_text">
-                    <strong>Paste products here (one per line).</strong> Smart parser supports multiple formats:
-                </label>
-                <div class="alert alert-info" style="margin-bottom: 10px; padding: 10px;">
-                    <strong>Supported Formats:</strong>
-                    <ul style="margin-bottom: 0; padding-left: 20px;">
-                        <li><code>Product Name - Artist</code> (Simple format)</li>
-                        <li><code>Product Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade</code> (Pipe-delimited; grade is optional, e.g. VG+)</li>
-                        <li><code>Product Name,Artist,Category,Subcategory,SKU,Price,Bin,Location</code> (CSV format)</li>
-                        <li><code>Product Name,Artist,Category,Subcategory,SKU,Price,</code> (CSV format, no Bin/Location)</li>
-                        <li><code>Product Name	Artist	Category	Subcategory	SKU	Price	Bin	Location</code> (Tab-delimited)</li>
-                        <li>Auto-complete suggestions appear as you type!</li>
-                    </ul>
+                <textarea
+                    id="bulk_product_text"
+                    class="form-control"
+                    rows="8"
+                    placeholder="Rumours LP VG+&#10;Thriller sealed&#10;Kind of Blue CD&#10;Nevermind cassette"
+                    style="font-size:16px; line-height:1.6; border-radius:10px; padding:12px 14px; background:#fff;"></textarea>
+                <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <button type="button" class="btn btn-primary btn-lg" id="ai_price_bulk_text" style="border-radius:8px;">
+                        <i class="fa fa-magic"></i> Price it &amp; add to table
+                    </button>
+                    <span class="text-muted" id="bulk_parse_status"></span>
                 </div>
-                <textarea 
-                    id="bulk_product_text" 
-                    class="form-control" 
-                    rows="12" 
-                    placeholder="Example formats:&#10;Album Title - Artist Name&#10;Album Title | Artist Name | Category | Subcategory | SKU123 | 19.99 | A-12 | Warehouse A&#10;Album Title,Artist Name,Category,Subcategory,SKU123,19.99,A-12,Warehouse A&#10;Album Title,Artist Name,Category,Subcategory,SKU123,19.99,&#10;&#10;Start typing to see auto-complete suggestions from your existing products..."
-                    style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;"></textarea>
-                <small class="text-muted">
-                    <i class="fa fa-lightbulb-o"></i> <strong>Tip:</strong> As you type product names, suggestions from your existing database will appear. 
-                    Press <kbd>Tab</kbd> or <kbd>Enter</kbd> to accept suggestions.
-                </small>
-            </div>
-            <div class="form-group">
-                <button type="button" class="btn btn-success" id="parse_bulk_text">
-                    <i class="fa fa-magic"></i> Parse & Add Products
-                </button>
-                <button type="button" class="btn btn-info" id="preview_bulk_text">
-                    <i class="fa fa-eye"></i> Preview Parsed Data
-                </button>
-                <button type="button" class="btn btn-default" id="clear_bulk_text">
-                    <i class="fa fa-eraser"></i> Clear
-                </button>
-                <button type="button" class="btn btn-warning" id="format_bulk_text">
-                    <i class="fa fa-align-left"></i> Auto-Format
-                </button>
-                <span class="text-muted" id="bulk_parse_status" style="margin-left: 15px;"></span>
+                <div style="font-size:12px; color:#777; margin-top:8px;">
+                    If our store usually sells an item for more (3+ sales, most higher), its price is raised and shows in
+                    <span style="color:#15803d;font-weight:700;">green</span>. Fill anything left blank in the table, then hit <strong>Save All Products</strong>.
+                </div>
+
+                <details style="margin-top:14px;">
+                    <summary style="cursor:pointer; color:#555; font-size:13px;">Already have a priced list? (CSV, pipe or tab format)</summary>
+                    <div style="margin-top:8px; font-size:13px;">
+                        Paste it in the box above and use these buttons instead. Formats:
+                        <ul style="margin:4px 0 8px; padding-left:20px;">
+                            <li><code>Product Name - Artist</code></li>
+                            <li><code>Product Name,Artist,Category,Subcategory,SKU,Price,Bin,Location</code> (Bin/Location optional)</li>
+                            <li><code>Product Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade</code></li>
+                            <li>Tab-separated, same order as CSV</li>
+                        </ul>
+                        <button type="button" class="btn btn-success btn-sm" id="parse_bulk_text">
+                            <i class="fa fa-plus"></i> Parse &amp; Add Products
+                        </button>
+                        <button type="button" class="btn btn-info btn-sm" id="preview_bulk_text">
+                            <i class="fa fa-eye"></i> Preview
+                        </button>
+                        <button type="button" class="btn btn-default btn-sm" id="clear_bulk_text">
+                            <i class="fa fa-eraser"></i> Clear
+                        </button>
+                        <button type="button" class="btn btn-warning btn-sm" id="format_bulk_text">
+                            <i class="fa fa-align-left"></i> Auto-Format
+                        </button>
+                    </div>
+                </details>
             </div>
             <div id="bulk_preview_container" style="display: none; margin-top: 15px;">
                 <div class="alert alert-warning">
@@ -2520,7 +2431,8 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
         clearTimeout(previewTimeout);
         previewTimeout = setTimeout(() => {
             const text = $(this).val().trim();
-            if (text.length > 10) { // Only preview if there's substantial text
+            // Plain typed lists go through "Price it" — only preview already-formatted lists.
+            if (text.length > 10 && /[,|\t]/.test(text)) {
                 const products = parseBulkProductText(text);
                 if (products.length > 0) {
                     showBulkPreview(products);
@@ -2597,8 +2509,10 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
             return;
         }
         
-        // Confirm before adding
-        if (!confirm(`Are you sure you want to add ${products.length} products to the table?`)) {
+        // Confirm before adding (skipped when "Price it" just filled the box)
+        const skipConfirm = $(this).data('skipConfirm');
+        $(this).data('skipConfirm', false);
+        if (!skipConfirm && !confirm(`Are you sure you want to add ${products.length} products to the table?`)) {
             return;
         }
         
@@ -2712,6 +2626,39 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
             if (!ids) $('html, body').animate({ scrollTop: $box.offset().top - 60 }, 200);
         }, 800);
     })();
+
+    // Sarah 2026-11-15: "Price it & add to table" — rough typed list → Claude → CSV → table.
+    $('#ai_price_bulk_text').on('click', function() {
+        const $btn = $(this);
+        const items = $('#bulk_product_text').val().trim();
+        if (!items) {
+            toastr.warning('Type your items in the box first, one per line.');
+            $('#bulk_product_text').focus();
+            return;
+        }
+        const n = items.split('\n').filter(l => l.trim()).length;
+        $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Pricing ' + n + ' item' + (n === 1 ? '' : 's') + '...');
+        $('#bulk_parse_status').html('This can take up to a minute for long lists.');
+        $.ajax({
+            url: "{{ route('product.massCreate.aiPrice') }}",
+            method: 'POST',
+            data: { items: items },
+            headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+            timeout: 120000
+        }).done(function(res) {
+            if (!res || !res.ok) {
+                $('#bulk_parse_status').html('<span class="text-danger">' + $('<div>').text((res && res.error) || 'Something went wrong.').html() + '</span>');
+                return;
+            }
+            $('#bulk_product_text').val(res.csv);
+            $('#bulk_preview_container').hide();
+            $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
+        }).fail(function() {
+            $('#bulk_parse_status').html('<span class="text-danger">Couldn\'t reach the server. Try again.</span>');
+        }).always(function() {
+            $btn.prop('disabled', false).html('<i class="fa fa-magic"></i> Price it &amp; add to table');
+        });
+    });
 
     // Clear bulk text
     $('#clear_bulk_text').on('click', function() {

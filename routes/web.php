@@ -426,6 +426,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/products/quick_add', 'ProductController@quickAdd');
     Route::post('/products/save_quick_product', 'ProductController@saveQuickProduct');
     Route::get('/product/mass-create', [ProductController::class, 'massCreate'])->name('product.massCreate');
+    Route::post('/product/mass-create/ai-price', [\App\Http\Controllers\MassAddAiPriceController::class, 'price'])->name('product.massCreate.aiPrice');
     Route::get('/product/mass-create/row', [ProductController::class, 'getMassProductRow'])->name('product.getMassProductRow');
     Route::get('/product/mass-create/buy-lookup', [ProductController::class, 'massCreateBuyLookup'])->name('product.massCreate.buyLookup');
     Route::get('/product/mass-create/get-products', [ProductController::class, 'massProductGetProducts'])->name('product.massCreate.getProduct');
