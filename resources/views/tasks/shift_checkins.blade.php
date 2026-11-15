@@ -30,6 +30,7 @@
                                 <span class="label label-success">Did it</span> {{ $l['end_at']->format('g:i A') }}
                             @elseif($l['end'] === 'not_done')
                                 <span class="label label-danger">Didn't do it</span> {{ $l['end_at']->format('g:i A') }}
+                                @if(!empty($l['reason']))<div style="color:#555;font-size:13px;margin-top:4px;white-space:pre-line;">{{ $l['reason'] }}</div>@endif
                             @else
                                 <span class="text-muted">—</span>
                             @endif

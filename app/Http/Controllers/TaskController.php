@@ -605,7 +605,7 @@ class TaskController extends Controller
      * which only the edit page can do). Never throws — the register close
      * must never break because of this.
      */
-    public static function recordEndOfShift($business_id, $userId, $registerId, $responses)
+    public static function recordEndOfShift($business_id, $userId, $registerId, $responses, $reasons = [])
     {
         if (!is_array($responses) || empty($responses)) {
             return;
@@ -618,6 +618,11 @@ class TaskController extends Controller
                 if (!in_array($resp, ['done', 'not_done'], true)) {
                     continue;
                 }
+                $reason = null;
+                if ($resp === 'not_done') {
+                    $reason = trim((string) (is_array($reasons) ? ($reasons[$task->id] ?? '') : ''));
+                    $reason = $reason === '' ? '(no reason given)' : mb_substr($reason, 0, 2000);
+                }
                 \App\TaskShiftCheckin::create([
                     'business_id' => $business_id,
                     'user_id' => $userId,
@@ -625,8 +630,17 @@ class TaskController extends Controller
                     'cash_register_id' => $registerId,
                     'phase' => 'end',
                     'response' => $resp,
+                    'reason' => $reason,
                     'task_title' => mb_substr((string) $task->title, 0, 200),
                 ]);
+                // The why also goes on the task itself so whoever picks it
+                // up next sees it in the task's notes.
+                if ($resp === 'not_done') {
+                    $task->notes()->create([
+                        'user_id' => $userId,
+                        'note' => "Didn't do it (end of shift): " . $reason,
+                    ]);
+                }
                 if ($resp === 'done' && $task->status !== 'complete'
                     && (!$task->requires_photo || $task->photo_confirmed_at)) {
                     $task->status = 'complete';
@@ -666,6 +680,7 @@ class TaskController extends Controller
                     'understood_at' => null,
                     'end' => null,
                     'end_at' => null,
+                    'reason' => null,
                 ];
             }
             if ($r->phase === 'start' && !$lines[$key]['understood_at']) {
@@ -674,6 +689,7 @@ class TaskController extends Controller
             if ($r->phase === 'end' && !$lines[$key]['end']) {
                 $lines[$key]['end'] = $r->response;
                 $lines[$key]['end_at'] = $r->created_at;
+                $lines[$key]['reason'] = $r->reason;
             }
             if ($r->created_at->lt($lines[$key]['date'])) {
                 $lines[$key]['date'] = $r->created_at;

@@ -363,10 +363,29 @@
 						<span class="label label-{{ ['high'=>'danger','medium'=>'warning','low'=>'default'][$t['priority']] ?? 'default' }}">{{ ucfirst($t['priority']) }}</span>
 						<span style="flex:1 1 180px;font-weight:600;color:#333;">{{ $t['title'] }}</span>
 						<label style="font-weight:600;color:#2e7d32;margin:0;cursor:pointer;"><input type="radio" name="task_end[{{ $t['id'] }}]" value="done" required @if($t['status']==='complete') checked @endif> I did it</label>
-						<label style="font-weight:600;color:#c62828;margin:0 0 0 8px;cursor:pointer;"><input type="radio" name="task_end[{{ $t['id'] }}]" value="not_done" required> I didn't do it</label>
+						<label style="font-weight:600;color:#c62828;margin:0 0 0 8px;cursor:pointer;"><input type="radio" name="task_end[{{ $t['id'] }}]" value="not_done" required class="end-task-notdone"> I didn't do it</label>
+						<textarea name="task_end_reason[{{ $t['id'] }}]" class="form-control end-task-reason" rows="2" maxlength="2000" placeholder="Why couldn't you complete it?" style="display:none;flex:1 1 100%;margin-top:6px;" disabled></textarea>
 					</div>
 					@endforeach
 				</div>
+				<script>
+				/* "I didn't do it" needs a reason: show + require the box for that task only. */
+				(function () {
+					var wrap = document.getElementById('end_shift_tasks');
+					if (!wrap) { return; }
+					wrap.addEventListener('change', function (e) {
+						if (!e.target || e.target.type !== 'radio') { return; }
+						var row = e.target.parentNode.parentNode;
+						var box = row.querySelector('.end-task-reason');
+						if (!box) { return; }
+						var on = e.target.value === 'not_done';
+						box.style.display = on ? 'block' : 'none';
+						box.disabled = !on;
+						box.required = on;
+						if (on) { box.focus(); }
+					});
+				})();
+				</script>
 			@elseif(!empty($due_tasks))
 				@include('tasks.partials.due_today_bubble', [
 					'dueTodayTasks' => $due_tasks,
