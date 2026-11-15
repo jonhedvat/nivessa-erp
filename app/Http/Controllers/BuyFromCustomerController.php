@@ -598,9 +598,18 @@ class BuyFromCustomerController extends Controller
         // blank form: no offer, no accept step, no approval box. He couldn't
         // finish the buy and each retry made another draft. Show the same
         // quote again with the error and the approval box open instead.
+        // One-time exception, Sarah 2026-11-14: BFC-001382 (Mike Lohr, Pico)
+        // was a real $40 store-credit buy but the seller left before signing.
+        // Lets an admin record it with no signature; the $40 was already put
+        // on his account by hand, so the payout is not added again below.
+        $oneOffNoSig = (int) ($id ?? $request->input('offer_id')) === 1382
+            && auth()->user()->hasRole('Admin#' . request()->session()->get('user.business_id'));
+
         try {
             $this->validateRequest($request, true);
-            $this->validateAcceptCompliance($request);
+            if (!$oneOffNoSig) {
+                $this->validateAcceptCompliance($request);
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->reshowQuoteWithErrors($request, $e);
         }
@@ -619,7 +628,7 @@ class BuyFromCustomerController extends Controller
             // sync). Inside the same transaction so a failure rolls back the
             // whole acceptance rather than leaving credit without a purchase.
             $created['credit'] = null;
-            if ($offer->payout_type === 'store_credit' && !$offer->is_donated) {
+            if ($offer->payout_type === 'store_credit' && !$offer->is_donated && (int) $offer->id !== 1382) {
                 $created['credit'] = $this->creditStoreCreditPayout($offer, $created['purchase']);
             }
             $created['offer_id'] = $offer->id;
