@@ -22,7 +22,52 @@ class CashRegisterUtil extends Util
         $count =  CashRegister::where('user_id', $user_id)
                                 ->where('status', 'open')
                                 ->count();
+        // A Manager doesn't count a drawer while a cashier is already on one
+        // at their store: they ring on that open drawer instead.
+        if ($count == 0 && !empty($this->sharedStoreRegisterForManager())) {
+            return 1;
+        }
         return $count;
+    }
+
+    /**
+     * Manager duty, no drawer of their own, and someone else has a register
+     * open at the manager's store: return that register (newest open) so the
+     * manager's sales post to the drawer the cash actually goes into.
+     * Never used for closing - nobody closes another person's register.
+     *
+     * @return \App\CashRegister|null
+     */
+    public function sharedStoreRegisterForManager()
+    {
+        if (session('pos_duty') !== 'manager') {
+            return null;
+        }
+        $loc = (int) session('pos_duty_location_id');
+        $business_id = (int) session('user.business_id');
+        if (!$loc || !$business_id || !auth()->check()) {
+            return null;
+        }
+        return CashRegister::where('business_id', $business_id)
+            ->where('location_id', $loc)
+            ->where('status', 'open')
+            ->where('user_id', '!=', auth()->user()->id)
+            ->orderByDesc('created_at')
+            ->first();
+    }
+
+    /**
+     * The register this user's sale payments go into: their own open one, or
+     * (Manager duty) the cashier's open one at their store.
+     *
+     * @return \App\CashRegister|null
+     */
+    public function registerForCurrentUserPayments()
+    {
+        $register = CashRegister::where('user_id', auth()->user()->id)
+                                ->where('status', 'open')
+                                ->first();
+        return $register ?: $this->sharedStoreRegisterForManager();
     }
 
     /**
@@ -140,10 +185,7 @@ class CashRegisterUtil extends Util
      */
     public function addSellPayments($transaction, $payments)
     {
-        $user_id = auth()->user()->id;
-        $register =  CashRegister::where('user_id', $user_id)
-                                ->where('status', 'open')
-                                ->first();
+        $register = $this->registerForCurrentUserPayments();
 
         // Non-cashier roles (Admin / Discogs / Warehouse) ring without an open
         // drawer, so there's nothing to post payments into. Skip rather than
@@ -189,10 +231,7 @@ class CashRegisterUtil extends Util
      */
     public function updateSellPayments($status_before, $transaction, $payments)
     {
-        $user_id = auth()->user()->id;
-        $register =  CashRegister::where('user_id', $user_id)
-                                ->where('status', 'open')
-                                ->first();
+        $register = $this->registerForCurrentUserPayments();
         //If draft -> final then add all
         //If final -> draft then refund all
         //If final -> final then update payments
@@ -279,10 +318,7 @@ class CashRegisterUtil extends Util
      */
     public function refundSell($transaction)
     {
-        $user_id = auth()->user()->id;
-        $register =  CashRegister::where('user_id', $user_id)
-                                ->where('status', 'open')
-                                ->first();
+        $register = $this->registerForCurrentUserPayments();
 
         $total_payment = CashRegisterTransaction::where('transaction_id', $transaction->id)
                             ->select(

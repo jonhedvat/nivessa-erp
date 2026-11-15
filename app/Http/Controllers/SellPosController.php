@@ -4968,7 +4968,9 @@ class SellPosController extends Controller
 
         // Manager duty (Sarah 10/13) skips the drawer count, so with no open
         // register a Manager is sent to switch to Cashier instead of opening
-        // one here. Same rule as before: no register, no ringing.
+        // one here. Same rule as before: no register, no ringing. If a cashier
+        // already has a drawer open at the manager's store, countOpenedRegister
+        // counts it and the manager rings on that drawer, no count needed.
         if (!$skip_register && session('pos_duty') === 'manager' && $this->cashRegisterUtil->countOpenedRegister() == 0) {
             return redirect()->action('SellPosController@managerNeedsRegister');
         }
@@ -4978,7 +4980,8 @@ class SellPosController extends Controller
             return redirect()->action('CashRegisterController@create', ['sub_type' => $sub_type]);
         }
 
-        $register_details = $this->cashRegisterUtil->getCurrentCashRegister(auth()->user()->id);
+        $register_details = $this->cashRegisterUtil->getCurrentCashRegister(auth()->user()->id)
+            ?: $this->cashRegisterUtil->sharedStoreRegisterForManager();
 
         $walk_in_customer = $this->contactUtil->getWalkInCustomer($business_id);
         $walk_in_display_name = 'Ask for phone # to look up rewards account';
