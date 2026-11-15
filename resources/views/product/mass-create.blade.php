@@ -2657,6 +2657,10 @@
             const hist = res.history || [];
             if (hist.length) {
                 const rows = hist.map(h => {
+                    if (h.card) {
+                        return '<li><strong>' + esc(h.item) + '</strong>: online about ' + money(h.ai) + ', our ' + esc(h.kind) + ' usually sell for ' + money(h.median)
+                            + ' &rarr; <strong style="color:#b45309;">met in the middle at ' + money(h.price) + '</strong></li>';
+                    }
                     const speed = h.days === null ? '' : (h.days <= 1 ? ', sells same day' : ', sells in ~' + h.days + ' days');
                     const raised = h.price > h.ai
                         ? ' &rarr; <strong style="color:#15803d;">raised ' + money(h.ai) + ' to ' + money(h.price) + '</strong>' + (h.fast ? ' (fast seller)' : '')
