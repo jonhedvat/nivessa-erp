@@ -220,8 +220,11 @@ class MassAddAiPriceController extends Controller
                 . "This is what we have actually sold cards for in the last 2 years:\n" . implode("\n", $lines) . "\n"
                 . "For an ordinary raw (ungraded) single card - base cards, common inserts, junk-wax era (1986-1995) cards - price it at a middle ground: "
                 . "about halfway between our usual price for that kind of card and the realistic online SOLD price, and not above the '9 in 10' figure. "
-                . "Only price above that for cards that really are worth more: graded / slabbed, true rookie cards, autographs, scarce inserts or parallels, sealed packs and boxes. "
-                . "A crease or other damage lowers the price. For a card, artist is the player (or the franchise, e.g. Pokemon).";
+                . "That middle ground and the '9 in 10' cap are ONLY for ordinary raw cards. Cards that really are worth more - graded / slabbed (PSA, BGS, SGC), "
+                . "true rookie cards, autographs, scarce inserts or parallels, sealed boxes - get the full realistic online SOLD price, with no cap. "
+                . "A crease or other damage lowers the price. "
+                . "Card names: keep the player's name in the product name ('Michael Jordan 1990-91 NBA Hoops #65'), and keep any grading in the name too ('... PSA 9') "
+                . "since PSA / BGS grades do not fit the condition field. Artist is the player (or the franchise, e.g. Pokemon).";
         } catch (\Exception $e) {
             \Log::warning('MassAddAiPrice card guide failed', ['error' => $e->getMessage()]);
             return '';
