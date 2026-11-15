@@ -347,6 +347,9 @@ $(document).ready(function() {
 
     $(document).on('click', '.submit_product_form', function(e) {
         e.preventDefault();
+        // Double-click guard (Sarah 2026-11-14): a second click while the
+        // first save is in flight created a duplicate product.
+        if (window.__nivessaProductSubmitting) return false;
 
         __nivessaStripRequiredFromHidden();
         __nivessaSyncPriceMirrors();
@@ -413,6 +416,14 @@ $(document).ready(function() {
                 return;
             }
             if ($('form#product_add_form').valid()) {
+                window.__nivessaProductSubmitting = true;
+                $('.submit_product_form').prop('disabled', true);
+                // If the save never navigates away (e.g. the remote SKU check
+                // fails), unlock after 10s so they aren't stuck.
+                setTimeout(function () {
+                    window.__nivessaProductSubmitting = false;
+                    $('.submit_product_form').prop('disabled', false);
+                }, 10000);
                 $('form#product_add_form').submit();
             }
         };
