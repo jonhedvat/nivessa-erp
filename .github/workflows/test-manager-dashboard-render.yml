@@ -1,0 +1,73 @@
+# Test: renders the Manager Dashboard server-side as Zakary (Pico), as Luis
+# (Hollywood) and as an admin, and prints which sections loaded plus a few
+# headline numbers. Also checks a regular employee is refused. Read-only.
+
+name: Test manager dashboard render
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 0
+
+      - name: Render manager dashboard
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 180s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+            $_SERVER['HTTP_USER_AGENT'] = 'test-harness';
+            $_SERVER['REQUEST_METHOD'] = 'GET';
+            $_SERVER['HTTP_HOST'] = 'playlist.nivessa.com';
+            $_SERVER['SERVER_NAME'] = 'playlist.nivessa.com';
+            date_default_timezone_set('America/Los_Angeles');
+            request()->setLaravelSession(app('session.store'));
+            app('session.store')->start();
+            $run = function ($label, $userId, $params) { Auth::loginUsingId($userId); app('session.store')->forget('user'); (new App\Http\Middleware\SetSessionData())->handle(request(), function ($r) { return $r; }); $r = Illuminate\Http\Request::create('/manager-dashboard', 'GET', $params); $r->setLaravelSession(app('session.store')); $t = microtime(true); try { $v = app(App\Http\Controllers\StoreManagerDashboardController::class)->index($r); $d = $v->getData(); $html = $v->render(); echo "$label: RENDER PASS (" . strlen($html) . " bytes, " . round(microtime(true) - $t, 1) . "s) store=" . $d['store'] . " canSwitch=" . json_encode($d['canSwitch']) . "\n"; echo "  failed sections: " . (empty($d['errors']) ? 'none' : implode(',', array_keys($d['errors']))) . "\n"; echo "  roster=" . count($d['roster']) . " priced_all=" . $d['priced']['total'] . " genres=" . count($d['genres']) . " shifts=" . count($d['shiftRows']) . " tasks_done=" . $d['tasks']['done'] . " in_progress=" . $d['tasks']['in_progress'] . " late_rows=" . count($d['late']['rows']) . " not_done=" . count($d['checkins']['not_done']) . " low=" . count($d['low']) . " web=" . json_encode($d['web']) . "\n"; $k = array_slice($d['daily'], 0, 3, true); echo "  daily(last 3)=" . json_encode(array_map(function ($x) { return $x['total']; }, $k)) . "\n"; $n = 0; foreach ($d['people'] as $p) { if ($n++ < 4) { echo "  person: " . json_encode($p) . "\n"; } } } catch (\Throwable $e) { echo "$label: FAIL - " . get_class($e) . ": " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine() . "\n"; } };
+            $zak = DB::table('users')->where('business_id', 1)->whereRaw('LOWER(TRIM(first_name)) = ?', ['zakary'])->first();
+            $luis = DB::table('users')->where('business_id', 1)->whereRaw('LOWER(TRIM(first_name)) = ?', ['luis'])->first();
+            echo "zakary user id: " . ($zak->id ?? 'NOT FOUND') . " | luis user id: " . ($luis->id ?? 'NOT FOUND') . "\n";
+            if ($zak) { $run('ZAK default', $zak->id, []); $run('ZAK asks for hollywood (must stay pico)', $zak->id, ['store' => 'hollywood', 'days' => 30]); }
+            if ($luis) { $run('LUIS default', $luis->id, []); $run('LUIS asks for pico (must stay hollywood)', $luis->id, ['store' => 'pico', 'days' => 90]); }
+            $admin = App\User::where('business_id', 1)->where('status', 'active')->get()->first(function ($u) { return $u->hasRole('Admin#1'); });
+            if ($admin) { $run('ADMIN hollywood', $admin->id, ['store' => 'hollywood', 'days' => 7]); }
+            $staff = App\User::where('business_id', 1)->where('status', 'active')->where('allow_login', 1)->get()->first(function ($u) { return !$u->hasRole('Admin#1') && !in_array(strtolower(trim($u->first_name)), ['zakary', 'luis']) && !in_array(strtolower(trim((string) $u->email)), ['jonhedvat@gmail.com', 'sarah@nivessa.com']); });
+            if ($staff) { Auth::loginUsingId($staff->id); try { app(App\Http\Controllers\StoreManagerDashboardController::class)->index(request()); echo "STAFF BLOCKED: FAIL (page rendered for a regular employee)\n"; } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) { echo "STAFF BLOCKED: PASS (" . $e->getStatusCode() . ")\n"; } catch (\Throwable $e) { echo "STAFF BLOCKED: ERROR " . $e->getMessage() . "\n"; } }
+            PHP
+            echo "=== recent dashboard warnings ==="
+            grep -h "Manager dashboard section failed" storage/logs/laravel*.log 2>/dev/null | tail -12
+            echo "=== done ==="

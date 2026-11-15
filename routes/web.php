@@ -2000,6 +2000,9 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/manager-checkins/updates/delete', 'ManagerCheckinController@deleteUpdate')->name('manager-checkins.updates.delete');
     Route::post('/manager-checkins/delete', 'ManagerCheckinController@deleteCheckin')->name('manager-checkins.delete');
 
+    // Manager Dashboard: Zakary sees Pico, Luis sees Hollywood (read-only).
+    Route::get('/manager-dashboard', 'StoreManagerDashboardController@index')->name('manager-dashboard.index');
+
     // EOS: V/TO, Accountability Chart, Rocks, Scorecard, Issues, To-dos and
     // the weekly L10 for the leadership team. JSON sidecar storage/app/eos.json.
     Route::get('/eos', 'EosController@index')->name('eos.index');
