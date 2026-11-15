@@ -2264,7 +2264,7 @@ Nevermind,Nirvana,Cassettes - Used,Rock,,18.00,</pre>
                 data: JSON.stringify({ items: items }),
                 contentType: 'application/json',
                 headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
-                timeout: 60000,
+                timeout: 180000,
                 success: function (resp) { resolve((resp && resp.results) || {}); },
                 error: function () { resolve(null); },
             });
