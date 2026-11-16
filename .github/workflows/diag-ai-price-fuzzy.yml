@@ -1,0 +1,33 @@
+# Read-only: shows which of our products the Mass Add AI pricer treats as the
+# same title for a fixed list of items (no AI calls, no writes).
+
+name: Diag AI price fuzzy match (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X3RpbWVfbGltaXQoMCk7CiR1ID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ0pvbmF0aGFuJyktPndoZXJlKCdsYXN0X25hbWUnLCdsaWtlJywnSGVkdmF0JScpLT5maXJzdCgpOwokbSA9IG5ldyBSZWZsZWN0aW9uTWV0aG9kKEFwcFxIdHRwXENvbnRyb2xsZXJzXE1hc3NBZGRBaVByaWNlQ29udHJvbGxlcjo6Y2xhc3MsICdzdG9yZUhpc3RvcnknKTsgJG0tPnNldEFjY2Vzc2libGUodHJ1ZSk7CiRjID0gYXBwKEFwcFxIdHRwXENvbnRyb2xsZXJzXE1hc3NBZGRBaVByaWNlQ29udHJvbGxlcjo6Y2xhc3MpOwokdGVzdHMgPSBbCiBbJ0Nob2NvbGF0ZSBTdGFyZmlzaCBhbmQgdGhlIEhvdCBEb2cgRmxhdm9yZWQgV2F0ZXInLCdMaW1wIEJpemtpdCcsJ1ZpbnlsIC0gU2VhbGVkJ10sIFsnR3JlYXRlc3QgSGl0cycsJ1F1ZWVuJywnVmlueWwgLSBVc2VkJ10sIFsnR3JlYXRlc3QgSGl0cycsJ1RvbSBQZXR0eScsJ1ZpbnlsIC0gVXNlZCddLAogWydOZXZlcm1pbmQnLCdOaXJ2YW5hJywnQ2Fzc2V0dGVzIC0gVXNlZCddLCBbJ1RoZSBTbGltIFNoYWR5IExQJywnRW1pbmVtJywnQ2Fzc2V0dGVzIC0gVXNlZCddLCBbJ1JvbWFuIENhbmRsZScsJ0VsbGlvdHQgU21pdGgnLCdDRCAtIFNlYWxlZCddLAogWydLaW5kIG9mIEJsdWUnLCdNaWxlcyBEYXZpcycsJ0NEIC0gVXNlZCddLCBbJ0tpbmQgb2YgQmx1ZScsJ01pbGVzIERhdmlzJywnVmlueWwgLSBVc2VkJ10sIFsnU3RhciBUcmVrIERpc2NvdmVyeScsJycsJ0RWRCddLCBbJ1RoZSBCb2R5Z3VhcmQnLCcnLCdEVkQnXSwKIFsnUnVtb3VycycsJ0ZsZWV0d29vZCBNYWMnLCdWaW55bCAtIFVzZWQnXSwgWydUaHJpbGxlcicsJ01pY2hhZWwgSmFja3NvbicsJ1ZpbnlsIC0gVXNlZCddLCBbJ1JlbWFpbiBpbiBMaWdodCcsJ1RhbGtpbmcgSGVhZHMnLCdWaW55bCAtIFVzZWQnXSwKIFsnTG92ZSBEZWx1eGUnLCdTYWRlJywnQ2Fzc2V0dGVzIC0gVXNlZCddLCBbJ1RpdGFuaWMnLCcnLCdWSFMnXSwgWydKdXJhc3NpYyBQYXJrJywnJywnVkhTJ10sIFsnVGhlIExpZmUgb2YgYSBTaG93Z2lybCcsJ1RheWxvciBTd2lmdCcsJ0NEIC0gU2VhbGVkJ10sCiBbJ0xlZCBaZXBwZWxpbiBJVicsJ0xlZCBaZXBwZWxpbicsJ1ZpbnlsIC0gVXNlZCddLCBbJ0xlZCBaZXBwZWxpbicsJ0xlZCBaZXBwZWxpbicsJ1ZpbnlsIC0gVXNlZCddLCBbJ0FiYmV5IFJvYWQnLCdUaGUgQmVhdGxlcycsJ1ZpbnlsIC0gVXNlZCddLAogWydUaGUgV2FsbCcsJ1BpbmsgRmxveWQnLCdWaW55bCAtIFVzZWQnXSwgWydEYXJrIFNpZGUgb2YgdGhlIE1vb24nLCdQaW5rIEZsb3lkJywnVmlueWwgLSBVc2VkJ10sIFsnUHVycGxlIFJhaW4nLCdQcmluY2UnLCdWaW55bCAtIFVzZWQnXSwKIFsnU2NhcmZhY2UnLCcnLCdEVkQnXSwgWydUaGUgTGlvbiBLaW5nJywnJywnVkhTJ10sIFsnSGVhcnRiZWF0cycsJycsJ0Nhc3NldHRlcyAtIFVzZWQnXSwgWydJbGxtYXRpYycsJ05hcycsJ1ZpbnlsIC0gU2VhbGVkJ10sIFsnQmFkJywnTWljaGFlbCBKYWNrc29uJywnVmlueWwgLSBVc2VkJ10sCiBbJ01pY2hhZWwgSm9yZGFuIDE5OTAtOTEgTkJBIEhvb3BzICM2NScsJ01pY2hhZWwgSm9yZGFuJywnVHJhZGluZyBDYXJkcyddLCBbJ01pY2hhZWwgSm9yZGFuIDE5ODktOTAgSG9vcHMgIzIwMCcsJ01pY2hhZWwgSm9yZGFuJywnVHJhZGluZyBDYXJkcyddLApdOwpmb3JlYWNoICgkdGVzdHMgYXMgJHQpIHsKICAkcyA9IG1pY3JvdGltZSh0cnVlKTsKICAkaCA9ICRtLT5pbnZva2UoJGMsICR1LT5idXNpbmVzc19pZCwgJHRbMF0sICR0WzFdLCAkdFsyXSk7CiAgcHJpbnRmKCJcblEgJXMgfCAlcyB8ICVzICAoJS4yZnMpXG4iLCAkdFswXSwgJHRbMV0sICR0WzJdLCBtaWNyb3RpbWUodHJ1ZSkgLSAkcyk7CiAgaWYgKCEkaCkgeyBlY2hvICIgIG5vIG1hdGNoXG4iOyBjb250aW51ZTsgfQogIHByaW50ZigiICBzYWxlcz0lZCBtZWRpYW49JS4yZiBwNzU9JS4yZiBkYXlzPSVzIGZhc3Q9JXNcbiIsICRoWydzYWxlcyddLCAkaFsnbWVkaWFuJ10sICRoWydwNzUnXSwgdmFyX2V4cG9ydCgkaFsnZGF5cyddLCB0cnVlKSwgJGhbJ2Zhc3QnXSA/ICd5JyA6ICduJyk7CiAgZm9yZWFjaCAoJGhbJ21hdGNoJ10gYXMgJG4pIGVjaG8gIiAgfiAkblxuIjsKfQo=' | base64 -d > /tmp/diag_ai_price_fuzzy.php
+            php /tmp/diag_ai_price_fuzzy.php
+            rm -f /tmp/diag_ai_price_fuzzy.php
