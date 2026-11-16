@@ -19,7 +19,17 @@ use Illuminate\Support\Facades\DB;
 class MassAddAiPriceController extends Controller
 {
     const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-    const MODEL = 'claude-sonnet-5-5';
+    const MODEL_ROUTINE = 'claude-haiku-5-5';
+    const MODEL_ESCALATE = 'claude-sonnet-5-5';
+    const BATCH_SIZE = 25;
+    // USD per million tokens, used to log cost. Confirm against Anthropic's current price list.
+    const RATES = [
+        'claude-haiku-5-5' => ['in' => 1.00, 'out' => 5.00],
+        'claude-sonnet-5-5' => ['in' => 3.00, 'out' => 15.00],
+    ];
+
+    /** Our sales for each numbered line of the current request (set by price()). */
+    private $comparables = [];
 
     public function price(Request $request)
     {
@@ -41,6 +51,9 @@ class MassAddAiPriceController extends Controller
         $fallbackModel = $cfg['model'] ?? config('services.anthropic.model', 'claude-haiku-4-5');
 
         $businessId = $request->session()->get('user.business_id');
+        $userId = auth()->id();
+        $sessionId = (string) \Illuminate\Support\Str::uuid();
+
         $combos = collect(Category::flattenedProductCategoryCombos($businessId) ?? []);
         $categoryList = $combos
             ->groupBy(function ($c) { return explode(' > ', $c['label'], 2)[0]; })
@@ -57,23 +70,27 @@ class MassAddAiPriceController extends Controller
             return $statsLower[mb_strtolower($cat . ($sub !== '' ? ' > ' . $sub : ''))] ?? null;
         };
 
+        // Constant for the whole business, so it is cached across batches and clicks.
         $system = "You price used and new items for Nivessa, a retail record store with shops on Pico Blvd and in Hollywood, Los Angeles. "
             . "Staff type a rough list of items they are adding to inventory. For each item, work out the product name and artist, "
             . "pick the best category and subcategory, and give a fair in-store retail price based on current market value (Discogs / eBay sold prices) for the format and condition given. "
             . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl. "
             . "Sealed items are new stock: price them at what a record store charges for a new copy today, not at a used or online-discount price.\n"
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
-            . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n\n"
-            . "Call the price_items tool once with every item, each exactly once. price is a plain number. "
+            . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n"
+            . "Some items come with 'Our sales' lines: what we actually sold that item for. Price in line with them unless they are clearly a different item.\n\n"
+            . "Call the price_items tool once with every numbered item, each exactly once, with n set to its item number. price is a plain number. "
             . "condition is the grade ONLY if staff wrote one (Sealed, M, NM, VG+, VG, G+, G, F, P), otherwise an empty string. "
+            . "confidence is 'low' if you are not sure of the exact pressing, edition or condition, otherwise 'high'. "
+            . "high_value is true if the item could be worth $40 or more used. edition_unclear is true if the exact pressing or edition is hard to tell apart. "
             . "If something is not music (a toy, a book, a card), use the closest category from the list.\n\n"
             . "Copy Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7\", 45 RPM:\n"
             . $categoryList
             . $this->cardPriceGuide($cardStats);
 
-        $call = function ($model) use ($apiKey, $system, $items) {
-            $client = new Client(['timeout' => 90]);
-            return $client->post(self::ANTHROPIC_URL, [
+        $callModel = function (string $model, string $userText) use ($apiKey, $system) {
+            $client = new Client(['timeout' => 120]);
+            $response = $client->post(self::ANTHROPIC_URL, [
                 'headers' => [
                     'x-api-key' => $apiKey,
                     'anthropic-version' => '2023-06-01',
@@ -82,76 +99,150 @@ class MassAddAiPriceController extends Controller
                 'json' => [
                     'model' => $model,
                     'max_tokens' => 8000,
-                    'system' => $system,
-                    'tools' => [[
-                        'name' => 'price_items',
-                        'description' => 'Record the priced items.',
-                        'input_schema' => [
-                            'type' => 'object',
-                            'properties' => [
-                                'items' => [
-                                    'type' => 'array',
-                                    'items' => [
-                                        'type' => 'object',
-                                        'properties' => [
-                                            'name' => ['type' => 'string'],
-                                            'artist' => ['type' => 'string'],
-                                            'category' => ['type' => 'string'],
-                                            'subcategory' => ['type' => 'string'],
-                                            'price' => ['type' => 'number'],
-                                            'condition' => ['type' => 'string'],
-                                            'premium' => [
-                                                'type' => 'boolean',
-                                                'description' => 'Trading cards only: true if the card is graded / slabbed, a true rookie card, autographed, a scarce insert or parallel, or a sealed box. false for ordinary raw cards and for everything that is not a card.',
-                                            ],
-                                        ],
-                                        'required' => ['name', 'artist', 'category', 'subcategory', 'price'],
-                                    ],
-                                ],
-                            ],
-                            'required' => ['items'],
-                        ],
-                    ]],
+                    'system' => [['type' => 'text', 'text' => $system, 'cache_control' => ['type' => 'ephemeral']]],
+                    'tools' => [self::priceTool()],
                     'tool_choice' => ['type' => 'tool', 'name' => 'price_items'],
-                    'messages' => [['role' => 'user', 'content' => "Items:\n" . $items]],
+                    'messages' => [['role' => 'user', 'content' => $userText]],
                 ],
                 'http_errors' => false,
             ]);
+            $body = (string) $response->getBody();
+            return ['status' => $response->getStatusCode(), 'body' => $body, 'data' => json_decode($body, true) ?: []];
+        };
+
+        // One pricing request for a batch of numbered lines (n => text).
+        // Logs token use and cost per item.
+        $ask = function (string $model, array $batch, bool $escalated) use ($callModel, $fallbackModel, $businessId, $userId, $sessionId) {
+            $userText = "Items (n = item number, return every n once):\n";
+            foreach ($batch as $n => $line) {
+                $userText .= $n . '. ' . $line . "\n";
+                $c = $this->comparables[$n] ?? null;
+                if ($c && !empty($c['match'])) {
+                    $userText .= '   Our sales: ' . implode('; ', array_slice($c['match'], 0, 3)) . ' - sold ' . $c['sales'] . 'x, usually $' . $c['median']
+                        . ($c['fast'] ? ', sells fast' : '') . "\n";
+                }
+            }
+
+            $res = $callModel($model, $userText);
+            $used = $model;
+            if (in_array($res['status'], [400, 403, 404], true) && stripos($res['body'], 'model') !== false && $model !== $fallbackModel) {
+                $used = $fallbackModel;
+                $res = $callModel($fallbackModel, $userText);
+            }
+            if ($res['status'] !== 200) {
+                return ['error' => $res, 'rows' => [], 'model' => $used];
+            }
+
+            $rows = [];
+            $keys = array_keys($batch);
+            $pos = 0;
+            foreach (($res['data']['content'] ?? []) as $block) {
+                if (($block['type'] ?? '') !== 'tool_use' || !is_array($block['input']['items'] ?? null)) continue;
+                foreach ($block['input']['items'] as $it) {
+                    if (!is_array($it)) continue;
+                    $n = isset($it['n']) && isset($batch[(int) $it['n']]) ? (int) $it['n'] : ($keys[$pos] ?? null);
+                    $pos++;
+                    if ($n !== null) $rows[$n] = $it;
+                }
+            }
+
+            $u = $res['data']['usage'] ?? [];
+            $in = (int) ($u['input_tokens'] ?? 0);
+            $out = (int) ($u['output_tokens'] ?? 0);
+            $cw = (int) ($u['cache_creation_input_tokens'] ?? 0);
+            $cr = (int) ($u['cache_read_input_tokens'] ?? 0);
+            $cost = $this->costUsd($used, $in, $out, $cw, $cr);
+            $count = max(1, count($batch));
+            $logRows = [];
+            foreach ($batch as $n => $line) {
+                $logRows[] = [
+                    'business_id' => $businessId, 'user_id' => $userId, 'session_id' => $sessionId,
+                    'item_no' => $n, 'item_text' => mb_substr($line, 0, 255), 'model' => $used,
+                    'escalated' => $escalated ? 1 : 0, 'batch_size' => $count,
+                    'input_tokens' => (int) round($in / $count), 'output_tokens' => (int) round($out / $count),
+                    'cache_write_tokens' => (int) round($cw / $count), 'cache_read_tokens' => (int) round($cr / $count),
+                    'cost_usd' => round($cost / $count, 6),
+                    'created_at' => now(), 'updated_at' => now(),
+                ];
+            }
+            try {
+                DB::table('ai_pricing_usage')->insert($logRows);
+            } catch (\Exception $e) {
+                \Log::warning('MassAddAiPrice usage log failed', ['error' => $e->getMessage()]);
+            }
+            return ['error' => null, 'rows' => $rows, 'model' => $used];
+        };
+
+        $aiError = function (array $res) {
+            $msg = $res['data']['error']['message'] ?? '';
+            \Log::warning('MassAddAiPrice Anthropic error', ['status' => $res['status'], 'message' => $msg]);
+            if ($res['status'] === 401) {
+                return response()->json(['ok' => false, 'error' => 'The AI key was rejected. A manager needs to update it at /admin/help-assistant.']);
+            }
+            if (stripos($msg, 'credit') !== false) {
+                return response()->json(['ok' => false, 'error' => 'The AI account is out of credit.']);
+            }
+            return response()->json(['ok' => false, 'error' => 'The AI service had an error. Try again in a minute.']);
         };
 
         try {
-            $response = $call(self::MODEL);
-            // If the account can't use the pricing model, fall back to the help-assistant model.
-            if (in_array($response->getStatusCode(), [400, 403, 404], true)) {
-                $body = (string) $response->getBody();
-                if (stripos($body, 'model') !== false) {
-                    $response = $call($fallbackModel);
-                }
+            $numbered = [];
+            $i = 0;
+            foreach (preg_split('/\r\n|\r|\n/', $items) as $l) {
+                $l = trim($l);
+                if ($l === '') continue;
+                $numbered[++$i] = $l;
             }
 
-            $status = $response->getStatusCode();
-            $data = json_decode((string) $response->getBody(), true);
-            if ($status !== 200) {
-                $msg = $data['error']['message'] ?? '';
-                \Log::warning('MassAddAiPrice Anthropic error', ['status' => $status, 'message' => $msg]);
-                if ($status === 401) {
-                    return response()->json(['ok' => false, 'error' => 'The AI key was rejected. A manager needs to update it at /admin/help-assistant.']);
-                }
-                if (stripos($msg, 'credit') !== false) {
-                    return response()->json(['ok' => false, 'error' => 'The AI account is out of credit.']);
-                }
-                return response()->json(['ok' => false, 'error' => 'The AI service had an error. Try again in a minute.']);
+            // Comparables: what we have sold that looks like each line. Retrieved
+            // before the AI sees the batch, and used to decide what needs a second look.
+            $this->comparables = [];
+            $conflict = [];
+            foreach ($numbered as $n => $l) {
+                $c = $this->storeHistory($businessId, $l, '', '');
+                $this->comparables[$n] = $c;
+                // Our sales for this title are spread out (e.g. a $5 copy and a $40 copy).
+                $conflict[$n] = $c && $c['median'] > 0 && $c['p75'] > 2 * $c['median'];
             }
 
-            $rows = null;
-            foreach (($data['content'] ?? []) as $block) {
-                if (($block['type'] ?? '') === 'tool_use' && isset($block['input']['items'])) {
-                    $rows = $block['input']['items'];
-                }
+            // 1. Routine pass on Haiku, batches of BATCH_SIZE lines.
+            $final = [];
+            foreach (array_chunk($numbered, self::BATCH_SIZE, true) as $chunk) {
+                $res = $ask(self::MODEL_ROUTINE, $chunk, false);
+                if ($res['error']) return $aiError($res['error']);
+                foreach ($res['rows'] as $n => $r) $final[$n] = $r;
             }
-            if (!is_array($rows) || empty($rows)) {
-                \Log::warning('MassAddAiPrice unreadable answer', ['content' => $data['content'] ?? null]);
+            if (empty($final)) {
+                \Log::warning('MassAddAiPrice unreadable answer');
                 return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
+            }
+
+            // 2. Escalate to Sonnet: high value, unclear edition, low confidence,
+            //    premium cards, or our own sales for the title are spread out.
+            $need = [];
+            foreach ($numbered as $n => $l) {
+                $r = $final[$n] ?? null;
+                if (!$r
+                    || !empty($r['premium']) || !empty($r['high_value']) || !empty($r['edition_unclear'])
+                    || (($r['confidence'] ?? 'high') === 'low')
+                    || (float) preg_replace('/[^0-9.]/', '', (string) ($r['price'] ?? 0)) >= 40
+                    || !empty($conflict[$n])) {
+                    $need[$n] = $l;
+                }
+            }
+            foreach (array_chunk($need, self::BATCH_SIZE, true) as $chunk) {
+                $res = $ask(self::MODEL_ESCALATE, $chunk, true);
+                if ($res['error']) {
+                    \Log::warning('MassAddAiPrice escalation failed; keeping routine prices', ['status' => $res['error']['status']]);
+                    continue;
+                }
+                foreach ($res['rows'] as $n => $r) $final[$n] = $r;
+            }
+
+            // Keep every line in order; a line with no answer comes back with its text only.
+            $rows = [];
+            foreach ($numbered as $n => $l) {
+                $rows[] = $final[$n] ?? ['name' => $l];
             }
 
             // Sarah 2026-11-15: check OUR sales history so the AI never underprices
@@ -197,9 +288,7 @@ class MassAddAiPriceController extends Controller
                     // Sarah 2026-11-16: the AI runs about a third low on sealed vinyl / CDs
                     // and cassettes. No exact history for this item, so never go below
                     // what three quarters of our sales in its category + genre went for.
-                    // Tested on 124 sold items: sealed CDs badly low 7 -> 1 of 14, sealed
-                    // vinyl 6 -> 2 of 13. 45s are left out (it made them worse), and so is
-                    // anything staff graded G+ or lower.
+                    // 45s are left out (it made them worse), and so is anything graded G+ or lower.
                     $cs = $statFor($cat, $sub);
                     if ($cs && $ai < $cs['p25']) {
                         $price = (float) $cs['p25'];
@@ -210,6 +299,7 @@ class MassAddAiPriceController extends Controller
                 if ($h && $price == $ai) {
                     $notes[] = $histNote($price); // we have history and the AI was not under it
                 }
+
                 // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
                 $lines[] = implode(' | ', [$name, $artist, $cat, $sub, '', $price > 0 ? number_format($price, 2, '.', '') : '', '', '', $cond]);
             }
@@ -222,6 +312,51 @@ class MassAddAiPriceController extends Controller
             \Log::warning('MassAddAiPrice failed', ['error' => $e->getMessage()]);
             return response()->json(['ok' => false, 'error' => "Couldn't reach the AI service. Try again in a minute."]);
         }
+    }
+
+    /** Tool the model fills in: one entry per numbered item. */
+    private static function priceTool()
+    {
+        return [
+            'name' => 'price_items',
+            'description' => 'Record the priced items.',
+            'input_schema' => [
+                'type' => 'object',
+                'properties' => [
+                    'items' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'n' => ['type' => 'integer', 'description' => 'The item number from the list.'],
+                                'name' => ['type' => 'string'],
+                                'artist' => ['type' => 'string'],
+                                'category' => ['type' => 'string'],
+                                'subcategory' => ['type' => 'string'],
+                                'price' => ['type' => 'number'],
+                                'condition' => ['type' => 'string'],
+                                'confidence' => ['type' => 'string', 'enum' => ['high', 'low']],
+                                'high_value' => ['type' => 'boolean'],
+                                'edition_unclear' => ['type' => 'boolean'],
+                                'premium' => [
+                                    'type' => 'boolean',
+                                    'description' => 'Trading cards only: true if the card is graded / slabbed, a true rookie card, autographed, a scarce insert or parallel, or a sealed box. false for ordinary raw cards and for everything that is not a card.',
+                                ],
+                            ],
+                            'required' => ['n', 'name', 'artist', 'category', 'subcategory', 'price'],
+                        ],
+                    ],
+                ],
+                'required' => ['items'],
+            ],
+        ];
+    }
+
+    /** Dollars for one call. Rates are per million tokens; cache writes cost 1.25x input, reads 0.1x. */
+    private function costUsd($model, $in, $out, $cacheWrite, $cacheRead)
+    {
+        $r = self::RATES[$model] ?? self::RATES[self::MODEL_ESCALATE];
+        return ($in * $r['in'] + $out * $r['out'] + $cacheWrite * $r['in'] * 1.25 + $cacheRead * $r['in'] * 0.1) / 1000000;
     }
 
     /**
