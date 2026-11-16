@@ -1,0 +1,74 @@
+# ONE-TIME (2026-11-16): 5 sales rung on the Pico computer on 11/13 while it
+# was still logged in as Andy went into his Hollywood register. Move them to
+# Pico (location_id 2 -> 1) and move their stock: +qty back at Hollywood,
+# -qty at Pico. Snapshot first; skips any sale already moved.
+name: Fix Andy Pico sales 11-13 (one-time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "yes = write, anything else = dry run"
+        required: true
+        default: "no"
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Fix
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APPLY: ${{ github.event.inputs.apply }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          envs: APPLY
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export APPLY
+            php artisan tinker --no-ansi <<'PHP'
+            $apply = getenv('APPLY') === 'yes';
+            $ids = [187046, 187053, 187055, 187091, 187101];
+            $from = 2; $to = 1;
+            $tx = \DB::table('transactions')->whereIn('id', $ids)->where('created_by', 64)->where('type', 'sell')->get(['id','invoice_no','location_id','final_total','transaction_date']);
+            $todo = $tx->where('location_id', $from)->pluck('id')->all();
+            echo 'TX ' . json_encode($tx) . "\n";
+            echo 'TODO ' . json_encode($todo) . "\n";
+            $lines = \DB::table('transaction_sell_lines')->whereIn('transaction_id', $todo)->whereNull('parent_sell_line_id')->get(['transaction_id','product_id','variation_id','quantity','quantity_returned']);
+            $moves = [];
+            foreach ($lines as $l) { $q = (float) $l->quantity - (float) $l->quantity_returned; if ($q == 0) continue; $k = $l->product_id . ':' . $l->variation_id; $moves[$k] = ($moves[$k] ?? 0) + $q; }
+            $vldBefore = [];
+            foreach ($moves as $k => $q) { [$p, $v] = explode(':', $k); foreach ([$from, $to] as $loc) { $vldBefore[] = ['p' => $p, 'v' => $v, 'loc' => $loc, 'qty' => \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $loc)->value('qty_available')]; } }
+            echo 'MOVES ' . json_encode($moves) . "\n";
+            echo 'VLD_BEFORE ' . json_encode($vldBefore) . "\n";
+            if (!$apply) { echo "DRY RUN, nothing written\n"; return; }
+            if (!$todo) { echo "nothing to do\n"; return; }
+            $key = 'andy-pico-sales-1113-' . now()->format('Y-m-d_His');
+            \Storage::disk('local')->put("admin-snapshots/{$key}.json", json_encode(['action' => 'move 11/13 Pico sales off Andy HW register', 'transactions' => $tx, 'lines' => $lines, 'vld_before' => $vldBefore], JSON_PRETTY_PRINT));
+            echo "SNAPSHOT storage/app/admin-snapshots/{$key}.json\n";
+            \DB::transaction(function () use ($todo, $moves, $from, $to) {
+              foreach ($moves as $k => $q) {
+                [$p, $v] = explode(':', $k);
+                \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $from)->increment('qty_available', $q);
+                $has = \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $to)->exists();
+                if ($has) { \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $to)->decrement('qty_available', $q); }
+                else { $pv = \DB::table('variations')->where('id', $v)->value('product_variation_id'); \DB::table('variation_location_details')->insert(['product_id' => $p, 'product_variation_id' => $pv, 'variation_id' => $v, 'location_id' => $to, 'qty_available' => -$q, 'created_at' => now(), 'updated_at' => now()]); }
+              }
+              \DB::table('transactions')->whereIn('id', $todo)->where('location_id', $from)->update(['location_id' => $to, 'updated_at' => now()]);
+            });
+            echo 'AFTER TX ' . json_encode(\DB::table('transactions')->whereIn('id', $ids)->get(['id','location_id'])) . "\n";
+            $after = []; foreach ($moves as $k => $q) { [$p, $v] = explode(':', $k); foreach ([$from, $to] as $loc) $after[] = ['v' => $v, 'loc' => $loc, 'qty' => \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $loc)->value('qty_available')]; }
+            echo 'VLD_AFTER ' . json_encode($after) . "\n";
+            PHP
+            echo "=== done ==="
