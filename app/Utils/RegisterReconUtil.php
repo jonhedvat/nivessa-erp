@@ -807,6 +807,23 @@ class RegisterReconUtil
         return [$expected, $cashBuys];
     }
 
+    /**
+     * Expected closing cash for one closed register, the same maths the
+     * daily recon uses: opening + cash in/out, less cash buys, store credit
+     * booked as cash and cash expenses. Used by the Register Report, whose
+     * old formula (opening + cash sales) ignored buys/refunds/change runs
+     * and made every Hollywood shift look short (Sarah 2026-11-16).
+     */
+    public static function expectedClosingFor(int $business_id, $r): float
+    {
+        $row = self::registerCash([$r->id])->get($r->id);
+        if (!$row) {
+            $row = (object) ['opening_cash' => 0, 'cash_net' => 0];
+        }
+        [$expected] = self::shiftExpected($business_id, $r, $row);
+        return round($expected, 2);
+    }
+
     /** Sum of cash_register_transactions per register, as drawerFlags reads them. */
     private static function registerCash(array $ids)
     {

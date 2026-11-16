@@ -1171,6 +1171,18 @@ class ReportController extends Controller
                 $registers->whereDate('cash_registers.created_at', '>=', $start_date)
                         ->whereDate('cash_registers.created_at', '<=', $end_date);
             }
+                // Expected cash = opening + cash in/out - cash buys - store credit
+                // booked as cash - cash expenses (RegisterReconUtil). The old
+                // opening + cash sales ignored buys, refunds and change runs.
+                $expectedCache = [];
+                $expectedFor = function ($row) use (&$expectedCache, $business_id) {
+                    if (!isset($expectedCache[$row->id])) {
+                        $expectedCache[$row->id] = ($row->status == 'close' && !empty($row->closed_at))
+                            ? \App\Utils\RegisterReconUtil::expectedClosingFor((int) $business_id, $row)
+                            : (float) ($row->opening_balance ?? 0) + (float) ($row->total_cash_payment ?? 0);
+                    }
+                    return $expectedCache[$row->id];
+                };
             return Datatables::of($registers)
                 ->editColumn('total_card_payment', function ($row) {
                     return '<span data-orig-value="' . $row->total_card_payment . '" >' . $this->transactionUtil->num_f($row->total_card_payment, true) . ' (' . $row->total_card_slips . ')</span>';
@@ -1235,19 +1247,15 @@ class ReportController extends Controller
                     }
                     return $html;
                 })
-                ->addColumn('expected_closing', function ($row) {
-                    $opening = $row->opening_balance ?? 0;
-                    $cash_sales = $row->total_cash_payment ?? 0;
-                    $expected = $opening + $cash_sales;
+                ->addColumn('expected_closing', function ($row) use ($expectedFor) {
+                    $expected = $expectedFor($row);
                     return $row->status == 'close' ? '<span data-orig-value="' . $expected . '" >' . $this->transactionUtil->num_f($expected, true) . '</span>' : '';
                 })
-                ->addColumn('reconciliation_difference', function ($row) {
+                ->addColumn('reconciliation_difference', function ($row) use ($expectedFor) {
                     if ($row->status != 'close') {
                         return '';
                     }
-                    $opening = $row->opening_balance ?? 0;
-                    $cash_sales = $row->total_cash_payment ?? 0;
-                    $expected = $opening + $cash_sales;
+                    $expected = $expectedFor($row);
                     $actual = $row->closing_amount ?? 0;
                     $diff = $actual - $expected;
                     $cls = abs($diff) < 0.01 ? 'text-success' : 'text-danger';
