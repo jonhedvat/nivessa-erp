@@ -8519,6 +8519,9 @@ class SellPosController extends Controller
             $paid_amount = $this->transactionUtil->getTotalPaid($transaction->id);
             $total_payable = $transaction->final_total - $paid_amount;
 
+            if (!in_array($request->gateway, ['razorpay', 'stripe'], true)) {
+                abort(400);
+            }
             $pay_function = 'pay_' . $request->gateway;
 
             $payment_id = $this->$pay_function($transaction, $total_payable, $request);
