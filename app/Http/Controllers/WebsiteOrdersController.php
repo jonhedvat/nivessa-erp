@@ -752,6 +752,12 @@ class WebsiteOrdersController extends Controller
         if ($tracking === '') {
             return $back->with('error', 'Enter a tracking number for Discogs order ' . $id . '.');
         }
+        // Junk like "1" sent buyers "your order is on its way" for orders
+        // that never shipped (11/16/2026): only real carrier numbers.
+        $clean = preg_replace('/\s+/', '', $tracking);
+        if (!preg_match('/^[A-Za-z0-9]{10,40}$/', $clean) || preg_match_all('/\d/', $clean) < 8) {
+            return $back->with('error', '"' . $tracking . '" is not a tracking number for Discogs order ' . $id . '. Scan or paste the real one from the label. Nothing was sent to the buyer.');
+        }
         $resp = $this->websiteApi('POST', "/erp/discogs/orders/{$id}/ship", [
             'trackingNumber' => $tracking,
             'changedBy' => trim(auth()->user()->first_name . ' ' . auth()->user()->last_name) ?: auth()->user()->username,

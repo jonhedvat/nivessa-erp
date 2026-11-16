@@ -1462,7 +1462,7 @@
                     <form method="POST" action="{{ route('website-orders.shipDiscogs', ['id' => $d['id']]) }}"
                           onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Marking...';">
                       {{ csrf_field() }}
-                      <input type="text" name="tracking_number" required placeholder="Tracking number"
+                      <input type="text" name="tracking_number" required minlength="10" pattern="\s*[A-Za-z0-9\s]{10,48}\s*" title="Scan or paste the full tracking number from the label" placeholder="Tracking number"
                              style="width:100%;font-size:13px;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;box-sizing:border-box;margin-bottom:6px;">
                       <button type="submit" class="wo-btn wo-btn-primary">Mark shipped</button>
                     </form>
