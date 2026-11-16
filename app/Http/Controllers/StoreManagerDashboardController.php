@@ -118,7 +118,7 @@ class StoreManagerDashboardController extends Controller
 
         // 1. Priced all time, by person and format.
         $priced = $safe('priced', function () use ($ck, $ttl, $business_id, $loc, $roster) {
-            return Cache::remember($ck . 'priced:' . md5(implode(',', array_keys($roster))), $ttl, function () use ($business_id, $loc, $roster) {
+            return Cache::remember($ck . 'priced2:' . md5(implode(',', array_keys($roster))), $ttl, function () use ($business_id, $loc, $roster) {
                 return $this->pricedAllTime($business_id, $loc, $roster);
             });
         }, ['people' => [], 'formats' => [], 'total' => 0]);
@@ -181,6 +181,11 @@ class StoreManagerDashboardController extends Controller
             });
         }, []);
 
+        // 9b. Value listed (sale price x qty) in the window, per person.
+        $valueListed = $safe('value', function () use ($business_id, $loc, $roster, $fromStr) {
+            return $this->valueListed($business_id, $loc, $roster, $fromStr);
+        }, []);
+
         // 10. Items whose stock a shelf count changed, per person.
         $shelf = $safe('shelf', function () use ($business_id, $location, $roster, $fromStr) {
             return $this->shelfCountChanges($business_id, $location, $roster, $fromStr);
@@ -238,6 +243,8 @@ class StoreManagerDashboardController extends Controller
                 'scheduled' => (int) ($late['by_user'][$uid]['scheduled'] ?? 0),
                 'said_done' => (int) ($checkins['by_user'][$uid]['done'] ?? 0),
                 'said_not_done' => (int) ($checkins['by_user'][$uid]['not_done'] ?? 0),
+                'value_all' => (float) ($priced['people'][$uid]['value'] ?? 0),
+                'value' => (float) ($valueListed[$uid] ?? 0),
                 'shelf_changed' => (int) ($shelf[$uid] ?? 0),
                 'shipped_web' => $shipped === null ? null : (int) ($shipped[$uid]['web'] ?? 0),
                 'shipped_discogs' => $shipped === null ? null : (int) ($shipped[$uid]['discogs'] ?? 0),
@@ -273,6 +280,29 @@ class StoreManagerDashboardController extends Controller
             'lateMin' => self::LATE_MIN,
             'lowWeeks' => self::LOW_WEEKS,
         ]);
+    }
+
+    /**
+     * [user_id => dollars]: what the items each person priced at this store
+     * since $fromStr sell for (current sale price inc. tax x quantity).
+     */
+    private function valueListed($business_id, $loc, array $roster, $fromStr)
+    {
+        if (!$roster) {
+            return [];
+        }
+        $out = [];
+        $rows = $this->pricedBase($business_id, $loc)
+            ->leftJoin('variations as va', 'va.id', '=', 'pl.variation_id')
+            ->whereIn('t.created_by', array_keys($roster))
+            ->whereRaw('COALESCE(pl.created_at, t.created_at) >= ?', [$fromStr])
+            ->groupBy('t.created_by')
+            ->select('t.created_by', DB::raw('SUM(pl.quantity * COALESCE(va.sell_price_inc_tax, 0)) as value'))
+            ->get();
+        foreach ($rows as $r) {
+            $out[(int) $r->created_by] = (float) $r->value;
+        }
+        return $out;
     }
 
     /* ---------- 10. shelf counts ---------- */
@@ -357,7 +387,9 @@ class StoreManagerDashboardController extends Controller
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             ->whereIn('t.created_by', array_keys($roster))
             ->groupBy('t.created_by', 'c.name')
-            ->select('t.created_by', DB::raw("COALESCE(NULLIF(c.name, ''), 'Uncategorized') as format"), DB::raw('SUM(pl.quantity) as qty'))
+            ->leftJoin('variations as va', 'va.id', '=', 'pl.variation_id')
+            ->select('t.created_by', DB::raw("COALESCE(NULLIF(c.name, ''), 'Uncategorized') as format"), DB::raw('SUM(pl.quantity) as qty'),
+                DB::raw('SUM(pl.quantity * COALESCE(va.sell_price_inc_tax, 0)) as value'))
             ->get();
         foreach ($rows as $r) {
             $uid = (int) $r->created_by;
@@ -366,9 +398,10 @@ class StoreManagerDashboardController extends Controller
                 continue;
             }
             if (!isset($out['people'][$uid])) {
-                $out['people'][$uid] = ['total' => 0, 'formats' => []];
+                $out['people'][$uid] = ['total' => 0, 'value' => 0.0, 'formats' => []];
             }
             $out['people'][$uid]['total'] += $qty;
+            $out['people'][$uid]['value'] += (float) $r->value;
             $out['people'][$uid]['formats'][$r->format] = ($out['people'][$uid]['formats'][$r->format] ?? 0) + $qty;
             $out['formats'][$r->format] = ($out['formats'][$r->format] ?? 0) + $qty;
             $out['total'] += $qty;
