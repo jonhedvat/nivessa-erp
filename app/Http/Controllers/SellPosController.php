@@ -686,6 +686,56 @@ class SellPosController extends Controller
             }
         }
 
+        // Sarah 2026-11-16: the time clock beats the POS login. On 11/13 the
+        // Pico computer was still logged in as Andy (who was at Hollywood),
+        // so Pico Clover charges got pinned on him while Zak was clocked in
+        // at Pico. If exactly one person was clocked in at the charge's store
+        // at that moment, that's who to ask. Fails silently.
+        try {
+            if (\Schema::hasTable('time_clock_punches')) {
+                $punches = DB::table('time_clock_punches')
+                    ->whereNull('voided_at')
+                    ->whereNotNull('location_id')
+                    ->where('clock_in_at', '<=', $to->toDateTimeString())
+                    ->where(function ($q) use ($from) {
+                        $q->whereNull('clock_out_at')->orWhere('clock_out_at', '>=', $from->toDateTimeString());
+                    })
+                    ->get(['user_id', 'location_id', 'clock_in_at', 'clock_out_at']);
+                foreach ($unclaimed_clover_payments as $cp) {
+                    $cpLoc = $cp->location_id !== null ? (int) $cp->location_id : 0;
+                    if (!$cpLoc) {
+                        continue;
+                    }
+                    // clover_payments.paid_at is stored in LA time on most
+                    // rows and UTC on some; try as stored, then as UTC.
+                    $raw = (string) $cp->paid_at;
+                    $tries = [strtotime($raw), strtotime($raw . ' UTC')];
+                    foreach ($tries as $ts) {
+                        $on = [];
+                        foreach ($punches as $p) {
+                            if ((int) $p->location_id !== $cpLoc) {
+                                continue;
+                            }
+                            $in = strtotime((string) $p->clock_in_at);
+                            $out = $p->clock_out_at ? strtotime((string) $p->clock_out_at) : PHP_INT_MAX;
+                            if ($ts >= $in && $ts <= $out) {
+                                $on[(int) $p->user_id] = true;
+                            }
+                        }
+                        if (count($on) === 1) {
+                            $cashier_for_orphan[$cp->id] = (int) array_key_first($on);
+                            break;
+                        }
+                        if (count($on) > 1) {
+                            break; // more than one person on: leave the POS-based guess
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('orphan cashier time-clock pass failed: ' . $e->getMessage());
+        }
+
         $cashierNameById = [];
         $cashierIds = array_values(array_unique($cashier_for_orphan));
         if (!empty($cashierIds)) {
