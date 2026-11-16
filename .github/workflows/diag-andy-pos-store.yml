@@ -26,7 +26,5 @@ jobs:
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
-            php artisan tinker --no-ansi <<'PHP'
-            foreach (\DB::table('transaction_sell_lines as l')->join('products as p','p.id','=','l.product_id')->leftJoin('variations as v','v.id','=','l.variation_id')->whereIn('l.transaction_id',[187046,187053,187055,187091,187101])->get(['l.transaction_id','l.variation_id','p.name','p.artist','v.sub_sku','p.enable_stock','l.unit_price_inc_tax','p.created_at']) as $r) { $vl=\DB::table('variation_location_details')->where('variation_id',$r->variation_id)->pluck('qty_available','location_id'); $hist=\DB::table('transaction_sell_lines as l2')->join('transactions as t','t.id','=','l2.transaction_id')->where('l2.variation_id',$r->variation_id)->where('t.type','sell')->count(); $pur=\DB::table('purchase_lines as pl')->join('transactions as t','t.id','=','pl.transaction_id')->where('pl.variation_id',$r->variation_id)->selectRaw('t.location_id, t.type, sum(pl.quantity) q')->groupBy('t.location_id','t.type')->get(); echo 'ITEM '.json_encode([$r->transaction_id,$r->variation_id,$r->artist,$r->name,$r->sub_sku,'stock'=>$r->enable_stock,'price'=>round($r->unit_price_inc_tax,2),'vld'=>$vl,'sells'=>$hist,'in'=>$pur])."\n"; }
-            PHP
+            php artisan register-recon:post --date=2026-11-13 --dry 2>&1 | grep -v Deprecated | tail -30
             echo "=== done ==="
