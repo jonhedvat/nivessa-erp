@@ -1777,9 +1777,14 @@ class SellPosController extends Controller
         // Sarah 2026-05-13: per-store totals are sourced from the shared
         // dayByStoreTotals() helper so the Clover EOD Reconciliation
         // report reuses the same numbers — "i want the recent feed to be
+<<<<<<< Updated upstream
         // the source of truth". Helper handles the gross-vs-gross math,
         // Whatnot split, and TZ-correct Clover row pull for the date
         // range. See helper docblock for the ERP / Clover inclusion rules.
+=======
+        // the source of truth". See helper docblock for the ERP / Clover
+        // / Whatnot inclusion rules and the gross-vs-gross math.
+>>>>>>> Stashed changes
         $totals = self::dayByStoreTotals(
             (int) $business_id,
             $start_date,
@@ -1787,6 +1792,7 @@ class SellPosController extends Controller
             !empty($location_id) ? (int) $location_id : null,
             $business_locations
         );
+<<<<<<< Updated upstream
         $today_by_store = $totals['by_store'];
         // Website orders picked up and paid on Clover (Pico #31308, 9/27):
         // the helper leaves web orders out of ERP as "paid online", but the
@@ -1812,9 +1818,16 @@ class SellPosController extends Controller
         $erp_today_count      = array_sum(array_column($today_by_store, 'erp_count'));
         $erp_today_card_total = $erp_today_total;
         $erp_today_cash_total = 0.0;
+=======
+        $today_by_store        = $totals['by_store'];
+        $erp_today_total       = $totals['erp_total'];
+        $erp_today_count       = $totals['erp_count'];
+        $erp_today_card_total  = $erp_today_total;
+        $erp_today_cash_total  = 0.0;
+>>>>>>> Stashed changes
         $erp_today_other_total = 0.0;
-        $clover_today_total = array_sum(array_column($today_by_store, 'clover'));
-        $clover_today_count = array_sum(array_column($today_by_store, 'clover_count'));
+        $clover_today_total    = $totals['clover_total'];
+        $clover_today_count    = $totals['clover_count'];
 
         // TZ diagnostic — append ?tz_debug=1 when the today bucket is
         // mysteriously wide and we need to see how paid_at strings are
