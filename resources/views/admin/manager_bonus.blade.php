@@ -4,7 +4,7 @@
 @section('content')
 <section class="content-header">
     <h1>Store Manager Bonus</h1>
-    <p style="color:#222;">Each month you and Jon set a store contribution plan (Clover net sales minus cost of what sold, labor and rent). The manager earns a flat bonus for hitting 100%, 110% or 120% of it. The sales plan is shown as a guide. Starts 12/01/26, paid once a month at the payroll closest to month end.</p>
+    <p style="color:#222;">Each month you and Jon set a realistic sales plan for each store (Clover net sales, after tax). The manager earns a flat bonus for hitting 100%, 110% or 120% of plan, and only if the store stayed within its labor-hour budget. Starts 12/01/26, paid once a month at the payroll closest to month end.</p>
 </section>
 
 <style>
@@ -39,8 +39,7 @@
         <input type="hidden" name="month" value="{{ $month }}">
         <b style="width:100%;">Set the {{ \Carbon::parse($month . '-01')->format('F Y') }} plan</b>
         @foreach ($rows as $r)
-            <label style="margin:0;">{{ $r['store'] }} sales<br><input type="text" name="plan_{{ $r['location_id'] }}" value="{{ $r['plan_set'] ? number_format($r['plan'], 0, '.', '') : '' }}" placeholder="{{ number_format($r['suggested'], 0, '.', '') }}" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc; width:130px;"></label>
-            <label style="margin:0;">{{ $r['store'] }} contribution<br><input type="text" name="cplan_{{ $r['location_id'] }}" value="{{ $r['cplan_set'] ? number_format($r['cplan'], 0, '.', '') : '' }}" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc; width:130px;"></label>
+            <label style="margin:0;">{{ $r['store'] }}<br><input type="text" name="plan_{{ $r['location_id'] }}" value="{{ $r['plan_set'] ? number_format($r['plan'], 0, '.', '') : '' }}" placeholder="{{ number_format($r['suggested'], 0, '.', '') }}" style="padding:6px 10px; border-radius:8px; border:1px solid #ccc; width:140px;"></label>
         @endforeach
         <button class="btn btn-primary">Save plan</button>
     </form>
@@ -69,7 +68,7 @@
                 <tr><td>This year's {{ $r['prev_label'] }} average x {{ number_format($r['season_ratio'], 2) }}</td><td>${{ number_format($r['season_projection'], 0) }}</td></tr>
                 @endif
                 @if (!$r['plan_set'])<tr><td>Suggested plan (last year + half the recent growth)</td><td>${{ number_format($r['suggested'], 0) }}</td></tr>@endif
-                <tr><td><b>Sales plan for {{ \Carbon::parse($month . '-01')->format('F') }}</b></td><td><b>@if($r['plan_set'])${{ number_format($r['plan'], 0) }}@else<span class="mb-no">not set yet, no bonus until it is</span>@endif</b></td></tr>
+                <tr><td><b>Plan for {{ \Carbon::parse($month . '-01')->format('F') }}</b></td><td><b>@if($r['plan_set'])${{ number_format($r['plan'], 0) }}@else<span class="mb-no">not set yet, no bonus until it is</span>@endif</b></td></tr>
             </table>
 
             @if (!empty($r['contrib']))
@@ -80,7 +79,7 @@
                     <tr><td>Cost of what sold ({{ $c['cost_ratio'] }}% of sales, from the ERP)</td><td>-${{ number_format($c['cogs'], 0) }}</td></tr>
                     <tr><td>Labor ({{ number_format($c['hours'], 0) }} clocked hrs at pay rates + 12% payroll tax)</td><td>-${{ number_format($c['labor'], 0) }}</td></tr>
                     <tr><td>Rent</td><td>-${{ number_format($c['rent'], 0) }}</td></tr>
-                    <tr><td><b>Contribution</b></td><td><b>${{ number_format($c['contribution'], 0) }}</b> ({{ $c['sales'] > 0 ? round($c['contribution'] / $c['sales'] * 100) : 0 }}% of sales)</td></tr>
+                    <tr><td><b>Contribution</b></td><td><b>${{ number_format($c['contribution'], 0) }}</b></td></tr>
                     @if (count($c['no_rate']))<tr><td colspan="2" style="color:#b42318;">No pay rate set for: {{ implode(', ', $c['no_rate']) }} (their hours are not in labor)</td></tr>@endif
                 </table>
             @endif
@@ -93,17 +92,13 @@
                 @endforeach
             </table>
 
-            <h4 style="margin-top:18px;">Bonus (on store contribution)</h4>
+            <h4 style="margin-top:18px;">Bonus</h4>
             <table>
-                <tr><th>Hit</th><th>{{ $r['store'] }} contribution</th><th>Bonus</th></tr>
-                @if ($r['cplan_set'])
-                    @foreach ($r['tiers'] as $pct => $amt)
-                        <tr><td>{{ $pct }}% of plan</td><td>${{ number_format($r['cplan'] * $pct / 100, 0) }}</td><td>${{ number_format($amt, 0) }}</td></tr>
-                    @endforeach
-                    <tr><td>Under 100%</td><td>below ${{ number_format($r['cplan'], 0) }}</td><td>$0</td></tr>
-                @else
-                    <tr><td colspan="3" class="mb-no">Contribution plan not set yet, no bonus until it is</td></tr>
-                @endif
+                <tr><th>Hit</th><th>{{ $r['store'] }} sales (Clover net)</th><th>Bonus</th></tr>
+                @foreach ($r['tiers'] as $pct => $amt)
+                    <tr><td>{{ $pct }}% of plan</td><td>${{ number_format($r['plan'] * $pct / 100, 0) }}</td><td>${{ number_format($amt, 0) }}</td></tr>
+                @endforeach
+                <tr><td>Under 100%</td><td>below ${{ number_format($r['plan'], 0) }}</td><td>$0</td></tr>
             </table>
 
             @if (!$r['through'])
@@ -111,13 +106,14 @@
             @else
                 <table style="margin-top:14px;">
                     <tr><th>{{ $r['complete'] ? 'Whole month' : 'Month so far (through ' . $r['through'] . ')' }}</th><th>Amount</th></tr>
-                    <tr><td>Store contribution</td><td>${{ number_format($r['contrib']['contribution'] ?? 0, 0) }}</td></tr>
-                    <tr><td>Contribution plan{{ $r['complete'] ? '' : ' for these days' }}</td><td>${{ number_format($r['cplan_to_date'], 0) }}</td></tr>
-                    <tr><td>% of plan</td><td>{{ $r['c_pct'] }}%</td></tr>
+                    <tr><td>Clover net sales</td><td>${{ number_format($r['sales'], 2) }}</td></tr>
+                    <tr><td>Plan{{ $r['complete'] ? '' : ' for these days' }}</td><td>${{ number_format($r['plan_to_date'], 2) }}</td></tr>
+                    <tr><td>% of plan</td><td>{{ $r['pct_of_plan'] }}%</td></tr>
                     @if (!$r['complete'] && $r['next_tier'])
-                        <tr><td>To reach {{ $r['next_tier']['pct'] }}% (${{ number_format($r['next_tier']['amount'], 0) }} bonus)</td><td>${{ number_format($r['next_tier']['sales'], 0) }} contribution for the month</td></tr>
+                        <tr><td>To reach {{ $r['next_tier']['pct'] }}% (${{ number_format($r['next_tier']['amount'], 0) }} bonus)</td><td>${{ number_format($r['next_tier']['sales'], 0) }} for the month</td></tr>
                     @endif
-                    <tr><td>Sales so far vs sales plan (guide)</td><td>${{ number_format($r['sales'], 0) }} of ${{ number_format($r['plan_to_date'], 0) }}</td></tr>
+                    <tr><td>Labor hours (time clock) vs budget</td><td>{{ number_format($r['hours'], 1) }} of {{ number_format($r['budget']) }} hrs
+                        @if ($r['within_budget'])<span class="mb-ok">within budget</span>@else<span class="mb-no">over budget, no bonus</span>@endif</td></tr>
                     <tr><td><b>Bonus earned</b>{{ $r['complete'] ? '' : ' so far' }}</td><td class="mb-big">${{ number_format($r['earned'], 2) }}</td></tr>
                     <tr><td>Paid</td><td>${{ number_format($r['paid'], 2) }}</td></tr>
                 </table>
