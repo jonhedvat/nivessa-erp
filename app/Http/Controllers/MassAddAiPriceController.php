@@ -338,7 +338,8 @@ class MassAddAiPriceController extends Controller
             $clean = function ($v) { return trim(str_replace(['|', "\n", "\r"], ' ', (string) $v)); };
             $lines = [];
             $notes = [];
-            foreach ($rows as $r) {
+            $webList = array_values($this->web);
+            foreach ($rows as $idx => $r) {
                 if (!is_array($r)) continue;
                 $name = $clean($r['name'] ?? '');
                 if ($name === '') continue;
@@ -351,6 +352,14 @@ class MassAddAiPriceController extends Controller
 
                 $h = $this->storeHistory($businessId, $name, $artist, $cat);
                 $floor = $h ? $h['floor'] : 0;
+                // Fast sellers (within 5 days on average) should not be the cheapest price online:
+                // never below the web comparables we found for this line.
+                if ($h && $h['days'] !== null && $h['days'] <= 5) {
+                    $wl = $webList[$idx] ?? null;
+                    foreach ([$wl['discogs'] ?? null, $wl['ebay']['median'] ?? null] as $webPrice) {
+                        if ($webPrice && $webPrice > $floor) $floor = $webPrice;
+                    }
+                }
                 $histNote = function ($price) use ($h, $name, $artist, $ai) {
                     return ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
@@ -626,7 +635,7 @@ class MassAddAiPriceController extends Controller
             // Sarah 2026-11-16: items that sell fast are not priced cheap. The floor rises
             // with how quickly we historically sold it (median days to first sale).
             if ($medDays !== null && $medDays <= 5) {
-                $floor = $p90;
+                $floor = max($p90, round($median * 1.25, 2));
             } elseif ($medDays !== null && $medDays <= 30) {
                 $floor = $p75;
             } elseif ($medDays !== null && $medDays <= 60) {
