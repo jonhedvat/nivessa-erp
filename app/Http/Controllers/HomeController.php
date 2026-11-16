@@ -829,8 +829,18 @@ class HomeController extends Controller
         // Prefer the logged-in user's own assigned location so multi-store staff
         // see their store's goal, not whichever location has the lowest id.
         $permitted_loc_ids = auth()->user()->permitted_locations();
-        $my_default_loc_id = null;
-        if (is_array($permitted_loc_ids) && !empty($permitted_loc_ids)) {
+        // Sarah 2026-11-16: Andy (both stores) rang Hollywood on 11/13 but the
+        // tally showed Pico, the lowest location id. Use the store of the
+        // register he is working first (open one, else his latest today).
+        $my_default_loc_id = \DB::table('cash_registers')
+            ->where('user_id', $me_id)
+            ->where(function ($q) use ($today_start) {
+                $q->where('status', 'open')->orWhere('created_at', '>=', $today_start);
+            })
+            ->orderByRaw("status = 'open' DESC")
+            ->orderByDesc('created_at')
+            ->value('location_id');
+        if (!$my_default_loc_id && is_array($permitted_loc_ids) && !empty($permitted_loc_ids)) {
             $my_default_loc_id = \DB::table('business_locations')
                 ->where('business_id', $business_id)
                 ->whereIn('id', $permitted_loc_ids)
