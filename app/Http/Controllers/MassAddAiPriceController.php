@@ -51,11 +51,17 @@ class MassAddAiPriceController extends Controller
             ->implode("\n");
 
         $cardStats = $this->cardStats($businessId);
+        // Case-insensitive lookup of our sold-price range for "Category > Subcategory".
+        $statsLower = array_change_key_case($cardStats, CASE_LOWER);
+        $statFor = function ($cat, $sub) use ($statsLower) {
+            return $statsLower[mb_strtolower($cat . ($sub !== '' ? ' > ' . $sub : ''))] ?? null;
+        };
 
         $system = "You price used and new items for Nivessa, a retail record store with shops on Pico Blvd and in Hollywood, Los Angeles. "
             . "Staff type a rough list of items they are adding to inventory. For each item, work out the product name and artist, "
             . "pick the best category and subcategory, and give a fair in-store retail price based on current market value (Discogs / eBay sold prices) for the format and condition given. "
-            . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl.\n"
+            . "If no condition is given, assume used in good condition (VG+). If no format is given, assume LP vinyl. "
+            . "Sealed items are new stock: price them at what a record store charges for a new copy today, not at a used or online-discount price.\n"
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
             . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n\n"
             . "Call the price_items tool once with every item, each exactly once. price is a plain number. "
@@ -172,15 +178,28 @@ class MassAddAiPriceController extends Controller
                     $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
                         'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
-                } elseif (stripos($cat, 'Trading Card') === 0 && empty($r['premium']) && isset($cardStats[$cat . ($sub !== '' ? ' > ' . $sub : '')])) {
+                } elseif (stripos($cat, 'Trading Card') === 0) {
                     // Ordinary raw card we have no exact history for: the AI's online
                     // price runs well above walk-in prices, so meet in the middle
                     // with what this kind of card usually sells for here.
-                    $cs = $cardStats[$cat . ($sub !== '' ? ' > ' . $sub : '')];
-                    if ($ai > $cs['median']) {
+                    $cs = empty($r['premium']) ? $statFor($cat, $sub) : null;
+                    if ($cs && $ai > $cs['median']) {
                         $price = (float) round(min(($ai + $cs['median']) / 2, max($cs['p90'], $cs['median'])));
                         $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat];
+                    }
+                } elseif ($ai > 0 && stripos($cat, '7"') !== 0 && !in_array(strtoupper($cond), ['G+', 'G', 'F', 'P'], true)) {
+                    // Sarah 2026-11-16: the AI runs about a third low on sealed vinyl / CDs
+                    // and cassettes. No exact history for this item, so never go below
+                    // what three quarters of our sales in its category + genre went for.
+                    // Tested on 124 sold items: sealed CDs badly low 7 -> 1 of 14, sealed
+                    // vinyl 6 -> 2 of 13. 45s are left out (it made them worse), and so is
+                    // anything staff graded G+ or lower.
+                    $cs = $statFor($cat, $sub);
+                    if ($cs && $ai < $cs['p25']) {
+                        $price = (float) $cs['p25'];
+                        $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''), 'low' => true, 'ai' => $ai, 'price' => $price,
+                            'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $cat . ($sub !== '' ? ' > ' . $sub : '')];
                     }
                 }
                 // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
