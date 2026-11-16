@@ -26,5 +26,7 @@ jobs:
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
-            php artisan register-recon:post --date=2026-11-13 --dry 2>&1 | grep -v Deprecated | tail -30
+            php artisan tinker --no-ansi <<'PHP'
+            foreach (\DB::table('time_clock_punches as p')->leftJoin('users as u','u.id','=','p.user_id')->where('p.clock_in_at','>=','2026-11-13 00:00:00')->where('p.clock_in_at','<','2026-11-14 03:00:00')->orderBy('p.clock_in_at')->get(['u.first_name','p.location_id','p.clock_in_at','p.clock_out_at','p.voided_at']) as $r) echo 'PUNCH '.json_encode($r)."\n";
+            PHP
             echo "=== done ==="
