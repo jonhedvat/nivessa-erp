@@ -95,7 +95,7 @@
     {{-- Team, in the picked window --}}
     <div class="md-box">
         <div class="md-h">Your team, last {{ $days }} days</div>
-        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
+        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
         <div class="md-scroll">
         <table class="md-t">
             <thead><tr>
