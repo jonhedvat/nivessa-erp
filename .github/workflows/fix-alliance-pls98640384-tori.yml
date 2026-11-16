@@ -1,0 +1,64 @@
+# ONE-TIME WRITE (2026-11-16): Alliance PLS98640384 left 0881061300946 AMOS,TORI /
+# BLACK IS THE NEW (CF 07, RSD BF vinyl) off purchase #187197 for no category.
+# Creates the product (SKU = UPC, Vinyl - Sealed, 1.6x price) if missing and adds
+# 1 x $14.45 to #187197 while it is still Ordered. Skips if already on it.
+name: Fix Alliance PLS98640384 Tori Amos line (one-time)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Fix
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            use App\Services\DistributorInvoiceImport as D; use App\Product;
+            $txId = 187197; $tx = \DB::table('transactions')->where('id',$txId)->first(['business_id','location_id','contact_id','transaction_date','status','created_by']);
+            echo 'TX '.json_encode($tx)."\n";
+            $line = ['upc'=>'0881061300946','description'=>'AMOS,TORI / BLACK IS THE NEW','format'=>'07','qty'=>1,'unit_price'=>14.45,'line_total'=>14.45];
+            $pv = D::preview($tx->business_id, [$line], $tx->contact_id, $tx->location_id, substr($tx->transaction_date,0,10), 'PLS98640384', 'alliance')[0];
+            echo 'PREVIEW '.json_encode(['matched'=>$pv['matched'],'variation_id'=>$pv['variation_id'] ?? null,'vids'=>$pv['upc_variation_ids'],'new'=>$pv['new_product'] ?? null])."\n";
+            $on = \DB::table('purchase_lines')->where('transaction_id',$txId)->whereIn('variation_id', $pv['upc_variation_ids'] ?: [0])->exists();
+            if ($tx->status !== 'ordered') { echo "STOP: purchase is {$tx->status}\n"; }
+            elseif ($on) { echo "STOP: already on #$txId\n"; }
+            else {
+              $vid = $pv['matched'] ? (int)$pv['variation_id'] : 0;
+              if (!$vid) {
+                $np = $pv['new_product']; if (empty($np['category_id'])) { echo "STOP: still no category\n"; }
+                else {
+                  \DB::beginTransaction();
+                  $np['name'] = preg_replace('/\bBlack Is The New\s*$/i','Black Is The New Black',trim($np['name'])); $sku = preg_replace('/\D/','',$np['sku']); $sell = round((float)$np['sell_price'],2);
+                  $p = Product::create(['name'=>$np['name'],'artist'=>$np['artist'] ?: null,'sku'=>$sku,'barcode_type'=>'C128','brand_id'=>null,'category_id'=>(int)$np['category_id'],'sub_category_id'=>null,'tax'=>1,'tax_type'=>'exclusive','alert_quantity'=>0,'business_id'=>$tx->business_id,'created_by'=>$tx->created_by,'added_via'=>'alliance_invoice','enable_stock'=>1,'product_description'=>'Alliance invoice PLS98640384: '.$line['description'],'unit_id'=>1,'type'=>'single','not_for_selling'=>0]);
+                  app(\App\Utils\ProductUtil::class)->createSingleProductVariation($p->id, $sku, 14.45, 14.45, 0, $sell, $sell);
+                  $p->product_locations()->sync([$tx->location_id]);
+                  \DB::commit();
+                  $vid = (int)\DB::table('variations')->where('product_id',$p->id)->value('id');
+                  echo 'CREATED '.json_encode(['product_id'=>$p->id,'vid'=>$vid,'name'=>$np['name'],'sku'=>$sku,'sell'=>$sell,'cat'=>$np['category_name'] ?? $np['category_id']])."\n";
+                }
+              }
+              if ($vid) { echo 'APPEND '.json_encode(D::appendLines($tx->business_id, $txId, [['variation_id'=>$vid,'qty'=>1,'unit_price'=>14.45]]))."\n"; }
+            }
+            echo 'AFTER lines='.\DB::table('purchase_lines')->where('transaction_id',$txId)->count().' total='.\DB::table('transactions')->where('id',$txId)->value('final_total')."\n";
+            PHP
+            echo "=== done ==="
