@@ -34,6 +34,14 @@ class ManagerBonusController extends Controller
         '2026-12' => [2 => 84000, 1 => 25000],
     ];
     const PLANS_FILE = 'manager-bonus-plans.json';
+    // Monthly STORE CONTRIBUTION plans (Jon 2026-11-15: bonus based on store
+    // profit). Tiers pay on % of this. Saved edits on the page override.
+    // Dec 2026 = Dec sales plan x (1 - cost ratio) - expected labor - rent,
+    // from Nov 1-14 actuals (HW cost 48.7%, labor ~$526/day; Pico cost 36.7%,
+    // labor ~$157/day), rounded down.
+    const CONTRIB_PLANS = [
+        '2026-12' => [2 => 19000, 1 => 8500],
+    ];
     // Clover net sales per month, pulled from the Clover API 2026-11-12 across
     // every merchant account (HW F6J6PKNMC9VT1; Pico 5YAN6F4N3NCT1 +
     // EQWV171MNZP31 + M0RFJQGMSMY91). Months after this come from the ERP's
@@ -195,12 +203,19 @@ class ManagerBonusController extends Controller
         $hours = $started ? $this->laborHours($businessId, $locId, $start, $through) : 0.0;
         $withinBudget = $hours <= $budget;
 
-        // Flat tiered bonus on % of plan (Sarah 2026-11-12: realistic, real
-        // incentive, no overpaying). Labor budget must also be met.
-        $tierHit = 0; $earned = 0.0;
-        if ($withinBudget && $planSet) {
+        // Flat tiered bonus on % of the STORE CONTRIBUTION plan (Jon 2026-11-15).
+        // Labor is already inside contribution, so there is no separate labor gate.
+        $contrib = $started ? $this->contribution($businessId, $locId, $start, $through->copy()->startOfDay(), $sales) : null;
+        $cPlan = $this->contribPlanFor($locId, $month);
+        $cSet = $cPlan !== null;
+        $cPlanToDate = $cSet ? ($complete ? $cPlan : round($cPlan * $daysDone / $daysIn, 2)) : 0.0;
+        $cNow = $contrib ? (float) $contrib['contribution'] : 0.0;
+        $cPct = $cPlanToDate > 0 ? round($cNow / $cPlanToDate * 100, 1) : 0.0;
+        $tierHit = 0; $earned = 0.0; $nextTier = null;
+        if ($cSet) {
             foreach (self::TIERS[$locId] as $pct => $amt) {
-                if ($pctOfPlan >= $pct) { $tierHit = $pct; $earned = (float) $amt; }
+                if ($cPct >= $pct) { $tierHit = $pct; $earned = (float) $amt; }
+                elseif (!$nextTier) { $nextTier = ['pct' => $pct, 'amount' => $amt, 'sales' => round($cPlan * $pct / 100, 2)]; }
             }
         }
 
@@ -227,7 +242,11 @@ class ManagerBonusController extends Controller
             'prev' => $prev,
             'prev_ly' => $prevLy,
             'hist' => $hist,
-            'contrib' => $started ? $this->contribution($businessId, $locId, $start, $through->copy()->startOfDay(), $sales) : null,
+            'contrib' => $contrib,
+            'cplan' => $cPlan,
+            'cplan_set' => $cSet,
+            'cplan_to_date' => $cPlanToDate,
+            'c_pct' => $cPct,
             // Seasonality: how this month compared to the 3 months before it a
             // year ago, applied to this year's same 3 months (Sarah 2026-11-12:
             // Pico's December spike wasn't visible, so the plan looked unfair).
@@ -252,6 +271,14 @@ class ManagerBonusController extends Controller
         ];
     }
 
+    private function contribPlanFor($locId, $month)
+    {
+        $saved = Storage::disk('local')->exists(self::PLANS_FILE) ? (json_decode(Storage::disk('local')->get(self::PLANS_FILE), true) ?: []) : [];
+        if (isset($saved[$month]['c' . $locId]) && (float) $saved[$month]['c' . $locId] > 0) { return (float) $saved[$month]['c' . $locId]; }
+        if (isset(self::CONTRIB_PLANS[$month][$locId])) { return (float) self::CONTRIB_PLANS[$month][$locId]; }
+        return null;
+    }
+
     private function planFor($locId, $month)
     {
         $saved = [];
@@ -272,6 +299,8 @@ class ManagerBonusController extends Controller
         foreach (array_keys(self::STORES) as $locId) {
             $v = round((float) str_replace([',', '$'], '', (string) $request->input('plan_' . $locId, '')), 2);
             if ($v > 0) { $saved[$month][$locId] = $v; }
+            $cv = round((float) str_replace([',', '$'], '', (string) $request->input('cplan_' . $locId, '')), 2);
+            if ($cv > 0) { $saved[$month]['c' . $locId] = $cv; }
         }
         Storage::disk('local')->put(self::PLANS_FILE, json_encode($saved, JSON_PRETTY_PRINT));
         return redirect('/admin/manager-bonus?month=' . $month)->with('status', ['success' => 1, 'msg' => 'Plan saved.']);
