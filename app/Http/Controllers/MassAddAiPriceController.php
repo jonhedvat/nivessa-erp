@@ -79,7 +79,7 @@ class MassAddAiPriceController extends Controller
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
             . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n"
             . "Some items come with 'Our sales' lines: what we actually sold that item for. Price in line with them unless they are clearly a different item.\n\n"
-            . "Call the price_items tool once with every numbered item, each exactly once, with n set to its item number. price is a plain number. "
+            . "You must answer by calling the price_items tool once with every numbered item, each exactly once, with n set to its item number. price is a plain number. "
             . "condition is the grade ONLY if staff wrote one (Sealed, M, NM, VG+, VG, G+, G, F, P), otherwise an empty string. "
             . "confidence is 'low' if you are not sure of the exact pressing, edition or condition, otherwise 'high'. "
             . "high_value is true if the item could be worth $40 or more used. edition_unclear is true if the exact pressing or edition is hard to tell apart. "
@@ -101,7 +101,9 @@ class MassAddAiPriceController extends Controller
                     'max_tokens' => 8000,
                     'system' => [['type' => 'text', 'text' => $system, 'cache_control' => ['type' => 'ephemeral']]],
                     'tools' => [self::priceTool()],
-                    'tool_choice' => ['type' => 'tool', 'name' => 'price_items'],
+                    // Sonnet 5.5 rejects a forced tool_choice ("tool" / "any" not supported), which
+                    // silently fell back to Haiku 4.5. The single tool is offered; the system prompt asks for it.
+                    'tool_choice' => ['type' => 'auto'],
                     'messages' => [['role' => 'user', 'content' => $userText]],
                 ],
                 'http_errors' => false,
