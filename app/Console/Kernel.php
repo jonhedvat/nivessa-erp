@@ -147,6 +147,12 @@ class Kernel extends ConsoleKernel
         // per day (Sarah, 2026-10-12).
         // Hollywood-bin records stocked at Pico -> Hollywood, before Pico
         // pulls go out (Sarah, 2026-10-16).
+        // Past-due employee holds go back on sale before opening (Sarah, 2026-11-16).
+        $schedule->command('holds:auto-release-employee')
+            ->dailyAt('07:00')
+            ->timezone('America/Los_Angeles')
+            ->withoutOverlapping(10);
+
         $schedule->command('bin:move-to-hollywood')
             ->dailyAt('07:30')
             ->timezone('America/Los_Angeles')

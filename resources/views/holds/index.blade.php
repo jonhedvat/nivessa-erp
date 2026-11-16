@@ -88,7 +88,7 @@ body.holds-v2 .h-empty { padding: 26px 8px; text-align: center; font-size: 14px;
 <div class="holds-wrap">
     <div class="holds-head">
         <h1>Customer Pickups &amp; Holds</h1>
-        <p>Items set aside in the hold bin for a customer or an employee. A held item is off the website and the POS warns if it gets rung up. Customer holds can run up to {{ $maxCustomer * 24 }} hours, employee holds up to {{ $maxEmployee }} days. When a hold is past due, pull it from the bin and clear it here.</p>
+        <p>Items set aside in the hold bin for a customer or an employee. A held item is off the website and the POS warns if it gets rung up. Customer holds can run up to {{ $maxCustomer * 24 }} hours, employee holds up to {{ $maxEmployee }} days. When a hold is past due, pull it from the bin and clear it here. Past-due employee holds go back on sale automatically every morning.</p>
     </div>
 
     @include('customer_pickup._tabs')
@@ -104,6 +104,16 @@ body.holds-v2 .h-empty { padding: 26px 8px; text-align: center; font-size: 14px;
         <div class="h-overdue">
             <div><strong>Past due: pull from the hold bin.</strong> {{ $overdueCount }} {{ $overdueCount === 1 ? 'hold is' : 'holds are' }} past the hold until date.</div>
             <a href="{{ action('HoldController@index', $baseQuery + ['filter' => 'overdue']) }}">Show past due holds</a>
+        </div>
+    @endif
+
+    @if(isset($autoReleased) && $autoReleased->count() > 0)
+        <div class="h-overdue">
+            <div><strong>Back on sale: move these from the hold bin to the floor.</strong> Employee holds past due are released automatically each morning.
+                @foreach($autoReleased as $ar)
+                    <br>{{ trim(($ar->artist ? $ar->artist . ' - ' : '') . $ar->product_name) }} ({{ $ar->sub_sku }}, {{ $ar->location_name }}), was held for {{ $ar->held_for_name }}
+                @endforeach
+            </div>
         </div>
     @endif
 

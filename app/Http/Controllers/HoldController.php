@@ -76,6 +76,7 @@ class HoldController extends Controller
 
         $holds = collect();
         $overdueCount = 0;
+        $autoReleased = collect();
         if (ProductHolds::enabled()) {
             $today = Carbon::today()->toDateString();
             $q = DB::table('product_holds as h')
@@ -94,6 +95,9 @@ class HoldController extends Controller
             if ($locationFilter) $q->where('h.location_id', $locationFilter);
 
             $overdueCount = (clone $q)->where('h.status', 'active')->where('h.hold_until', '<', $today)->count();
+            $autoReleased = (clone $q)->where('h.status', 'released')
+                ->where('h.release_note', \App\Console\Commands\AutoReleaseEmployeeHolds::NOTE)
+                ->where('h.released_at', '>=', Carbon::now()->subDays(3))->orderBy('h.released_at')->get();
 
             if ($tab === 'active') {
                 $q->where('h.status', 'active');
@@ -111,6 +115,7 @@ class HoldController extends Controller
             'tab' => $tab,
             'overdueOnly' => $overdueOnly,
             'overdueCount' => $overdueCount,
+            'autoReleased' => $autoReleased,
             'locations' => $locations,
             'locationFilter' => $locationFilter,
             'defaultLocationId' => $this->defaultLocationId($businessId, $locations),
