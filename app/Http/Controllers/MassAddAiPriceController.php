@@ -22,6 +22,7 @@ class MassAddAiPriceController extends Controller
     const MODEL_ROUTINE = 'claude-haiku-5-5';
     const MODEL_ESCALATE = 'claude-sonnet-5-5';
     const BATCH_SIZE = 25;
+    const ESCALATE_MIN_PRICE = 30;
     // USD per million tokens, used to log cost. Confirm against Anthropic's current price list.
     const RATES = [
         'claude-haiku-5-5' => ['in' => 1.00, 'out' => 5.00],
@@ -226,10 +227,15 @@ class MassAddAiPriceController extends Controller
             $need = [];
             foreach ($numbered as $n => $l) {
                 $r = $final[$n] ?? null;
+                // Sonnet only for items priced $30 and up (Sarah 2026-11-16), and only when
+                // something about the item needs a second look.
+                $p = $r ? (float) preg_replace('/[^0-9.]/', '', (string) ($r['price'] ?? 0)) : 0;
+                if ($p < self::ESCALATE_MIN_PRICE) {
+                    continue;
+                }
                 if (!$r
                     || !empty($r['premium']) || !empty($r['high_value']) || !empty($r['edition_unclear'])
                     || (($r['confidence'] ?? 'high') === 'low')
-                    || (float) preg_replace('/[^0-9.]/', '', (string) ($r['price'] ?? 0)) >= 40
                     || !empty($conflict[$n])) {
                     $need[$n] = $l;
                 }
