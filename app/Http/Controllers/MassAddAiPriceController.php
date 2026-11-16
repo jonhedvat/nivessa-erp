@@ -41,9 +41,11 @@ class MassAddAiPriceController extends Controller
      * Cached 24 hours. Asking prices run above what items sell for, so the AI
      * gets both numbers and the escalation check treats a 2x gap as a conflict.
      */
+    const EBAY_SOLD_SHARE = 0.8;
+
     private function webComparables($businessId, $line)
     {
-        $key = 'ai_web_comp_v1:' . $businessId . ':' . md5(mb_strtolower($line));
+        $key = 'ai_web_comp_v2:' . $businessId . ':' . md5(mb_strtolower($line));
         return \Cache::remember($key, 24 * 3600, function () use ($businessId, $line) {
             $out = ['discogs' => null, 'ebay' => null];
             try {
@@ -81,7 +83,8 @@ class MassAddAiPriceController extends Controller
                     sort($prices);
                     $n = count($prices);
                     $median = $n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2;
-                    $out['ebay'] = ['median' => round($median, 2), 'n' => $n];
+                    // Asking prices run above what items sell for; 80% of the asking median is our estimate of sold.
+                    $out['ebay'] = ['median' => round($median * self::EBAY_SOLD_SHARE, 2), 'asking' => round($median, 2), 'n' => $n];
                 }
             } catch (\Throwable $e) {
                 \Log::info('MassAddAiPrice eBay lookup failed', ['error' => $e->getMessage()]);
@@ -137,7 +140,7 @@ class MassAddAiPriceController extends Controller
             . "Sealed items are new stock: price them at what a record store charges for a new copy today, not at a used or online-discount price.\n"
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
             . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n"
-            . "Some items come with 'Our sales' lines: what we actually sold that item for. Price in line with them unless they are clearly a different item. 'Web' lines are live Discogs (VG+ suggested price) and eBay (asking-price median); eBay asking prices run above what items sell for, so weigh them down.\n\n"
+            . "Some items come with 'Our sales' lines: what we actually sold that item for. Price in line with them unless they are clearly a different item. 'Web' lines are live Discogs (VG+ suggested price, based on sales) and eBay (estimated sold price, 80% of the asking median).\n\n"
             . "You must answer by calling the price_items tool once with every numbered item, each exactly once, with n set to its item number. price is a plain number. "
             . "condition is the grade ONLY if staff wrote one (Sealed, M, NM, VG+, VG, G+, G, F, P), otherwise an empty string. "
             . "confidence is 'low' if you are not sure of the exact pressing, edition or condition, otherwise 'high'. "
@@ -186,7 +189,7 @@ class MassAddAiPriceController extends Controller
                 if ($w && ($w['discogs'] || $w['ebay'])) {
                     $parts = [];
                     if ($w['discogs']) $parts[] = 'Discogs VG+ $' . $w['discogs'];
-                    if ($w['ebay']) $parts[] = 'eBay asking median $' . $w['ebay']['median'] . ' (' . $w['ebay']['n'] . ' listings)';
+                    if ($w['ebay']) $parts[] = 'eBay est. sold $' . $w['ebay']['median'] . ' (80% of asking median $' . $w['ebay']['asking'] . ', ' . $w['ebay']['n'] . ' listings)';
                     $userText .= '   Web: ' . implode('; ', $parts) . "\n";
                 }
             }
