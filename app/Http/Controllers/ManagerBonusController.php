@@ -19,6 +19,9 @@ use Illuminate\Support\Facades\Storage;
 class ManagerBonusController extends Controller
 {
     const START_MONTH = '2026-12';
+    // Managers don't see their bonus card on My Earnings until Jon approves
+    // the plan (Sarah 2026-11-15). Flip to true once he does.
+    const MANAGERS_CAN_SEE = false;
     const RATE = 2.0; // no longer used for pay; kept for the old view text
     // Flat bonus by % of the month's sales plan (Clover net). Hollywood pays
     // more because its plan is ~3x Pico's.
@@ -411,6 +414,7 @@ class ManagerBonusController extends Controller
     // month, or December 2026 before the program starts.
     public static function liveForUser($businessId, $userId)
     {
+        if (!self::MANAGERS_CAN_SEE && !in_array((int) auth()->id(), self::FULL_ACCESS, true)) { return null; }
         if (!isset(self::MANAGER_IDS[(int) $userId])) { return null; }
         $locId = self::MANAGER_IDS[(int) $userId];
         $month = \Carbon::now()->format('Y-m');
