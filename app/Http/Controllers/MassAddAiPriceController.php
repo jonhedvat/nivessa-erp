@@ -172,7 +172,7 @@ class MassAddAiPriceController extends Controller
                     $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
                         'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
-                } elseif (empty($r['premium']) && isset($cardStats[$cat . ($sub !== '' ? ' > ' . $sub : '')])) {
+                } elseif (stripos($cat, 'Trading Card') === 0 && empty($r['premium']) && isset($cardStats[$cat . ($sub !== '' ? ' > ' . $sub : '')])) {
                     // Ordinary raw card we have no exact history for: the AI's online
                     // price runs well above walk-in prices, so meet in the middle
                     // with what this kind of card usually sells for here.
@@ -199,15 +199,18 @@ class MassAddAiPriceController extends Controller
 
     /**
      * Sarah 2026-11-15: the AI priced common Michael Jordan cards at $18-45 when
-     * we sell them for $4-12 (online card prices run far above walk-in prices,
-     * and single cards almost never match storeHistory() by exact name).
-     * What each kind of card ("Trading Cards > Michael Jordan Cards") really sold
-     * for here in the last 2 years: sales, median, 90th percentile. 8+ sales only.
+     * we sell them for $4-12, and priced sealed vinyl / CDs, cassettes, books and
+     * 45s about a third under what we get. Single items rarely match
+     * storeHistory() by exact name, so this is the fallback: what each
+     * "Category > Subcategory" really sold for here in the last 2 years
+     * (sales, 25th pct, median, 90th pct; whole dollars). Needs 20+ sales
+     * (8+ for trading cards). Built from a per-dollar histogram so we never
+     * pull every sell line into PHP.
      */
     private function cardStats($businessId)
     {
         try {
-            return \Cache::remember('mass_add_ai_card_stats_' . $businessId, now()->addHours(6), function () use ($businessId) {
+            return \Cache::remember('mass_add_ai_price_stats_v2_' . $businessId, now()->addHours(6), function () use ($businessId) {
                 $rows = DB::table('transaction_sell_lines as tsl')
                     ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
                     ->join('products as p', 'p.id', '=', 'tsl.product_id')
@@ -219,16 +222,23 @@ class MassAddAiPriceController extends Controller
                     ->whereNull('tsl.parent_sell_line_id')
                     ->where('t.transaction_date', '>=', now()->subYears(2))
                     ->where('tsl.unit_price_inc_tax', '>', 0)
-                    ->where('c.name', 'like', 'Trading Card%')
-                    ->get(['c.name as cat', 'sc.name as sub', 'tsl.unit_price_inc_tax as price']);
+                    ->groupBy('c.name', 'sc.name', DB::raw('GREATEST(1, ROUND(tsl.unit_price_inc_tax))'))
+                    ->get(['c.name as cat', 'sc.name as sub', DB::raw('GREATEST(1, ROUND(tsl.unit_price_inc_tax)) as price'), DB::raw('COUNT(*) as n')]);
                 $out = [];
                 foreach ($rows->groupBy(function ($r) { return trim($r->cat) . ($r->sub ? ' > ' . trim($r->sub) : ''); }) as $label => $g) {
-                    $prices = $g->pluck('price')->map(function ($p) { return (float) $p; })->sort()->values()->all();
-                    $n = count($prices);
-                    if ($n < 8) continue;
-                    $median = $n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2;
-                    $p90 = $prices[min($n - 1, (int) floor(0.9 * ($n - 1) + 0.5))];
-                    $out[$label] = ['sales' => $n, 'median' => round($median, 2), 'p90' => round($p90, 2)];
+                    $hist = $g->map(function ($r) { return [(float) $r->price, (int) $r->n]; })->sortBy(function ($x) { return $x[0]; })->values()->all();
+                    $n = array_sum(array_map(function ($x) { return $x[1]; }, $hist));
+                    if ($n < (stripos($label, 'Trading Card') === 0 ? 8 : 20)) continue;
+                    $pct = function ($f) use ($hist, $n) {
+                        $target = (int) floor($f * ($n - 1) + 0.5);
+                        $seen = 0;
+                        foreach ($hist as $x) {
+                            $seen += $x[1];
+                            if ($seen > $target) return $x[0];
+                        }
+                        return $hist[count($hist) - 1][0];
+                    };
+                    $out[$label] = ['sales' => $n, 'p25' => $pct(0.25), 'median' => $pct(0.5), 'p90' => $pct(0.9)];
                 }
                 return $out;
             });
@@ -244,8 +254,10 @@ class MassAddAiPriceController extends Controller
         if (empty($cardStats)) return '';
         $lines = [];
         foreach ($cardStats as $label => $cs) {
+            if (stripos($label, 'Trading Card') !== 0) continue;
             $lines[] = $label . ': usually $' . round($cs['median']) . ', rarely above $' . round($cs['p90']);
         }
+        if (empty($lines)) return '';
         return "\n\nTrading cards: give the realistic online SOLD price (not asking prices) for the exact card in the condition given; a crease or other damage lowers it. "
             . "Walk-in prices in our shops are lower than online; for reference, what we usually sell cards for:\n" . implode("\n", $lines) . "\n"
             . "Set premium=true only for cards that really are worth more: graded / slabbed (PSA, BGS, SGC), true rookie cards, autographs, scarce inserts or parallels, sealed boxes. "
