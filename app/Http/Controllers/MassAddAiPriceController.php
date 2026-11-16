@@ -350,7 +350,7 @@ class MassAddAiPriceController extends Controller
                 $price = $ai;
 
                 $h = $this->storeHistory($businessId, $name, $artist, $cat);
-                $floor = $h ? ($h['fast'] ? $h['p75'] : $h['median']) : 0;
+                $floor = $h ? $h['floor'] : 0;
                 $histNote = function ($price) use ($h, $name, $artist, $ai) {
                     return ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
@@ -609,6 +609,7 @@ class MassAddAiPriceController extends Controller
             $n = count($prices);
             $median = $n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2;
             $p75 = $prices[min($n - 1, (int) floor(0.75 * ($n - 1) + 0.5))];
+            $p90 = $prices[min($n - 1, (int) floor(0.9 * ($n - 1) + 0.5))];
 
             // Days from the copy being added to its first sale, per product.
             $days = [];
@@ -622,6 +623,18 @@ class MassAddAiPriceController extends Controller
             sort($days);
             $medDays = $days ? (int) round($days[intdiv(count($days), 2)]) : null;
 
+            // Sarah 2026-11-16: items that sell fast are not priced cheap. The floor rises
+            // with how quickly we historically sold it (median days to first sale).
+            if ($medDays !== null && $medDays <= 5) {
+                $floor = $p90;
+            } elseif ($medDays !== null && $medDays <= 30) {
+                $floor = $p75;
+            } elseif ($medDays !== null && $medDays <= 60) {
+                $floor = ($median + $p75) / 2;
+            } else {
+                $floor = $median;
+            }
+
             $inStock = (float) DB::table('variation_location_details')
                 ->whereIn('product_id', $created->keys()->all())
                 ->sum('qty_available');
@@ -633,6 +646,8 @@ class MassAddAiPriceController extends Controller
                 'sales' => $n,
                 'median' => round($median, 2),
                 'p75' => round($p75, 2),
+                'p90' => round($p90, 2),
+                'floor' => round($floor, 2),
                 'days' => $medDays,
                 'fast' => $medDays !== null && $medDays <= 30,
                 'in_stock' => (int) $inStock,
