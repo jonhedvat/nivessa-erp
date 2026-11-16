@@ -1151,21 +1151,23 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/website-orders/bin-check/undo', 'BinMoveController@undo')->name('website-orders.binMoveUndo');
     Route::post('/website-orders/bin-check/run-daily', 'BinMoveController@runDaily')->name('website-orders.binRunDaily');
     Route::post('/website-orders/notes', 'WebsiteOrdersController@saveNotes')->name('website-orders.saveNotes');
-    Route::post('/website-orders/discogs/{id}/ship', 'WebsiteOrdersController@shipDiscogs')->name('website-orders.shipDiscogs');
-    Route::post('/website-orders/{id}/cancel', 'WebsiteOrdersController@cancel')->name('website-orders.cancel');
-    Route::post('/website-orders/{id}/status', 'WebsiteOrdersController@updateStatus')->name('website-orders.updateStatus');
+    // Order-changing buttons: max 40 a minute per login (Sarah, 2026-11-16).
+    // A bot flipped 49 orders in minutes; staff never click this fast.
+    Route::post('/website-orders/discogs/{id}/ship', 'WebsiteOrdersController@shipDiscogs')->name('website-orders.shipDiscogs')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/cancel', 'WebsiteOrdersController@cancel')->name('website-orders.cancel')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/status', 'WebsiteOrdersController@updateStatus')->name('website-orders.updateStatus')->middleware('throttle:40,1');
     Route::post('/website-orders/{id}/hw-check', 'WebsiteOrdersController@hwCheck')->name('website-orders.hwCheck');
-    Route::post('/website-orders/{id}/archive', 'WebsiteOrdersController@archive')->name('website-orders.archive');
+    Route::post('/website-orders/{id}/archive', 'WebsiteOrdersController@archive')->name('website-orders.archive')->middleware('throttle:40,1');
     Route::post('/website-orders/{id}/note', 'WebsiteOrdersController@saveOrderNote')->name('website-orders.saveOrderNote');
     Route::post('/website-orders/{id}/decision', 'WebsiteOrdersController@sendToDecision')->name('website-orders.sendToDecision');
-    Route::post('/website-orders/{id}/extra-payment', 'WebsiteOrdersController@extraPayment')->name('website-orders.extraPayment');
-    Route::post('/website-orders/{id}/shipping-paid', 'WebsiteOrdersController@shippingPaid')->name('website-orders.shippingPaid');
-    Route::post('/website-orders/{id}/fulfillment', 'WebsiteOrdersController@saveFulfillment')->name('website-orders.saveFulfillment');
-    Route::post('/website-orders/{id}/item-store', 'WebsiteOrdersController@itemStore')->name('website-orders.itemStore');
+    Route::post('/website-orders/{id}/extra-payment', 'WebsiteOrdersController@extraPayment')->name('website-orders.extraPayment')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/shipping-paid', 'WebsiteOrdersController@shippingPaid')->name('website-orders.shippingPaid')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/fulfillment', 'WebsiteOrdersController@saveFulfillment')->name('website-orders.saveFulfillment')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/item-store', 'WebsiteOrdersController@itemStore')->name('website-orders.itemStore')->middleware('throttle:40,1');
     Route::get('/website-orders/substitute-search', 'WebsiteOrdersController@substituteSearch')->name('website-orders.substituteSearch');
-    Route::post('/website-orders/{id}/items/{itemId}/substitute', 'WebsiteOrdersController@substitute')->name('website-orders.substitute');
-    Route::post('/website-orders/{id}/items/{itemId}/price', 'WebsiteOrdersController@itemPrice')->name('website-orders.itemPrice');
-    Route::post('/website-orders/{id}/remind', 'WebsiteOrdersController@remind')->name('website-orders.remind');
+    Route::post('/website-orders/{id}/items/{itemId}/substitute', 'WebsiteOrdersController@substitute')->name('website-orders.substitute')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/items/{itemId}/price', 'WebsiteOrdersController@itemPrice')->name('website-orders.itemPrice')->middleware('throttle:40,1');
+    Route::post('/website-orders/{id}/remind', 'WebsiteOrdersController@remind')->name('website-orders.remind')->middleware('throttle:40,1');
     Route::post('/website-orders/pick/{orderId}/{itemId}', 'WebsiteOrdersController@pick')->name('website-orders.pick');
 
     // Customer email copy editor — moved here from nivessa.com's
