@@ -1,0 +1,33 @@
+# Read-only: prints the per-category sold-price ranges the Mass Add AI pricer
+# uses as its fallback (no AI calls, no writes).
+
+name: Diag AI price stats (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X3RpbWVfbGltaXQoMCk7CiR1ID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ0pvbmF0aGFuJyktPndoZXJlKCdsYXN0X25hbWUnLCdsaWtlJywnSGVkdmF0JScpLT5maXJzdCgpOwokbSA9IG5ldyBSZWZsZWN0aW9uTWV0aG9kKEFwcFxIdHRwXENvbnRyb2xsZXJzXE1hc3NBZGRBaVByaWNlQ29udHJvbGxlcjo6Y2xhc3MsICdjYXJkU3RhdHMnKTsgJG0tPnNldEFjY2Vzc2libGUodHJ1ZSk7CiR0ID0gbWljcm90aW1lKHRydWUpOwokc3QgPSAkbS0+aW52b2tlKGFwcChBcHBcSHR0cFxDb250cm9sbGVyc1xNYXNzQWRkQWlQcmljZUNvbnRyb2xsZXI6OmNsYXNzKSwgJHUtPmJ1c2luZXNzX2lkKTsKcHJpbnRmKCIjIyMgcHJpY2Ugc3RhdHMgKCVkIGdyb3VwcywgJS4xZnMpXG4iLCBjb3VudCgkc3QpLCBtaWNyb3RpbWUodHJ1ZSkgLSAkdCk7CmZvcmVhY2ggKCRzdCBhcyAkayA9PiAkdikgZWNobyAiU1RBVFx0JGtcdHskdlsnc2FsZXMnXX1cdHskdlsncDI1J119XHR7JHZbJ21lZGlhbiddfVx0eyR2WydwOTAnXX1cbiI7Cg==' | base64 -d > /tmp/diag_ai_price_stats.php
+            php /tmp/diag_ai_price_stats.php
+            rm -f /tmp/diag_ai_price_stats.php
