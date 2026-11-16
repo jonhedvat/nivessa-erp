@@ -54,10 +54,12 @@ Route::middleware(['setData'])->group(function () {
     });
 
 
-    Auth::routes();
+    // No public sign-up (Sarah, 2026-11-16): bots used it to make their own
+    // "business" and log in. Staff logins are added from Users.
+    Auth::routes(['register' => false]);
 
-    Route::get('/business/register', 'BusinessController@getRegister')->name('business.getRegister');
-    Route::post('/business/register', 'BusinessController@postRegister')->name('business.postRegister');
+    Route::get('/business/register', function () { return redirect('/login'); })->name('business.getRegister');
+    Route::post('/business/register', function () { abort(404); })->name('business.postRegister');
     Route::post('/business/register/check-username', 'BusinessController@postCheckUsername')->name('business.postCheckUsername');
     Route::post('/business/register/check-email', 'BusinessController@postCheckEmail')->name('business.postCheckEmail');
 
