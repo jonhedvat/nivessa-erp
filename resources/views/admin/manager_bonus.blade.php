@@ -71,6 +71,19 @@
                 <tr><td><b>Plan for {{ \Carbon::parse($month . '-01')->format('F') }}</b></td><td><b>@if($r['plan_set'])${{ number_format($r['plan'], 0) }}@else<span class="mb-no">not set yet, no bonus until it is</span>@endif</b></td></tr>
             </table>
 
+            @if (!empty($r['contrib']))
+                @php $c = $r['contrib']; @endphp
+                <h4 style="margin-top:18px;">Store contribution {{ $r['complete'] ? '' : '(through ' . $r['through'] . ')' }}</h4>
+                <table>
+                    <tr><td>Clover net sales</td><td>${{ number_format($c['sales'], 0) }}</td></tr>
+                    <tr><td>Cost of what sold ({{ $c['cost_ratio'] }}% of sales, from the ERP)</td><td>-${{ number_format($c['cogs'], 0) }}</td></tr>
+                    <tr><td>Labor ({{ number_format($c['hours'], 0) }} clocked hrs at pay rates + 12% payroll tax)</td><td>-${{ number_format($c['labor'], 0) }}</td></tr>
+                    <tr><td>Rent</td><td>-${{ number_format($c['rent'], 0) }}</td></tr>
+                    <tr><td><b>Contribution</b></td><td><b>${{ number_format($c['contribution'], 0) }}</b></td></tr>
+                    @if (count($c['no_rate']))<tr><td colspan="2" style="color:#b42318;">No pay rate set for: {{ implode(', ', $c['no_rate']) }} (their hours are not in labor)</td></tr>@endif
+                </table>
+            @endif
+
             <h4 style="margin-top:18px;">Last 5 months (Clover net sales)</h4>
             <table>
                 <tr><th>Month</th><th>Sales</th><th>Same month last year</th><th>Change</th></tr>

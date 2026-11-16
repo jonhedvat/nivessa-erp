@@ -227,6 +227,7 @@ class ManagerBonusController extends Controller
             'prev' => $prev,
             'prev_ly' => $prevLy,
             'hist' => $hist,
+            'contrib' => $started ? $this->contribution($businessId, $locId, $start, $through->copy()->startOfDay(), $sales) : null,
             // Seasonality: how this month compared to the 3 months before it a
             // year ago, applied to this year's same 3 months (Sarah 2026-11-12:
             // Pico's December spike wasn't visible, so the plan looked unfair).
@@ -387,5 +388,57 @@ class ManagerBonusController extends Controller
         if ($month < self::START_MONTH) { $month = self::START_MONTH; }
         $self = new self();
         return $self->compute($businessId, $locId, self::STORES[$locId], $month);
+    }
+
+    // ---- Store contribution (Jon 2026-11-15: bonus "primarily based on store
+    // profit"; QuickBooks is cash basis and swings with inventory buying, so
+    // Sarah chose contribution): Clover net sales, minus cost of what sold
+    // (ERP cost ratio for that store/month applied to Clover sales), minus
+    // time-clock labor at each person's pay rate + payroll tax, minus rent.
+    const RENT = [2 => 7000, 1 => 2300];       // monthly (Sarah's 2025 tax notes)
+    const PAYROLL_TAX = 0.12;                   // employer taxes / wages in QB 2026 (~11-13%)
+
+    public function contribution($businessId, $locId, \Carbon\Carbon $from, \Carbon\Carbon $to, $sales)
+    {
+        $tu = app(\App\Utils\TransactionUtil::class);
+        $s = $from->toDateString(); $e = $to->toDateString();
+        $erpSales = 0.0; $gp = 0.0;
+        try {
+            $st = $tu->getSellTotals($businessId, $s, $e, $locId);
+            $erpSales = (float) ($st['total_sell_exc_tax'] ?? 0);
+            $gp = (float) $tu->getGrossProfit($businessId, $s, $e, $locId);
+        } catch (\Throwable $ex) { \Log::warning('contribution gp failed: ' . $ex->getMessage()); }
+        $costRatio = $erpSales > 0 ? max(0, min(1, ($erpSales - $gp) / $erpSales)) : 0.0;
+        $cogs = round($sales * $costRatio, 2);
+
+        $rates = [];
+        if (Storage::disk('local')->exists('payroll/config.json')) {
+            $cfg = json_decode(Storage::disk('local')->get('payroll/config.json'), true) ?: [];
+            foreach (($cfg['rates'] ?? []) as $rc) {
+                if (!empty($rc['user_id']) && (float) ($rc['rate'] ?? 0) > 0) { $rates[(int) $rc['user_id']] = (float) $rc['rate']; }
+            }
+        }
+        $wages = 0.0; $hours = 0.0; $noRate = [];
+        $rows = DB::table('time_clock_punches as p')->join('users as u', 'u.id', '=', 'p.user_id')
+            ->where('p.business_id', $businessId)->where('p.location_id', $locId)
+            ->whereNull('p.voided_at')->whereNotNull('p.clock_out_at')
+            ->whereBetween('p.clock_in_at', [$from->copy()->startOfDay()->toDateTimeString(), $to->copy()->endOfDay()->toDateTimeString()])
+            ->whereNotIn('u.first_name', self::SHIPPING_FIRST_NAMES)
+            ->get(['p.user_id', 'u.first_name', 'p.clock_in_at', 'p.clock_out_at']);
+        foreach ($rows as $r) {
+            $h = max(0, \Carbon::parse($r->clock_out_at)->diffInMinutes(\Carbon::parse($r->clock_in_at))) / 60;
+            $hours += $h;
+            if (isset($rates[(int) $r->user_id])) { $wages += $h * $rates[(int) $r->user_id]; }
+            else { $noRate[$r->first_name] = true; }
+        }
+        $labor = round($wages * (1 + self::PAYROLL_TAX), 2);
+        $days = $from->diffInDays($to) + 1;
+        $rent = round(self::RENT[$locId] * $days / $from->daysInMonth, 2);
+        return [
+            'sales' => round($sales, 2), 'cost_ratio' => round($costRatio * 100, 1), 'cogs' => $cogs,
+            'hours' => round($hours, 1), 'labor' => $labor, 'rent' => $rent,
+            'contribution' => round($sales - $cogs - $labor - $rent, 2),
+            'no_rate' => array_keys($noRate),
+        ];
     }
 }
