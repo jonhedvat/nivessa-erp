@@ -38,6 +38,7 @@
 .sc-item .t { flex: 1; font-size: 15px; }
 .sc-item .n { font-size: 22px; font-weight: 800; min-width: 34px; text-align: center; }
 .sc-item.seen { border-color: #2E6B2E; background: #F2FAF2; }
+.sc-old { color: #8E1B1B; font-weight: 700; }
 .sc-item.none { border-color: #8E1B1B; background: #FBF1F1; }
 .sc-item.none .n { font-size: 15px; color: #8E1B1B; }
 .sc-n { width: 64px; height: 44px; border-radius: 10px; border: 2px solid #1F1B16; font-size: 20px; font-weight: 800; text-align: center; }
@@ -134,6 +135,7 @@
     function row(i) {
         var n = count[i.id] || 0, none = touched[i.id] && !n;
         return '<div class="sc-item' + (n ? ' seen' : '') + (none ? ' none' : '') + '" data-id="' + i.id + '"><div class="t">' + esc(label(i)) + '<div class="sc-small">' + (ids(i) ? ids(i) + ', ' : '') + (i.bin ? esc(i.bin) + ', ' : '') + 'ERP ' + (i.erp != null ? i.erp : '-') + (none ? ', marked none here' : (touched[i.id] ? '' : (i.cnt && i.cnt.recent && !elsewhere(i) ? '' : ', not counted yet'))) + '</div>'
+            + (i.days != null ? '<div class="sc-small">' + i.days + ' day' + (i.days === 1 ? '' : 's') + ' in store' + (i.days > 365 ? ' <span class="sc-old">⚠ Over 1 year: consider markdown or marketplaces</span>' : '') + '</div>' : '')
             + prevLine(i)
             + (moved[i.id] ? '<div class="sc-small sc-moved">Genre changed to ' + esc(moved[i.id]) + '</div>' : '')
             + (editing === i.id ? genreSelect(i) : '') + '</div>'
