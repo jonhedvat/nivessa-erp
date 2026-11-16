@@ -203,6 +203,12 @@ class ModulesController extends Controller
      */
     public function uploadModule(Request $request)
     {
+        // 2026-11-16: disabled. This had no permission check, so any logged-in
+        // user could unzip files into Modules/ (code on the server). Probe files
+        // dropped there on 8/11/26 were found. Install modules through git.
+        \Log::warning('upload-module blocked for user ' . optional(auth()->user())->id . ' ip ' . $request->ip());
+        abort(403, 'Module upload is disabled.');
+
         $notAllowed = $this->moduleUtil->notAllowedInDemo();
         if (!empty($notAllowed)) {
             return $notAllowed;
