@@ -95,7 +95,7 @@
     {{-- Team, in the picked window --}}
     <div class="md-box">
         <div class="md-h">Your team, last {{ $days }} days</div>
-        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
+        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Value listed = what the items they priced here in this window sell for. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
         <div class="md-scroll">
         <table class="md-t">
             <thead><tr>
@@ -104,6 +104,7 @@
                 <th class="r">Avg shift</th>
                 <th class="r">Priced</th>
                 <th class="r">Priced / shift</th>
+                <th class="r">Value listed</th>
                 <th class="r">Signups</th>
                 <th class="r">Signups / shift</th>
                 <th class="r">Fixed by shelf count</th>
@@ -123,6 +124,7 @@
                     <td class="r">{{ $p['shifts'] ? $hrs($p['hours'] / $p['shifts']) : '-' }}</td>
                     <td class="r">{{ $num($p['priced']) }}</td>
                     <td class="r">{{ $p['shifts'] ? number_format($p['priced'] / $p['shifts'], 1) : '-' }}</td>
+                    <td class="r">{{ $p['value'] > 0 ? '$' . number_format($p['value']) : '-' }}</td>
                     <td class="r">{{ $num($p['signups']) }}</td>
                     <td class="r">{{ $p['shifts'] ? number_format($p['signups'] / $p['shifts'], 1) : '-' }}</td>
                     <td class="r">{{ $num($p['shelf_changed']) }}</td>
@@ -143,7 +145,7 @@
                     <td class="r">@if($p['said_not_done'] > 0)<span class="md-bad">{{ $p['said_not_done'] }}</span>@else 0 @endif</td>
                 </tr>
             @empty
-                <tr><td colspan="15" class="md-dim">No one is set up at {{ $storeLabel }} yet.</td></tr>
+                <tr><td colspan="16" class="md-dim">No one is set up at {{ $storeLabel }} yet.</td></tr>
             @endforelse
             </tbody>
         </table>
@@ -159,13 +161,14 @@
         @else
         <div class="md-scroll">
         <table class="md-t">
-            <thead><tr><th>Employee</th><th class="r">Items priced</th><th class="r">Customer signups</th><th>By format</th></tr></thead>
+            <thead><tr><th>Employee</th><th class="r">Items priced</th><th class="r">Value listed</th><th class="r">Customer signups</th><th>By format</th></tr></thead>
             <tbody>
             @forelse($people as $uid => $p)
                 @if($p['priced_all'] > 0 || $p['signups_all'] > 0)
                 <tr>
                     <td class="nm">{{ $p['name'] }}</td>
                     <td class="r">{{ $num($p['priced_all']) }}</td>
+                    <td class="r">{{ $p['value_all'] > 0 ? '$' . number_format($p['value_all']) : '-' }}</td>
                     <td class="r">{{ $num($p['signups_all']) }}</td>
                     <td>
                         @foreach(($priced['people'][$uid]['formats'] ?? []) as $fmt => $q)
@@ -175,7 +178,7 @@
                 </tr>
                 @endif
             @empty
-                <tr><td colspan="4" class="md-dim">Nothing yet.</td></tr>
+                <tr><td colspan="5" class="md-dim">Nothing yet.</td></tr>
             @endforelse
             @if($priced['total'] > 0)
                 <tr>
