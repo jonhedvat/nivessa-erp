@@ -32,7 +32,7 @@ jobs:
             F=$(sudo -n true 2>/dev/null && echo sudo -n)
             $F grep -rhoE "access_log\s+[^ ;]+" /etc/nginx /www/server/nginx/conf /www/server/panel/vhost 2>/dev/null | sort -u | head
             ls -la /www/wwwlogs 2>&1 | head -15
-            L=$($F grep -rhoE "access_log\s+[^ ;]+" /etc/nginx /www/server/nginx/conf /www/server/panel/vhost 2>/dev/null | awk '{print $2}' | grep -i playlist | sort -u)
+            L=/var/log/nginx/access.log; ls -la /var/log/nginx/ 2>&1 | head; id
             echo "### using: $L"
             for f in $L $L.1 $L.2.gz; do [ -r "$f" ] || continue; echo "--- ship posts in $f"; $F zgrep -ah "discogs/8037290-1.*/ship" $f | cut -c1-350 | head -12; echo "--- top IP|UA 16/Nov 10:40-11:40 UTC"; $F zgrep -ahE "16/Nov/2026:1[01]:" $f | awk -F'"' '{split($1,a," "); print a[1]" | "$6}' | sort | uniq -c | sort -rn | head -8; echo "--- top IP|UA 15/Nov 18:25-18:45 UTC"; $F zgrep -ahE "15/Nov/2026:18:[234]" $f | awk -F'"' '{split($1,a," "); print a[1]" | "$6}' | sort | uniq -c | sort -rn | head -8; done
             echo "### log files mentioning the ship request"
