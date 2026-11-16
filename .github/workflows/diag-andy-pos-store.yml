@@ -1,6 +1,6 @@
 # READ-ONLY (2026-11-16): Andy says his sales today did not tally on the POS page,
 # maybe "seeing me as Pico but ringing Hollywood". Sales, registers, locations. No writes.
-name: Diag Andy POS store 11-13 (read-only)
+name: Diag Andy Clover 11-13 (read-only)
 
 on:
   workflow_dispatch:
@@ -26,5 +26,7 @@ jobs:
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
-            php artisan register-recon:post --date=2026-11-13 --dry 2>&1 | tail -80
+            php artisan tinker --no-ansi <<'PHP'
+            foreach (\DB::table('clover_payments')->whereBetween('paid_at',['2026-11-13 16:00:00','2026-11-14 10:00:00'])->orderBy('paid_at')->get() as $r) { $p=json_decode($r->raw_payload,true)?:[]; echo json_encode(['la'=>\Carbon\Carbon::parse($r->paid_at,'UTC')->setTimezone('America/Los_Angeles')->format('H:i:s'),'loc'=>$r->location_id,'amt'=>round($r->amount_cents/100,2),'emp'=>$r->employee_name,'tender'=>$r->tender_type,'res'=>$r->result,'dev'=>$p['device']['id']??($p['deviceId']??null),'merch'=>$p['merchant']['id']??null,'last4'=>$r->card_last4])."\n"; }
+            PHP
             echo "=== done ==="
