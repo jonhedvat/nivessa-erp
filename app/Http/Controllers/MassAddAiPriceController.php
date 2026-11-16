@@ -32,6 +32,64 @@ class MassAddAiPriceController extends Controller
     /** Our sales for each numbered line of the current request (set by price()). */
     private $comparables = [];
 
+    /** Live web prices for each numbered line of the current request (set by price()). */
+    private $web = [];
+
+    /**
+     * Discogs (VG+ suggested price for the best-matching release) and eBay
+     * (median asking price of fixed-price listings whose titles match the line).
+     * Cached 24 hours. Asking prices run above what items sell for, so the AI
+     * gets both numbers and the escalation check treats a 2x gap as a conflict.
+     */
+    private function webComparables($businessId, $line)
+    {
+        $key = 'ai_web_comp_v1:' . $businessId . ':' . md5(mb_strtolower($line));
+        return \Cache::remember($key, 24 * 3600, function () use ($businessId, $line) {
+            $out = ['discogs' => null, 'ebay' => null];
+            try {
+                $d = (new \App\Services\DiscogsService($businessId))->searchProductPrice($line);
+                if (empty($d['error'])) {
+                    foreach ((array) ($d['prices'] ?? []) as $p) {
+                        if (stripos((string) ($p['condition'] ?? ''), 'Very Good Plus') === 0 || stripos((string) ($p['condition'] ?? ''), 'VG+') !== false) {
+                            $out['discogs'] = (float) str_replace(',', '', (string) $p['value']);
+                            break;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                \Log::info('MassAddAiPrice discogs lookup failed', ['error' => $e->getMessage()]);
+            }
+            try {
+                $res = (new \App\Services\EbayService($businessId))->browseSearch([
+                    'q' => mb_substr($line, 0, 100),
+                    'limit' => 50,
+                    'filter' => 'buyingOptions:{FIXED_PRICE},priceCurrency:USD,price:[5..]',
+                ]);
+                $tokens = $this->nameTokens($line);
+                $need = max(2, (int) ceil(count($tokens) * 0.6));
+                $prices = [];
+                foreach ((array) ($res['itemSummaries'] ?? []) as $it) {
+                    $title = mb_strtolower((string) ($it['title'] ?? ''));
+                    $hit = 0;
+                    foreach ($tokens as $t) {
+                        if (mb_strpos($title, $t) !== false) $hit++;
+                    }
+                    $price = (float) ($it['price']['value'] ?? 0);
+                    if ($price > 0 && $hit >= $need) $prices[] = $price;
+                }
+                if (count($prices) >= 3) {
+                    sort($prices);
+                    $n = count($prices);
+                    $median = $n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2;
+                    $out['ebay'] = ['median' => round($median, 2), 'n' => $n];
+                }
+            } catch (\Throwable $e) {
+                \Log::info('MassAddAiPrice eBay lookup failed', ['error' => $e->getMessage()]);
+            }
+            return $out;
+        });
+    }
+
     public function price(Request $request)
     {
         if (!auth()->user() || !auth()->user()->can('product.create')) {
@@ -124,6 +182,13 @@ class MassAddAiPriceController extends Controller
                     $userText .= '   Our sales: ' . implode('; ', array_slice($c['match'], 0, 3)) . ' - sold ' . $c['sales'] . 'x, usually $' . $c['median']
                         . ($c['fast'] ? ', sells fast' : '') . "\n";
                 }
+                $w = $this->web[$n] ?? null;
+                if ($w && ($w['discogs'] || $w['ebay'])) {
+                    $parts = [];
+                    if ($w['discogs']) $parts[] = 'Discogs VG+ $' . $w['discogs'];
+                    if ($w['ebay']) $parts[] = 'eBay asking median $' . $w['ebay']['median'] . ' (' . $w['ebay']['n'] . ' listings)';
+                    $userText .= '   Web: ' . implode('; ', $parts) . "\n";
+                }
             }
 
             $res = $callModel($model, $userText);
@@ -203,11 +268,20 @@ class MassAddAiPriceController extends Controller
             // before the AI sees the batch, and used to decide what needs a second look.
             $this->comparables = [];
             $conflict = [];
+            $this->web = [];
             foreach ($numbered as $n => $l) {
                 $c = $this->storeHistory($businessId, $l, '', '');
                 $this->comparables[$n] = $c;
                 // Our sales for this title are spread out (e.g. a $5 copy and a $40 copy).
                 $conflict[$n] = $c && $c['median'] > 0 && $c['p75'] > 2 * $c['median'];
+                // Live web prices: Discogs (VG+ suggestion) and eBay (asking median).
+                $w = $this->webComparables($businessId, $l);
+                $this->web[$n] = $w;
+                // Discogs and eBay disagree by 2x or more.
+                $prices = array_filter([$w['discogs'], $w['ebay']['median'] ?? null]);
+                if (count($prices) === 2 && max($prices) > 2 * min($prices)) {
+                    $conflict[$n] = true;
+                }
             }
 
             // 1. Routine pass on Haiku, batches of BATCH_SIZE lines.
