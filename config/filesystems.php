@@ -43,7 +43,16 @@ return [
 
     'disks' => [
 
+        // Private app data (settings JSON, snapshots, exports). Was
+        // public_path('uploads'), which nginx served to anyone, including
+        // help_assistant.json with the Anthropic key (Sarah, 2026-11-16).
         'local' => [
+            'driver' => 'local',
+            'root' => storage_path('app/erp-data'),
+        ],
+
+        // Public images/documents served from /uploads.
+        'uploads' => [
             'driver' => 'local',
             'root' => public_path('uploads'),
         ],

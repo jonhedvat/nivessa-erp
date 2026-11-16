@@ -15,7 +15,9 @@ class CheckUserLogin
      */
     public function handle($request, Closure $next)
     {
-        if ($request->user()->user_type != 'user' || $request->user()->allow_login != 1) {
+        $u = $request->user();
+        // Deactivated staff are out even if a remember-me cookie signed them in.
+        if ($u->user_type != 'user' || $u->allow_login != 1 || (!empty($u->status) && $u->status !== 'active')) {
             abort(403, 'Unauthorized action.');
         }
 

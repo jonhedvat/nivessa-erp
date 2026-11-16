@@ -67,6 +67,7 @@ class Kernel extends HttpKernel
         'EcomApi' => \App\Http\Middleware\EcomApi::class,
         'verify.nivessa_web' => \App\Http\Middleware\VerifyNivessaWebToken::class,
         'nivessa.only.api' => \App\Http\Middleware\NivessaOnlyApi::class,
+        'admin.only' => \App\Http\Middleware\AdminOnly::class,
         'AdminSidebarMenu' => \App\Http\Middleware\AdminSidebarMenu::class,
         'superadmin' => \App\Http\Middleware\Superadmin::class,
         'CheckUserLogin' => \App\Http\Middleware\CheckUserLogin::class,

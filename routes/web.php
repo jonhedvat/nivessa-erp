@@ -60,8 +60,8 @@ Route::middleware(['setData'])->group(function () {
 
     Route::get('/business/register', function () { return redirect('/login'); })->name('business.getRegister');
     Route::post('/business/register', function () { abort(404); })->name('business.postRegister');
-    Route::post('/business/register/check-username', 'BusinessController@postCheckUsername')->name('business.postCheckUsername');
-    Route::post('/business/register/check-email', 'BusinessController@postCheckEmail')->name('business.postCheckEmail');
+    Route::post('/business/register/check-username', function () { abort(404); })->name('business.postCheckUsername');
+    Route::post('/business/register/check-email', function () { abort(404); })->name('business.postCheckEmail');
 
     Route::get('/invoice/{token}', 'SellPosController@showInvoice')
         ->name('show_invoice');
@@ -1502,14 +1502,14 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // Employee Productivity report. Sling free has no API keys, so we use
     // the email/password -> token exchange Sling support recommends.
     Route::get('/admin/sling/login', 'SlingController@loginForm');
-    Route::post('/admin/sling/login', 'SlingController@login');
-    Route::post('/admin/sling/save-token', 'SlingController@saveToken');
-    Route::post('/admin/sling/save-curl', 'SlingController@saveFromCurl');
-    Route::post('/admin/sling/test', 'SlingController@testConnection');
-    Route::post('/admin/sling/disconnect', 'SlingController@disconnect');
+    Route::post('/admin/sling/login', 'SlingController@login')->middleware('admin.only');
+    Route::post('/admin/sling/save-token', 'SlingController@saveToken')->middleware('admin.only');
+    Route::post('/admin/sling/save-curl', 'SlingController@saveFromCurl')->middleware('admin.only');
+    Route::post('/admin/sling/test', 'SlingController@testConnection')->middleware('admin.only');
+    Route::post('/admin/sling/disconnect', 'SlingController@disconnect')->middleware('admin.only');
     Route::get('/admin/sling/shifts', 'SlingController@shiftsIndex');
-    Route::post('/admin/sling/shifts/sync', 'SlingController@syncShifts');
-    Route::post('/admin/sling/shifts/setup', 'SlingController@setupTable');
+    Route::post('/admin/sling/shifts/sync', 'SlingController@syncShifts')->middleware('admin.only');
+    Route::post('/admin/sling/shifts/setup', 'SlingController@setupTable')->middleware('admin.only');
     Route::get('/admin/sling/shifts/diagnose', 'SlingController@diagnoseShifts');
     Route::get('/admin/sling/shifts/{id}/debug', 'SlingController@debugShift');
     Route::post('/admin/sling/shifts/{id}/map-user', 'SlingController@mapShiftUser');
@@ -1861,15 +1861,15 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // Sarah has no SSH; this page uploads the xlsx and streams artisan output back.
     Route::get('/admin/nivessa-backend-import', 'NivessaBackendImportController@index');
     Route::post('/admin/nivessa-backend-import/chunk', 'NivessaBackendImportController@chunk');
-    Route::post('/admin/nivessa-backend-import/run', 'NivessaBackendImportController@run');
+    Route::post('/admin/nivessa-backend-import/run', 'NivessaBackendImportController@run')->middleware('admin.only');
 
     // Channel Sales Sync — pull nivessa.com web orders + space rentals and
     // Discogs marketplace orders into ERP transactions (ERP = source of truth).
     // Dry-run/commit, streams artisan output. No SSH needed.
     Route::get('/admin/channel-sales-sync', 'ChannelSalesSyncController@index');
-    Route::post('/admin/channel-sales-sync/web', 'ChannelSalesSyncController@runWeb');
-    Route::post('/admin/channel-sales-sync/discogs', 'ChannelSalesSyncController@runDiscogs');
-    Route::post('/admin/channel-sales-sync/webhook', 'ChannelSalesSyncController@saveWebhook');
+    Route::post('/admin/channel-sales-sync/web', 'ChannelSalesSyncController@runWeb')->middleware('admin.only');
+    Route::post('/admin/channel-sales-sync/discogs', 'ChannelSalesSyncController@runDiscogs')->middleware('admin.only');
+    Route::post('/admin/channel-sales-sync/webhook', 'ChannelSalesSyncController@saveWebhook')->middleware('admin.only');
 
     // ABC import — externally-computed sales-based classification overrides
     // the live inventory-value ABC used in ICA + ABC report.
@@ -1877,7 +1877,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/admin/abc-import/preview', 'AbcImportController@preview');
     Route::post('/admin/abc-import/recalculate', 'AbcImportController@recalculate');
     Route::post('/admin/abc-import/save', 'AbcImportController@save');
-    Route::post('/admin/abc-import/clear', 'AbcImportController@clear');
+    Route::post('/admin/abc-import/clear', 'AbcImportController@clear')->middleware('admin.only');
 
     // Discogs street-date backfill — fills New Releases' street date field
     // from the linked Discogs release, only where it's currently blank.
@@ -1893,22 +1893,22 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/admin/discogs-import-inventory/snapshot-page', 'DiscogsInventoryImportController@snapshotPage');
     Route::post('/admin/discogs-import-inventory/status', 'DiscogsInventoryImportController@status');
     Route::post('/admin/discogs-import-inventory/preview', 'DiscogsInventoryImportController@preview');
-    Route::post('/admin/discogs-import-inventory/apply', 'DiscogsInventoryImportController@apply');
+    Route::post('/admin/discogs-import-inventory/apply', 'DiscogsInventoryImportController@apply')->middleware('admin.only');
     Route::get('/admin/discogs-import-inventory/dupes/{snapshotId}', 'DiscogsInventoryImportController@downloadDupes');
-    Route::post('/admin/discogs-import-inventory/cleanup-duplicates', 'DiscogsInventoryImportController@cleanupDuplicates');
+    Route::post('/admin/discogs-import-inventory/cleanup-duplicates', 'DiscogsInventoryImportController@cleanupDuplicates')->middleware('admin.only');
     Route::post('/admin/discogs-import-inventory/reconcile-csv', 'DiscogsInventoryImportController@reconcileCsv');
     Route::post('/admin/discogs-import-inventory/toggle-visibility', 'DiscogsInventoryImportController@toggleVisibility');
     Route::get('/admin/discogs-import-inventory/roles', 'DiscogsInventoryImportController@rolesForLocation');
     Route::post('/admin/discogs-import-inventory/set-pos-access', 'DiscogsInventoryImportController@setPosAccess');
     Route::post('/admin/discogs-import-inventory/backfill-categories', 'DiscogsInventoryImportController@backfillCategories');
-    Route::post('/admin/discogs-import-inventory/warehouse-sealed-cost', 'DiscogsInventoryImportController@warehouseSealedCost');
+    Route::post('/admin/discogs-import-inventory/warehouse-sealed-cost', 'DiscogsInventoryImportController@warehouseSealedCost')->middleware('admin.only');
     Route::get('/admin/inventory-value-by-location', 'DiscogsInventoryImportController@inventoryValueByLocation');
     Route::post('/admin/discogs-import-inventory/warehouse-sealed-cost-restore', 'DiscogsInventoryImportController@warehouseSealedCostRestoreEntered');
 
     // Flat-rate cost price rules (accountant punch list). Backfills missing
     // default_purchase_price on variations by category. Preview then Apply.
     Route::get('/admin/cost-price-rules', 'CostPriceRulesController@index');
-    Route::post('/admin/cost-price-rules/run', 'CostPriceRulesController@run');
+    Route::post('/admin/cost-price-rules/run', 'CostPriceRulesController@run')->middleware('admin.only');
 
     // Per-employee Pico/Hollywood assignment for Tasks visibility (location
     // permissions can't tell most staff apart — see TaskStoreAssignmentsController).
@@ -2499,7 +2499,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData'])->group(function () {
     Route::get('/import-purchase-excel-file', 'PurchaseController@importExcelFile')->name('purchases.import-excel-file');
 });
 
-Route::post('updateStock' , [\App\Http\Controllers\ProductController::class , 'updateStock'])->middleware(['auth']);
+Route::post('updateStock' , [\App\Http\Controllers\ProductController::class , 'updateStock'])->middleware(['auth', 'CheckUserLogin']);
 
 // In-ERP "Ask the ERP" help assistant (floating widget on every page).
 Route::middleware(['setData', 'auth', 'SetSessionData'])->group(function () {

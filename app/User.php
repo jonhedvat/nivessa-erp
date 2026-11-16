@@ -294,7 +294,12 @@ class User extends Authenticatable
      */
     public function findForPassport($username)
     {
-        return $this->where('username', $username)->first();
+        // No API tokens for deactivated logins or outside businesses.
+        return $this->where('username', $username)
+            ->where('business_id', 1)
+            ->where('allow_login', 1)
+            ->where(function ($q) { $q->whereNull('status')->orWhere('status', 'active'); })
+            ->first();
     }
 
     /**
