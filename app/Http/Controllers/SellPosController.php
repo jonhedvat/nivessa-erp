@@ -5155,8 +5155,9 @@ class SellPosController extends Controller
             }
             $user = auth()->user();
             \Log::warning("POS cross-store ring blocked: user {$user->id} ip {$ip} at store {$hereId}, sale store {$saleLoc}");
-            return trim($user->first_name . ' ' . $user->last_name) . ' is still logged in on this '
-                . $stores[$hereId]['name'] . ' computer. Please log out, then log in as yourself.';
+            return 'This ' . $stores[$hereId]['name'] . ' computer is still logged in as '
+                . trim($user->first_name . ' ' . $user->last_name) . ', who has the ' . $stores[$saleLoc]['name']
+                . ' register open. Log out, then log in with your own name.';
         } catch (\Throwable $e) {
             \Log::warning('crossStoreRingMessage failed: ' . $e->getMessage());
             return null;
