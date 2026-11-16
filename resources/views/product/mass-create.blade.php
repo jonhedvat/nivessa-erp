@@ -2669,12 +2669,13 @@
                     const raised = h.price > h.ai
                         ? ' &rarr; <strong style="color:#15803d;">raised ' + money(h.ai) + ' to ' + money(h.price) + '</strong>' + (h.fast ? ' (fast seller)' : '')
                         : ' &rarr; kept ' + money(h.price);
-                    return '<li><strong>' + esc(h.item) + '</strong>: sold ' + h.sales + 'x, usually ' + money(h.median) + speed
+                    const matched = (h.match && h.item.toLowerCase().indexOf(String(h.match).toLowerCase()) !== 0) ? ' <span class="text-muted">(our &ldquo;' + esc(h.match) + '&rdquo;)</span>' : '';
+                    return '<li><strong>' + esc(h.item) + '</strong>' + matched + ': sold ' + h.sales + 'x, usually ' + money(h.median) + speed
                         + (h.in_stock > 0 ? ', ' + h.in_stock + ' in stock now' : '') + raised + '</li>';
                 }).join('');
                 $('#ai_price_history').html('<strong><i class="fa fa-line-chart"></i> Our sales history</strong><ul style="margin:6px 0 0; padding-left:18px;">' + rows + '</ul>').show();
             } else {
-                $('#ai_price_history').html('<span class="text-muted">None of these have 2+ sales in our store in the last 2 years, so prices are the AI&rsquo;s market estimate.</span>').show();
+                $('#ai_price_history').html('<span class="text-muted">None of these have sold in our store in the last 2 years, so prices are the AI&rsquo;s market estimate.</span>').show();
             }
             $('#bulk_product_text').val(res.csv);
             $('#bulk_preview_container').hide();

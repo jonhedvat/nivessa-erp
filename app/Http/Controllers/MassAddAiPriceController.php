@@ -172,12 +172,17 @@ class MassAddAiPriceController extends Controller
                 $price = $ai;
 
                 $h = $this->storeHistory($businessId, $name, $artist, $cat);
-                if ($h) {
-                    $floor = $h['fast'] ? $h['p75'] : $h['median'];
-                    if ($floor > $price) $price = $floor;
-                    $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
+                $floor = $h ? ($h['fast'] ? $h['p75'] : $h['median']) : 0;
+                $histNote = function ($price) use ($h, $name, $artist, $ai) {
+                    return ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
-                        'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock']];
+                        'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock'], 'match' => $h['match'][0] ?? ''];
+                };
+                if ($h && $floor > $ai) {
+                    // Sarah 2026-11-16: "if you see things selling, why let someone price
+                    // it lower by accident" - we sold this same item for more: use our price.
+                    $price = $floor;
+                    $notes[] = $histNote($price);
                 } elseif (stripos($cat, 'Trading Card') === 0) {
                     // Ordinary raw card we have no exact history for: the AI's online
                     // price runs well above walk-in prices, so meet in the middle
@@ -188,7 +193,7 @@ class MassAddAiPriceController extends Controller
                         $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat];
                     }
-                } elseif ($ai > 0 && stripos($cat, '7"') !== 0 && !in_array(strtoupper($cond), ['G+', 'G', 'F', 'P'], true)) {
+                } elseif (!$h && $ai > 0 && stripos($cat, '7"') !== 0 && !in_array(strtoupper($cond), ['G+', 'G', 'F', 'P'], true)) {
                     // Sarah 2026-11-16: the AI runs about a third low on sealed vinyl / CDs
                     // and cassettes. No exact history for this item, so never go below
                     // what three quarters of our sales in its category + genre went for.
@@ -201,6 +206,9 @@ class MassAddAiPriceController extends Controller
                         $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''), 'low' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $cat . ($sub !== '' ? ' > ' . $sub : '')];
                     }
+                }
+                if ($h && $price == $ai) {
+                    $notes[] = $histNote($price); // we have history and the AI was not under it
                 }
                 // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
                 $lines[] = implode(' | ', [$name, $artist, $cat, $sub, '', $price > 0 ? number_format($price, 2, '.', '') : '', '', '', $cond]);
@@ -284,10 +292,47 @@ class MassAddAiPriceController extends Controller
             . "since PSA / BGS grades do not fit the condition field. Artist is the player (or the franchise, e.g. Pokemon).";
     }
 
+    /** Lower-case word list for fuzzy title matching: no accents, punctuation or filler words. */
+    private function nameTokens($text)
+    {
+        $t = mb_strtolower(\Illuminate\Support\Str::ascii((string) $text));
+        $t = preg_replace('/[^a-z0-9]+/', ' ', $t);
+        $noise = ['the', 'a', 'an', 'and', 'of', 'lp', 'vinyl', 'record', 'cd', 'dvd', 'vhs', 'cassette', 'tape', 'sealed', 'used', 'new', 'album'];
+        return array_values(array_filter(explode(' ', $t), function ($w) use ($noise) {
+            return $w !== '' && !in_array($w, $noise, true);
+        }));
+    }
+
+    /**
+     * Is this product of ours the same title as the item being priced?
+     * Fuzzy on purpose - our names are written many ways ("SMITH,ELLIOTT - Roman
+     * Candle", "LIMP BIZKIT / CHOCOLATE STARFISH & THE HOT DOG FLA"):
+     *  - the artist's words must all appear in our name or artist field;
+     *  - the title words (artist words removed) must overlap 60%+, or the title
+     *    text be 85%+ alike (handles cut-off names);
+     *  - numbers / volume marks must be identical ("Greatest Hits" != "Greatest Hits II").
+     */
+    private function sameTitle(array $qTitle, array $qArtist, $prodName, $prodArtist)
+    {
+        $pAll = $this->nameTokens($prodName . ' ' . $prodArtist);
+        if ($qArtist && array_diff($qArtist, $pAll)) return false;
+        $pTitle = array_values(array_diff($this->nameTokens($prodName), $qArtist));
+        $isNum = function ($w) { return (bool) preg_match('/^(\d+|ii|iii|iv|vi|vii|viii|ix|vol\w*|pt|part|disc|season|series)$/', $w); };
+        $qn = array_values(array_unique(array_filter($qTitle, $isNum))); sort($qn);
+        $pn = array_values(array_unique(array_filter($pTitle, $isNum))); sort($pn);
+        if ($qn !== $pn) return false;
+        if (!$qTitle || !$pTitle) return !$qTitle && !$pTitle; // self-titled both sides
+        $inter = count(array_intersect(array_unique($qTitle), array_unique($pTitle)));
+        $union = count(array_unique(array_merge($qTitle, $pTitle)));
+        if ($union > 0 && $inter / $union >= 0.6) return true;
+        similar_text(implode(' ', $qTitle), implode(' ', $pTitle), $pct);
+        return $pct >= 85;
+    }
+
     /**
      * What we've actually sold this item for in the last 2 years, and how fast.
-     * Match: same product name + same category (CD vs vinyl vs DVD price very
-     * differently), artist must match when both sides have one. Needs 2+ sales.
+     * Match: the same title (fuzzy, see sameTitle) in the same category (CD vs
+     * vinyl vs DVD price very differently). One sale is enough.
      * "fast" = copies usually sell within 30 days of being added; for fast
      * sellers the floor is the 75th-percentile sale price, otherwise the median.
      */
@@ -295,21 +340,36 @@ class MassAddAiPriceController extends Controller
     {
         if (mb_strlen($name) < 2) return null;
         try {
+            $qArtist = in_array(mb_strtolower(trim($artist)), ['', 'unknown', 'various', 'various artists', 'soundtrack', 'n/a'], true)
+                ? [] : $this->nameTokens($artist);
+            $qTitle = array_values(array_diff($this->nameTokens($name), $qArtist));
+            // Narrow in SQL by the two longest words, then decide in PHP.
+            $words = $qTitle ?: $qArtist;
+            $words = array_values(array_filter($words, function ($w) { return strlen($w) >= 3; }));
+            usort($words, function ($a, $b) { return strlen($b) - strlen($a); });
+            $words = array_slice($words, 0, 2);
+
             $pq = DB::table('products as p')
                 ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
-                ->where('p.business_id', $businessId)
-                ->where('p.name', $name);
+                ->where('p.business_id', $businessId);
             if ($category !== '') {
                 $pq->where('c.name', $category);
             }
-            if ($artist !== '') {
-                $pq->where(function ($a) use ($artist) {
-                    $a->whereNull('p.artist')->orWhere('p.artist', '')->orWhere('p.artist', $artist);
-                });
-            }
-            $products = $pq->limit(200)->get(['p.id', 'p.created_at']);
+            $pq->where(function ($w) use ($name, $words) {
+                $w->where('p.name', $name);
+                if ($words) {
+                    $w->orWhere(function ($l) use ($words) {
+                        foreach ($words as $word) $l->where('p.name', 'like', '%' . $word . '%');
+                    });
+                }
+            });
+            $cands = $pq->limit(600)->get(['p.id', 'p.name', 'p.artist', 'p.created_at']);
+            $products = $cands->filter(function ($p) use ($name, $qTitle, $qArtist) {
+                return $this->sameTitle($qTitle, $qArtist, $p->name, (string) $p->artist);
+            })->take(200);
             if ($products->isEmpty()) return null;
             $created = $products->pluck('created_at', 'id');
+            $names = $products->pluck('name', 'id');
 
             $sales = DB::table('transaction_sell_lines as tsl')
                 ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
@@ -321,7 +381,7 @@ class MassAddAiPriceController extends Controller
                 ->where('t.transaction_date', '>=', now()->subYears(2))
                 ->where('tsl.unit_price_inc_tax', '>', 0)
                 ->get(['tsl.product_id', 'tsl.unit_price_inc_tax as price', 't.transaction_date']);
-            if ($sales->count() < 2) return null;
+            if ($sales->count() < 1) return null;
 
             $prices = $sales->pluck('price')->map(function ($p) { return (float) $p; })->sort()->values()->all();
             $n = count($prices);
@@ -344,7 +404,10 @@ class MassAddAiPriceController extends Controller
                 ->whereIn('product_id', $created->keys()->all())
                 ->sum('qty_available');
 
+            $match = $sales->pluck('product_id')->unique()->map(function ($id) use ($names) { return $names[$id] ?? ''; })->filter()->unique()->take(6)->values()->all();
+
             return [
+                'match' => $match,
                 'sales' => $n,
                 'median' => round($median, 2),
                 'p75' => round($p75, 2),
