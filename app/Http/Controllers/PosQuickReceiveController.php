@@ -189,12 +189,21 @@ class PosQuickReceiveController extends Controller
                 $vld->qty_available = (float) $vld->qty_available + (float) $qty;
                 $vld->save();
 
+<<<<<<< Updated upstream
                 // Without a matching purchase_line at the same location,
                 // TransactionUtil's sell-allocation throws "Mismatch between
                 // sold and purchase quantity" at checkout — the qty is on
                 // the shelf but the sale won't go through. Mirror the
                 // stock bump with a purchase trail so the item is actually
                 // sellable, not just visible in the cart.
+=======
+                // Also create a real purchase transaction + purchase_line so
+                // the sell-allocation logic in TransactionUtil can find a
+                // matching purchase row when the cashier rings up this item.
+                // Without this, the next sell throws "Mismatch between sold
+                // and purchase quantity" because qty_available > 0 but
+                // there's no purchase_line to map the sell against.
+>>>>>>> Stashed changes
                 $tx_id = self::createPurchaseTrail(
                     $variation, $product, $location_id, $qty,
                     $business_id, $user_id
@@ -303,6 +312,28 @@ class PosQuickReceiveController extends Controller
                 if ($vld) {
                     $vld->qty_available = (float) $vld->qty_available - (float) $row->qty;
                     $vld->save();
+                }
+
+                // Tear down the synthetic purchase trail too, but ONLY if
+                // the line hasn't been consumed by a sale/adjustment. If
+                // it has, leave it in place — TSPL mappings still reference
+                // it, and yanking it would orphan a sold sell_line.
+                if (!empty($row->transaction_id)) {
+                    $pl = PurchaseLine::where('transaction_id', $row->transaction_id)->first();
+                    $consumed = $pl
+                        ? ((float) $pl->quantity_sold > 0
+                            || (float) $pl->quantity_adjusted > 0
+                            || (float) $pl->quantity_returned > 0
+                            || (float) $pl->mfg_quantity_used > 0)
+                        : false;
+                    if ($pl && !$consumed) {
+                        $pl->delete();
+                    }
+                    if (!$consumed) {
+                        Transaction::where('id', $row->transaction_id)
+                            ->where('type', 'purchase')
+                            ->delete();
+                    }
                 }
 
                 DB::table('pos_quick_receives')

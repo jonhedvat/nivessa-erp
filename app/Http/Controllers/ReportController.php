@@ -11059,6 +11059,7 @@ class ReportController extends Controller
             $business_id, $start, $end, $location_id, $card_methods, $used_all_methods
         );
 
+<<<<<<< Updated upstream
         // Day totals banner — Sarah 2026-05-09: combine cash + card into a
         // single ERP Net Sales total and compare against Clover Net Sales.
         // ERP net = SUM(total_before_tax) at the transaction level; Clover
@@ -11079,6 +11080,17 @@ class ReportController extends Controller
         // amount); Whatnot is broken out so the in-store Diff isn't
         // polluted by inventory-only sales. Field names erp_net / clover
         // are kept for back-compat; they now carry gross values.
+=======
+        // Day totals banner — Sarah 2026-05-13: source of truth is the
+        // /pos/recent-feed page. Both pages now call into the shared
+        // SellPosController::dayByStoreTotals() helper so the per-store
+        // ERP / Clover / Whatnot / Diff numbers are guaranteed to match
+        // what the recent feed shows for the same date. Gross-vs-gross
+        // (final_total vs Clover amount); Whatnot is broken out so the
+        // in-store Diff isn't polluted by inventory-only sales. Field
+        // names erp_net / clover are kept for back-compat; they now
+        // carry gross values.
+>>>>>>> Stashed changes
         $totalsByStore = \App\Http\Controllers\SellPosController::dayByStoreTotals(
             (int) $business_id,
             $start,
@@ -11098,9 +11110,15 @@ class ReportController extends Controller
         // pair to an ERP sale in the day. Explains the Diff column in
         // concrete terms (e.g. "one $37.71 charge with no matching ring").
         $matchedTxIds = array_keys($rows ?? []);
+<<<<<<< Updated upstream
         // Sarah 2026-05-13: reuse the same LA-tightened Clover rows the
         // helper used to build the per-store Diff — so the per-charge
         // list and the totals are sourced from the same dataset.
+=======
+        // Sarah 2026-05-13: reuse the same LA-tightened Clover rows that
+        // built the per-store Diff above so the per-charge list and the
+        // totals are guaranteed to be sourced from the same dataset.
+>>>>>>> Stashed changes
         $cloverRowsForDiff = $totalsByStore['clover_rows_raw'];
 
         // Pull ERP sales for the day (matching pool — channel='in_store'
