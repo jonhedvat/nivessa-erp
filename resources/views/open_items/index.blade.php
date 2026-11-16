@@ -29,7 +29,8 @@
 .open-shell .oi-empty { padding:12px 18px; font-size:14px; color:var(--d-good); font-weight:600; }
 .open-shell .oi-err { padding:12px 18px; font-size:14px; color:var(--d-warn); font-weight:600; }
 
-.open-shell .oi-row { grid-template-columns:minmax(120px,200px) 1fr auto auto auto; }
+.open-shell .oi-row { grid-template-columns:minmax(120px,200px) 1fr auto auto; }
+.open-shell .oi-row .oi-acts { grid-column:1 / -1; justify-content:flex-end; flex-wrap:wrap; }
 .open-shell .oi-reopen { grid-column:1 / -1; font-size:13px; font-weight:600; color:#B3261E; }
 .open-shell .oi-acts { display:flex; gap:6px; }
 .open-shell .oi-acts details { position:relative; }
