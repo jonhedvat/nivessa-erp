@@ -32,10 +32,10 @@ jobs:
             $d=app(\App\Http\Controllers\SellPosController::class)->recentSalesFeed($req)->getData();
             $cf=$d['cashier_for_orphan']??[]; $cn=$d['cashierNameById']??[];
             echo "ORPHANS (Clover, no ERP sale)\n";
-            foreach (($d['unclaimed_clover_payments']??collect()) as $o) { $o=(array)$o; $p=json_decode($o['raw_payload']??'',true)?:[]; $id=$o['id']??null; echo json_encode(['loc'=>$o['location_id']??null,'amt'=>($o['amount_cents']??0)/100,'paid_at'=>$o['paid_at']??null,'paid_on'=>$o['paid_on']??null,'cashier'=>$cn[$cf[$id]??0]??($cf[$id]??null),'dev'=>$p['device']['id']??null,'order'=>$o['clover_order_id']??null,'emp'=>$p['employee']['id']??null])."\n"; }
+            foreach (($d['unclaimed_clover_payments']??collect()) as $o) { $o=json_decode(json_encode($o),true); $p=json_decode($o['raw_payload']??'',true)?:[]; $id=$o['id']??null; echo json_encode(['loc'=>$o['location_id']??null,'amt'=>($o['amount_cents']??0)/100,'paid_at'=>$o['paid_at']??null,'paid_on'=>$o['paid_on']??null,'cashier'=>$cn[$cf[$id]??0]??($cf[$id]??null),'dev'=>$p['device']['id']??null,'order'=>$o['clover_order_id']??null,'emp'=>$p['employee']['id']??null])."\n"; }
             echo "ANDY ERP SALES with no Clover match\n";
-            $by=$d['clover_by_transaction']??[];
-            foreach ($d['sales'] as $s) { $s=(array)$s; if (($s['created_by']??0)!=64) continue; if (!empty($by[$s['id']])) continue; echo json_encode([$s['id'],$s['transaction_date'],$s['final_total'],$s['location_id']])."\n"; }
+            $by=$d['clover_by_transaction']??[]; echo '';
+            foreach ($d['sales'] as $s) { $s=json_decode(json_encode($s),true); if (($s['created_by']??0)!=64) continue; if (!empty($by[$s['id']])) continue; echo json_encode([$s['id'],$s['transaction_date'],$s['final_total'],$s['location_id']])."\n"; }
             echo "TZ ".config('app.timezone')." sample paid_at ".\DB::table('clover_payments')->where('paid_on','2026-11-13')->min('paid_at')." .. ".\DB::table('clover_payments')->where('paid_on','2026-11-13')->max('paid_at')." n=".\DB::table('clover_payments')->where('paid_on','2026-11-13')->count()."\n";
             PHP
             echo "=== done ==="
