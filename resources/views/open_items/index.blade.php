@@ -58,7 +58,7 @@
 .open-shell .oi-row.picked { background:#FFFBE6; }
 @media (max-width: 1100px) {
   .open-shell .oi-layout { grid-template-columns:1fr; }
-  .open-shell .oi-side { position:fixed; left:8px; right:8px; bottom:8px; top:auto; z-index:50; display:none; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+  .open-shell .oi-side { position:fixed; left:auto; right:8px; bottom:8px; top:auto; width:min(420px, calc(100vw - 16px)); z-index:1050; display:none; box-shadow:0 10px 30px rgba(0,0,0,.25); }
   .open-shell .oi-side.open { display:block; }
   .open-shell .oi-side-body { max-height:70vh; }
 }
