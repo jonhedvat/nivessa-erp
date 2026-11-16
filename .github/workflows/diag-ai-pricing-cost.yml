@@ -28,4 +28,4 @@ jobs:
           script: |
             set -e
             cd /www/playlist.nivessa.com/app
-            cd /www/playlist.nivessa.com/app && php artisan ai:pricing-cost --days=1 --items 2>&1 | head -150
+            cd /www/playlist.nivessa.com/app && grep -h "model fell back\|Anthropic error\|escalation failed" storage/logs/laravel*.log | tail -8 | cut -c1-700
