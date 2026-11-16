@@ -1,0 +1,52 @@
+# READ-ONLY (2026-11-16): Alliance invoice PLS98640384 (purchase #187197) left off
+# 0881061300946 TORI AMOS "BLACK IS THE NEW" for no category. Print the parsed line
+# (format code, qty, cost), the purchase, and any catalog match. No writes.
+name: Diag Alliance PLS98640384 (read-only)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            use App\Services\DistributorInvoiceIntake as I; use App\Services\DistributorInvoiceParser as P; use App\Services\RawImapClient as R;
+            $tx = \DB::table('transactions')->where('id',187197)->first(['id','ref_no','status','location_id','contact_id','transaction_date','final_total','additional_notes']);
+            echo 'TX '.json_encode($tx)."\n";
+            echo 'LINES '.\DB::table('purchase_lines')->where('transaction_id',187197)->count()."\n";
+            foreach (['0881061300946','881061300946'] as $u) { foreach (\DB::table('variations as v')->join('products as p','p.id','=','v.product_id')->leftJoin('categories as c','c.id','=','p.category_id')->where(fn($q)=>$q->where('v.sub_sku',$u)->orWhere('p.sku',$u))->get(['p.id','p.name','p.sku','c.name as cat','v.id as vid','v.sell_price_inc_tax','p.is_inactive']) as $r) echo "CAT $u ".json_encode($r)."\n"; }
+            foreach (\DB::table('products')->where('name','like','%TORI AMOS%')->orWhere('artist','like','%Tori Amos%')->orderByDesc('id')->limit(10)->get(['id','name','sku','category_id']) as $r) echo 'TORI '.json_encode($r)."\n";
+            $s = I::settings();
+            $host = $s['mail_host'] ?? config('inventory_check.email.host','imap.gmail.com'); $port = (int)($s['mail_port'] ?? config('inventory_check.email.port',993));
+            $user = !empty($s['mail_user']) ? $s['mail_user'] : config('inventory_check.email.username'); $pass = !empty($s['mail_pass']) ? $s['mail_pass'] : config('inventory_check.email.password');
+            $cls = class_exists('App\Services\RawImapClient') ? 'App\Services\RawImapClient' : null; echo "IMAPCLS $cls\n";
+            $imap = new $cls(); $imap->connect($host,$port); $imap->login($user, str_replace(' ','',$pass)); $imap->selectFolder('[Gmail]/All Mail');
+            foreach ($imap->uidSearchSinceFrom(now()->subDays(10), I::ALLIANCE_FROM) as $uid) { $raw = $imap->uidFetchRaw($uid); if (strpos($raw,'PLS98640384')===false) continue;
+              foreach (I::pdfAttachments($raw) as $pdf) { $p = P::parse('alliance',$pdf); echo 'HDR '.json_encode($p['header'])." sum=".$p['sum']."\n";
+                foreach ($p['items'] as $it) if (stripos($it['description'],'AMOS')!==false || $it['upc']==='0881061300946') echo 'LINE '.json_encode($it)."\n";
+                echo 'CODES '.json_encode(array_count_values(array_map(fn($i)=>$i['prodType'],$p['items'])))."\n"; } }
+            $imap->logout();
+            PHP
+            echo "=== done ==="
