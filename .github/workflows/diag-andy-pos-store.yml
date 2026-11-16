@@ -27,7 +27,7 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            $day = '2026-11-13';
-            foreach (\DB::table('users')->whereIn('first_name',['Andy','Michael','Jai','Luis','Zakary','Quenton','Alec','Manolo','Jacob'])->where('business_id',1)->get(['id','first_name']) as $u) { $usr = \App\User::find($u->id); echo json_encode([$u->id,$u->first_name,'roles'=>$usr->getRoleNames(),'all'=>$usr->can('access_all_locations'),'L1pico'=>$usr->can('location.1'),'L2hw'=>$usr->can('location.2'),'sell.view'=>$usr->can('sell.view'),'own'=>$usr->can('view_own_sell_only')])."\n"; }
+            foreach ([[64,'2026-11-13 00:00:00'],[83,'2026-11-13 00:00:00'],[77,'2026-11-13 00:00:00']] as [$me_id,$today_start]) { echo json_encode([$me_id, \DB::table('cash_registers')->where('user_id',$me_id)->where(function($q) use ($today_start){$q->where('status','open')->orWhere('created_at','>=',$today_start);})->orderByRaw("status = 'open' DESC")->orderByDesc('created_at')->value('location_id')])."\n"; }
+            echo 'HOME_OK=' . (strpos(file_get_contents('app/Http/Controllers/HomeController.php'),'Andy (both stores)')!==false ? 'deployed' : 'missing') . "\n";
             PHP
             echo "=== done ==="
