@@ -353,7 +353,7 @@ class ShelfCountController extends Controller
             ->where('p.business_id', $business_id)->where('p.is_inactive', 0)->where('v.qty_available', '>', 0)
             ->where(function ($q) use ($kind) { $this->kindQuery($q, $kind); })
             ->where(function ($q) use ($sub) { $sub ? $q->where('p.sub_category_id', $sub) : $q->whereNull('p.sub_category_id')->orWhere('p.sub_category_id', 0); })
-            ->select('p.id', 'p.name', 'p.artist', 'p.sku', 'p.bin_position', 'p.category_id', \DB::raw('SUM(v.qty_available) as qty'))
+            ->select('p.id', 'p.name', 'p.artist', 'p.sku', 'p.bin_position', 'p.category_id', \DB::raw('SUM(v.qty_available) as qty'), \DB::raw('MIN(COALESCE(p.listed_at, p.created_at)) as listed_at'))
             ->groupBy('p.id', 'p.name', 'p.artist', 'p.sku', 'p.bin_position', 'p.category_id')
             ->orderByRaw("LOWER(COALESCE(NULLIF(p.artist, ''), p.name))")->get();
         $name = $sub ? (string) \DB::table('categories')->where('id', $sub)->value('name') : 'No sub-category';
@@ -370,7 +370,9 @@ class ShelfCountController extends Controller
         $sp = self::skuPrice($items->pluck('id')->map(function ($x) { return (int) $x; })->all());
         return view('report.shelf_count_bin', ['locations' => $locations, 'loc' => $loc, 'kind' => $kind, 'kindLabel' => $labels[$kind],
             'name' => $name, 'sub' => $sub, 'genres' => (object) $genres,
-            'items' => $items->map(function ($i) use ($counted, $sp) { return ['id' => (int) $i->id, 'name' => $i->name, 'artist' => $i->artist, 'sku' => $i->sku, 'nsku' => $sp[(int) $i->id]['nsku'] ?? '', 'price' => $sp[(int) $i->id]['price'] ?? null, 'bin' => (string) ($i->bin_position ?? ''), 'erp' => (float) $i->qty, 'cat' => (int) $i->category_id, 'cnt' => self::prevCount($counted[(int) $i->id] ?? null)]; })->values(),
+            'items' => $items->map(function ($i) use ($counted, $sp) { return ['id' => (int) $i->id, 'name' => $i->name, 'artist' => $i->artist, 'sku' => $i->sku, 'nsku' => $sp[(int) $i->id]['nsku'] ?? '', 'price' => $sp[(int) $i->id]['price'] ?? null, 'bin' => (string) ($i->bin_position ?? ''), 'erp' => (float) $i->qty, 'cat' => (int) $i->category_id, 'cnt' => self::prevCount($counted[(int) $i->id] ?? null),
+                // Days in store (Jon 11/16): same listed date the Markdowns page ages from.
+                'days' => $i->listed_at ? (int) \Carbon::parse($i->listed_at)->diffInDays(now()) : null]; })->values(),
             'binKey' => $kind . '|' . $sub, 'binLabel' => $labels[$kind] . ' / ' . $name, 'dueDays' => self::DUE_DAYS]);
     }
 
