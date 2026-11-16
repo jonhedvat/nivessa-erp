@@ -27,8 +27,9 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            $s = \App\Services\TimeClockService::settings();
-            foreach ((array) ($s['stores'] ?? []) as $id => $st) echo "IPSTORE $id manual=".json_encode($st['ips'] ?? [])." auto=".json_encode($st['auto_ips'] ?? [])."\n";
-            foreach (\DB::table('time_clock_ip_seen as t')->leftJoin('users as u','u.id','=','t.user_id')->whereIn('t.day',['2026-11-12','2026-11-13'])->orderBy('t.day')->orderBy('t.location_id')->get(['t.day','t.location_id','t.net','u.first_name','t.source','t.cnt','t.created_at','t.updated_at']) as $r) echo 'IPSEEN '.json_encode($r)."\n";
+            $u=\App\User::find(64); \Auth::setUser($u); $ss=app('session')->driver(); $ss->put('user.business_id',1); $ss->put('user.id',64);
+            $c=app(\App\Http\Controllers\SellPosController::class); $m=new \ReflectionMethod($c,'crossStoreRingMessage'); $m->setAccessible(true);
+            foreach ([['99.51.151.186',2],['99.51.151.186',1],['97.167.218.97',2],['97.167.218.97',1],['8.8.8.8',2]] as [$ip,$loc]) { $r=\Illuminate\Http\Request::create('/pos','POST',['location_id'=>$loc],[],[],['REMOTE_ADDR'=>$ip]); $r->setLaravelSession($ss); echo "TEST $ip sale_loc=$loc => ".json_encode($m->invoke($c,$r))."\n"; }
+            echo 'BLADE '.(strpos(file_get_contents('resources/views/sale_pos/create.blade.php'),'cross_store_msg')!==false?'deployed':'missing')."\n";
             PHP
             echo "=== done ==="
