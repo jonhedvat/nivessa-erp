@@ -27,7 +27,8 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            foreach (\DB::table('sling_shifts')->whereBetween('dtstart',['2026-11-12 00:00:00','2026-11-14 06:00:00'])->orderBy('location_name')->orderBy('dtstart')->get(['user_name','event_type','location_name','position_name','dtstart','dtend','published','last_synced_at']) as $r) echo 'SLING '.json_encode($r)."\n";
-            echo 'SLING range '.\DB::table('sling_shifts')->min('dtstart').' .. '.\DB::table('sling_shifts')->max('dtstart').' last_sync '.\DB::table('sling_shifts')->max('last_synced_at')."\n";
+            $s = \App\Services\TimeClockService::settings();
+            foreach ((array) ($s['stores'] ?? []) as $id => $st) echo "IPSTORE $id manual=".json_encode($st['ips'] ?? [])." auto=".json_encode($st['auto_ips'] ?? [])."\n";
+            foreach (\DB::table('time_clock_ip_seen as t')->leftJoin('users as u','u.id','=','t.user_id')->whereIn('t.day',['2026-11-12','2026-11-13'])->orderBy('t.day')->orderBy('t.location_id')->get(['t.day','t.location_id','t.net','u.first_name','t.source','t.cnt','t.created_at','t.updated_at']) as $r) echo 'IPSEEN '.json_encode($r)."\n";
             PHP
             echo "=== done ==="
