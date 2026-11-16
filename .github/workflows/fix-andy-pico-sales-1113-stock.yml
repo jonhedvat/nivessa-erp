@@ -1,0 +1,38 @@
+# ONE-TIME (2026-11-16): after moving sale 187091 to Pico, 4 items it sold show
+# Hollywood 1 / Pico -1 (they were sold at Pico but the ERP had them at
+# Hollywood). Sold means gone: set both stores to 0 for these 4. Snapshot first.
+name: Fix Andy Pico sales 11-13 stock (one-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Fix
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            $vs = [8432, 423, 8399, 57089];
+            $before = \DB::table('variation_location_details')->whereIn('variation_id', $vs)->whereIn('location_id', [1, 2])->get(['variation_id','location_id','qty_available']);
+            echo 'BEFORE ' . json_encode($before) . "\n";
+            $ok = $before->where('location_id', 2)->every(fn ($r) => (float) $r->qty_available == 1.0) && $before->where('location_id', 1)->every(fn ($r) => (float) $r->qty_available == -1.0);
+            if ($ok) { \Storage::disk('local')->put('admin-snapshots/andy-pico-sales-1113-stock-' . now()->format('Y-m-d_His') . '.json', json_encode($before)); \DB::table('variation_location_details')->whereIn('variation_id', $vs)->whereIn('location_id', [1, 2])->update(['qty_available' => 0, 'updated_at' => now()]); echo "UPDATED\n"; } else { echo "SKIPPED: stock changed since, not touching\n"; }
+            echo 'AFTER ' . json_encode(\DB::table('variation_location_details')->whereIn('variation_id', $vs)->whereIn('location_id', [1, 2])->get(['variation_id','location_id','qty_available'])) . "\n";
+            PHP
+            echo "=== done ==="
