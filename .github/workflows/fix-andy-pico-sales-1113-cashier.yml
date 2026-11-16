@@ -1,0 +1,40 @@
+# ONE-TIME (2026-11-16): the 5 Pico sales from 11/13 were rung by Zak on the
+# Pico computer still logged in as Andy. Credit them to Zakary (user 18).
+name: Fix Andy Pico sales 11-13 cashier (one-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Fix
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            $ids = [187046, 187053, 187055, 187091, 187101];
+            echo 'ZAK ' . json_encode(\DB::table('users')->where('id', 18)->first(['id','first_name','last_name'])) . "\n";
+            $before = \DB::table('transactions')->whereIn('id', $ids)->get(['id','created_by','commission_agent','location_id']);
+            echo 'BEFORE ' . json_encode($before) . "\n";
+            \Storage::disk('local')->put('admin-snapshots/andy-pico-sales-1113-cashier-' . now()->format('Y-m-d_His') . '.json', json_encode($before));
+            $n = \DB::table('transactions')->whereIn('id', $ids)->where('created_by', 64)->where('location_id', 1)->update(['created_by' => 18, 'updated_at' => now()]);
+            $m = \DB::table('transactions')->whereIn('id', $ids)->where('commission_agent', 64)->update(['commission_agent' => 18]);
+            echo "UPDATED created_by=$n commission_agent=$m\n";
+            echo 'AFTER ' . json_encode(\DB::table('transactions')->whereIn('id', $ids)->get(['id','created_by','commission_agent','location_id'])) . "\n";
+            PHP
+            echo "=== done ==="
