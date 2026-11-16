@@ -27,6 +27,15 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            foreach (\DB::table('clover_payments')->whereBetween('paid_at',['2026-11-13 16:00:00','2026-11-14 10:00:00'])->orderBy('paid_at')->get() as $r) { $p=json_decode($r->raw_payload,true)?:[]; echo json_encode(['la'=>\Carbon\Carbon::parse($r->paid_at,'UTC')->setTimezone('America/Los_Angeles')->format('H:i:s'),'loc'=>$r->location_id,'amt'=>round($r->amount_cents/100,2),'emp'=>$r->employee_name,'tender'=>$r->tender_type,'res'=>$r->result,'dev'=>$p['device']['id']??($p['deviceId']??null),'merch'=>$p['merchant']['id']??null,'last4'=>$r->card_last4])."\n"; }
+            $b=\App\Business::first(); \Auth::setUser(\App\User::find($b->owner_id)); $ss=app('session')->driver(); $ss->put('user.business_id',$b->id); $ss->put('user.id',$b->owner_id);
+            $req=\Illuminate\Http\Request::create('/pos/recent-feed','GET',['date'=>'2026-11-13']); $req->setLaravelSession($ss);
+            $d=app(\App\Http\Controllers\SellPosController::class)->recentSalesFeed($req)->getData();
+            $cf=$d['cashier_for_orphan']??[]; $cn=$d['cashierNameById']??[];
+            echo "ORPHANS (Clover, no ERP sale)\n";
+            foreach (($d['unclaimed_clover_payments']??collect()) as $o) { $o=(array)$o; $p=json_decode($o['raw_payload']??'',true)?:[]; $id=$o['id']??null; echo json_encode(['loc'=>$o['location_id']??null,'amt'=>($o['amount_cents']??0)/100,'paid_at'=>$o['paid_at']??null,'paid_on'=>$o['paid_on']??null,'cashier'=>$cn[$cf[$id]??0]??($cf[$id]??null),'dev'=>$p['device']['id']??null,'order'=>$o['clover_order_id']??null,'emp'=>$p['employee']['id']??null])."\n"; }
+            echo "ANDY ERP SALES with no Clover match\n";
+            $by=$d['clover_by_transaction']??[];
+            foreach ($d['sales'] as $s) { $s=(array)$s; if (($s['created_by']??0)!=64) continue; if (!empty($by[$s['id']])) continue; echo json_encode([$s['id'],$s['transaction_date'],$s['final_total'],$s['location_id']])."\n"; }
+            echo "TZ ".config('app.timezone')." sample paid_at ".\DB::table('clover_payments')->where('paid_on','2026-11-13')->min('paid_at')." .. ".\DB::table('clover_payments')->where('paid_on','2026-11-13')->max('paid_at')." n=".\DB::table('clover_payments')->where('paid_on','2026-11-13')->count()."\n";
             PHP
             echo "=== done ==="
