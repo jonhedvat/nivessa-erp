@@ -47,13 +47,12 @@ jobs:
             echo 'TODO ' . json_encode($todo) . "\n";
             $lines = \DB::table('transaction_sell_lines')->whereIn('transaction_id', $todo)->whereNull('parent_sell_line_id')->get(['transaction_id','product_id','variation_id','quantity','quantity_returned']);
             $moves = [];
-            foreach ($lines as $l) { $q = (float) $l->quantity - (float) $l->quantity_returned; if ($q == 0) continue; $k = $l->product_id . ':' . $l->variation_id; $moves[$k] = ($moves[$k] ?? 0) + $q; }
+            foreach ($lines as $l) { $q = (float) $l->quantity - (float) $l->quantity_returned; if ($q == 0 || empty($l->variation_id) || empty($l->product_id)) continue; $k = $l->product_id . ':' . $l->variation_id; $moves[$k] = ($moves[$k] ?? 0) + $q; }
             $vldBefore = [];
             foreach ($moves as $k => $q) { [$p, $v] = explode(':', $k); foreach ([$from, $to] as $loc) { $vldBefore[] = ['p' => $p, 'v' => $v, 'loc' => $loc, 'qty' => \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $loc)->value('qty_available')]; } }
             echo 'MOVES ' . json_encode($moves) . "\n";
             echo 'VLD_BEFORE ' . json_encode($vldBefore) . "\n";
-            if (!$apply) { echo "DRY RUN, nothing written\n"; return; }
-            if (!$todo) { echo "nothing to do\n"; return; }
+            if (!$apply) { echo "DRY RUN, nothing written\n"; } elseif (!$todo) { echo "nothing to do\n"; } else {
             $key = 'andy-pico-sales-1113-' . now()->format('Y-m-d_His');
             \Storage::disk('local')->put("admin-snapshots/{$key}.json", json_encode(['action' => 'move 11/13 Pico sales off Andy HW register', 'transactions' => $tx, 'lines' => $lines, 'vld_before' => $vldBefore], JSON_PRETTY_PRINT));
             echo "SNAPSHOT storage/app/admin-snapshots/{$key}.json\n";
@@ -70,5 +69,6 @@ jobs:
             echo 'AFTER TX ' . json_encode(\DB::table('transactions')->whereIn('id', $ids)->get(['id','location_id'])) . "\n";
             $after = []; foreach ($moves as $k => $q) { [$p, $v] = explode(':', $k); foreach ([$from, $to] as $loc) $after[] = ['v' => $v, 'loc' => $loc, 'qty' => \DB::table('variation_location_details')->where('variation_id', $v)->where('location_id', $loc)->value('qty_available')]; }
             echo 'VLD_AFTER ' . json_encode($after) . "\n";
+            }
             PHP
             echo "=== done ==="
