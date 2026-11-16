@@ -1965,6 +1965,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/fatteen-goals', 'DailyChecklistController@goalsPage')->name('fatteen-goals');
     Route::get('/open-items', 'DailyChecklistController@openItems')->name('open-items');
     Route::post('/open-items/act', 'DailyChecklistController@openItemsAct')->name('open-items.act');
+    Route::post('/open-items/draft', 'DailyChecklistController@openItemsDraft')->name('open-items.draft');
     Route::post('/daily-checklist/wrapup', 'DailyChecklistController@saveWrapup')->name('daily-checklist.wrapup');
     Route::post('/daily-checklist/goals/log', 'DailyChecklistController@logGoal')->name('daily-checklist.goals.log');
     Route::post('/daily-checklist/goals/review', 'DailyChecklistController@reviewGoal')->name('daily-checklist.goals.review');

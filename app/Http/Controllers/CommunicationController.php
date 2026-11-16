@@ -366,8 +366,11 @@ class CommunicationController extends Controller
 
         $request->validate(['message' => 'required|string|max:1000']);
 
+        if ($c->channel === 'instagram') {
+            return $this->sendInstagramReply($c, (string) $request->message, $business_id);
+        }
         if (!in_array($c->channel, ['phone_1', 'phone_2'], true)) {
-            return response()->json(['success' => false, 'msg' => 'Direct reply from here only works for the Quo phone lines right now.']);
+            return response()->json(['success' => false, 'msg' => 'Direct reply from here only works for texts and Instagram right now.']);
         }
         if (empty($c->contact_info)) {
             return response()->json(['success' => false, 'msg' => 'No phone number on this inquiry to reply to.']);
@@ -390,6 +393,36 @@ class CommunicationController extends Controller
 
         Communication::notifyStaff($business_id, new \App\Notifications\CommunicationRepliedNotification($c));
 
+        return response()->json(['success' => true, 'msg' => 'Sent']);
+    }
+
+    /** Reply to an Instagram DM through the Meta Graph API with the saved page token. */
+    private function sendInstagramReply(Communication $c, string $message, $business_id)
+    {
+        $token = \App\Http\Controllers\InstagramWebhookController::storedPageAccessToken();
+        if ($token === '') {
+            return response()->json(['success' => false, 'msg' => 'Instagram is not connected yet (Communications > Instagram settings).']);
+        }
+        if (!preg_match('/(\d{5,})/', (string) $c->contact_info, $m)) {
+            return response()->json(['success' => false, 'msg' => 'No Instagram sender on this message to reply to.']);
+        }
+        try {
+            $resp = (new \GuzzleHttp\Client(['timeout' => 20]))->post('https://graph.facebook.com/v21.0/me/messages', [
+                'query' => ['access_token' => $token],
+                'json' => ['recipient' => ['id' => $m[1]], 'messaging_type' => 'RESPONSE', 'message' => ['text' => $message]],
+                'http_errors' => false,
+            ]);
+            if ($resp->getStatusCode() !== 200) {
+                $err = json_decode((string) $resp->getBody(), true);
+                \Log::warning('Instagram reply failed: ' . (string) $resp->getBody());
+                return response()->json(['success' => false, 'msg' => 'Instagram did not send it: ' . ($err['error']['message'] ?? 'unknown error')]);
+            }
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'msg' => 'Could not reach Instagram right now.']);
+        }
+        $stamp = now()->format('n/j g:ia');
+        $c->resolution_notes = trim(($c->resolution_notes ? $c->resolution_notes . "\n" : '') . "[$stamp] " . $message);
+        $c->save();
         return response()->json(['success' => true, 'msg' => 'Sent']);
     }
 

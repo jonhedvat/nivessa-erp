@@ -82,6 +82,36 @@ class OpenItemsUtil
         ];
     }
 
+    /** Channels whose messages show up here (everything the Communications Hub pulls in). */
+    const REPLY_CHANNELS = ['phone_1', 'phone_2', 'instagram', 'facebook', 'whatsapp', 'tiktok', 'email'];
+
+    protected static function whoWithChannel($r): string
+    {
+        $name = (string) ($r->customer_name ?: $r->contact_info);
+        $label = [
+            'phone_1' => 'Pico text', 'phone_2' => 'Hollywood text', 'instagram' => 'Instagram',
+            'facebook' => 'Facebook', 'whatsapp' => 'WhatsApp', 'tiktok' => 'TikTok', 'email' => 'Email',
+        ][$r->channel] ?? '';
+        return $label ? $name . ' (' . $label . ')' : $name;
+    }
+
+    /**
+     * Marks a row as one Claude can draft a reply for, with the full message
+     * (rows only show 140 characters). Phone and Instagram rows can be sent
+     * straight from the reply panel; the rest are copied into their own inbox.
+     */
+    protected static function replyable(array $row, string $kind, string $text, int $commId = 0, string $channel = ''): array
+    {
+        $row['reply'] = [
+            'kind'    => $kind,
+            'text'    => mb_substr(trim(preg_replace('/<!--.*?-->/s', '', $text)), 0, 3000),
+            'commId'  => $commId,
+            'canSend' => $commId && in_array($channel, ['phone_1', 'phone_2', 'instagram'], true),
+            'via'     => in_array($channel, ['phone_1', 'phone_2'], true) ? 'text' : ($channel === 'instagram' ? 'Instagram' : ''),
+        ];
+        return $row;
+    }
+
     protected static function age(Carbon $ts): string
     {
         $h = $ts->diffInHours(Carbon::now(self::TZ));
@@ -109,7 +139,7 @@ class OpenItemsUtil
     {
         $rows = \DB::table('communications')
             ->where('business_id', $business_id)
-            ->whereIn('channel', ['phone_1', 'phone_2'])
+            ->whereIn('channel', self::REPLY_CHANNELS)
             ->where('status', 'pending')
             ->where('topic', '!=', 'unhappy_customer')
             ->where(function ($q) {
@@ -120,14 +150,19 @@ class OpenItemsUtil
             ->where('message', '!=', '(no inbound message logged for this contact)')
             ->orderBy('created_at')
             ->limit(100)
-            ->get(['id', 'customer_name', 'contact_info', 'message', 'created_at']);
+            ->get(['id', 'channel', 'customer_name', 'contact_info', 'message', 'created_at']);
         $out = [];
         foreach ($rows as $r) {
+            // Automated mail (receipts, notices) never needs a reply.
+            if ($r->channel === 'email' && preg_match('/no-?reply|notification|mailer-daemon|do-not-reply|newsletter/i', (string) $r->contact_info)) {
+                continue;
+            }
             // Toll-free 833/844/855 numbers calling us are robocalls.
             if (self::isNoise((string) $r->message) || preg_match('/^\+?1?8(33|44|55|66|77|88)/', (string) $r->contact_info) || stripos((string) $r->contact_info, 'anonymous') !== false || stripos((string) $r->customer_name, 'anonymous') !== false) {
                 continue;
             }
-            $out[] = self::row($r->customer_name ?: $r->contact_info, (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
+            $row = self::row(self::whoWithChannel($r), (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
+            $out[] = self::replyable($row, 'customers', (string) $r->message, (int) $r->id, (string) $r->channel);
         }
         return self::section('Customers waiting over 24 hours', 'Reply, or mark it resolved if it was handled another way.', url('/communications'), self::oldestFirst($out));
     }
@@ -142,10 +177,11 @@ class OpenItemsUtil
             ->where('created_at', '>=', now()->subDays(45))
             ->orderBy('created_at')
             ->limit(100)
-            ->get(['id', 'customer_name', 'contact_info', 'message', 'created_at']);
+            ->get(['id', 'channel', 'customer_name', 'contact_info', 'message', 'created_at']);
         $out = [];
         foreach ($rows as $r) {
-            $out[] = self::row($r->customer_name ?: $r->contact_info, (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
+            $row = self::row(self::whoWithChannel($r), (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
+            $out[] = self::replyable($row, 'unhappy', (string) $r->message, (int) $r->id, (string) $r->channel);
         }
         return self::section('Unhappy customers not resolved (last 45 days)', 'Call them, fix it, then mark it resolved with what you did.', url('/communications'), self::oldestFirst($out));
     }
@@ -174,7 +210,9 @@ class OpenItemsUtil
             $name = (string) (($o['display_name'] ?? '') ?: (($o['shippingAddress'][0]['name'] ?? '') ?: ($o['user_id']['name'] ?? '')));
             $name = trim((!empty($o['orderNumber']) ? '#' . $o['orderNumber'] . ' ' : '') . $name);
             if (WebsiteOrdersController::inTab($o, 'cant_find')) {
-                $out[] = self::row($name, "Can't find: recheck the bins, offer a swap, refund only as a last step", $o['createdAt'] ?? null, url('/website-orders?order=' . $id), 'order:' . $id);
+                $items = implode(', ', array_filter(array_map(fn ($it) => is_array($it) ? (string) ($it['product_name'] ?? ($it['product_id']['name'] ?? '')) : '', (array) ($o['items'] ?? []))));
+                $row = self::row($name, "Can't find: recheck the bins, offer a swap, refund only as a last step", $o['createdAt'] ?? null, url('/website-orders?order=' . $id), 'order:' . $id);
+                $out[] = self::replyable($row, 'cantfind', 'Website order ' . $name . ($items ? ' for: ' . $items : '') . '. We cannot find the record on the shelf right now.');
             } elseif ($created < $cut && WebsiteOrdersController::inTab($o, 'needs_action')) {
                 $how = ($o['fulfillment_method'] ?? '') === 'pickup' ? 'Pickup order not ready' : 'Not shipped';
                 $out[] = self::row($name, $how . ' after ' . intdiv(time() - $created, 86400) . ' days', $o['createdAt'] ?? null, url('/website-orders?order=' . $id), 'order:' . $id);
@@ -212,12 +250,13 @@ class OpenItemsUtil
         return $out;
     }
 
-    protected static function contactRows(array $msgs): array
+    protected static function contactRows(array $msgs, string $kind = 'contact'): array
     {
         $out = [];
         foreach ($msgs as $m) {
             $what = trim(($m['subject'] ?? '') . ': ' . ($m['message'] ?? ''), ': ');
-            $out[] = self::row((string) ($m['name'] ?? $m['email'] ?? ''), $what, $m['createdAt'] ?? null, url('/website-inbox/messages'), 'contact:' . ($m['_id'] ?? md5($what)));
+            $row = self::row((string) ($m['name'] ?? $m['email'] ?? ''), $what, $m['createdAt'] ?? null, url('/website-inbox/messages'), 'contact:' . ($m['_id'] ?? md5($what)));
+            $out[] = self::replyable($row, $kind, $what);
         }
         return self::oldestFirst($out);
     }
@@ -229,7 +268,7 @@ class OpenItemsUtil
         if ($msgs === null) {
             return self::section('Seller leads', '', url('/website-inbox/messages'), [], 'Could not reach the website right now.');
         }
-        $rows = self::contactRows(array_filter($msgs, fn ($m) => $m['_seller']));
+        $rows = self::contactRows(array_filter($msgs, fn ($m) => $m['_seller']), 'sellers');
         return self::section('Seller leads', 'Call or email the same day, get photos and a rough count, and book a time for them to bring it in (or a pickup). Done = a date is booked or they said no.', url('/buy-from-customer'), $rows);
     }
 

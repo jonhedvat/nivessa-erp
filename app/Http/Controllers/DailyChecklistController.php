@@ -523,6 +523,79 @@ class DailyChecklistController extends Controller
         ]);
     }
 
+    /**
+     * Reply panel on Open Items: Claude drafts (or redrafts) a reply to one
+     * customer message in Nivessa's voice. Nothing is sent from here; the
+     * page sends phone/Instagram replies through the Communications Hub and
+     * everything else is copied into its own inbox.
+     */
+    public function openItemsDraft(Request $request)
+    {
+        $this->guard();
+        $kind = preg_replace('/[^a-z]/', '', (string) $request->input('kind', ''));
+        $who = mb_substr(trim((string) $request->input('who', '')), 0, 200);
+        $text = mb_substr(trim((string) $request->input('text', '')), 0, 3000);
+        $draft = mb_substr(trim((string) $request->input('draft', '')), 0, 3000);
+        $ask = mb_substr(trim((string) $request->input('ask', '')), 0, 500);
+        $via = mb_substr(trim((string) $request->input('via', '')), 0, 20);
+        if ($text === '') {
+            return response()->json(['ok' => false, 'msg' => 'Nothing to reply to.']);
+        }
+        $cfg = HelpAssistantSettingsController::readConfig();
+        $apiKey = ($cfg['api_key'] ?? null) ?: config('services.anthropic.api_key') ?: env('ANTHROPIC_API_KEY');
+        if (!$apiKey) {
+            return response()->json(['ok' => false, 'msg' => 'The AI key is not set up yet (/admin/help-assistant).']);
+        }
+        $goal = [
+            'customers' => 'Answer their question or tell them exactly what we will do next.',
+            'unhappy'   => 'They are unhappy. Apologize simply, own it, and say exactly how we will make it right. Do not promise a refund unless the staff note says so.',
+            'sellers'   => 'They want to sell us records. Thank them, ask for a few photos, a rough count and the formats (vinyl, CD, cassette), and invite them to bring it to Nivessa Hollywood or Nivessa on Pico, or ask if they need a pickup for a big collection.',
+            'contact'   => 'Answer their question or tell them exactly what we will do next.',
+            'cantfind'  => 'We cannot find a record from their paid website order on the shelf. Apologize, say we are still checking, and offer a similar record as a swap or a full refund if they prefer. Ask which they would like.',
+        ][$kind] ?? 'Answer their message or tell them exactly what we will do next.';
+        $system = "You write short replies to Nivessa Records customers for a staff member to send. Nivessa is an independent record store in Los Angeles with two stores: Nivessa Hollywood (6434 Hollywood Blvd, 213-676-2645) and Nivessa on Pico (5770 W Pico Blvd, 213-577-1648). Email hello@nivessa.com, website nivessa.com, store hours at nivessa.com/locations.
+
+"
+            . "Voice: warm, friendly and human, proper grammar and full sentences, short (2 to 4 sentences" . ($via === 'text' || $via === 'Instagram' ? ', it is a ' . $via . ' message so keep it extra short' : '') . "). No emojis, no em dashes, no corporate filler, never \"Hope you're doing well\". Use their first name if you know it. Never invent prices, stock, dates or policies: if you need a fact you do not have, write [brackets] for the staff member to fill in. Sign off as \"Nivessa Records\" only for emails and contact forms.
+
+"
+            . "Goal: " . $goal . "
+
+Reply with only the message text, nothing else.";
+        $user = "From: " . ($who ?: 'customer') . "
+Their message:
+" . $text;
+        $messages = [['role' => 'user', 'content' => $user]];
+        if ($draft !== '' && $ask !== '') {
+            $messages[] = ['role' => 'assistant', 'content' => $draft];
+            $messages[] = ['role' => 'user', 'content' => 'Rewrite it: ' . $ask . '. Reply with only the message text.'];
+        }
+        try {
+            $client = new \GuzzleHttp\Client(['timeout' => 30]);
+            $resp = $client->post('https://api.anthropic.com/v1/messages', [
+                'headers' => ['x-api-key' => $apiKey, 'anthropic-version' => '2023-06-01', 'content-type' => 'application/json'],
+                'json' => ['model' => $cfg['model'] ?? config('services.anthropic.model', 'claude-haiku-4-5'), 'max_tokens' => 400, 'system' => $system, 'messages' => $messages],
+                'http_errors' => false,
+            ]);
+            $data = json_decode((string) $resp->getBody(), true);
+            if ($resp->getStatusCode() !== 200) {
+                $m = (string) ($data['error']['message'] ?? '');
+                return response()->json(['ok' => false, 'msg' => stripos($m, 'credit') !== false ? 'The AI account is out of credit.' : 'Claude could not answer right now. Try again in a minute.']);
+            }
+            $out = '';
+            foreach ((array) ($data['content'] ?? []) as $b) {
+                if (($b['type'] ?? '') === 'text') {
+                    $out .= $b['text'];
+                }
+            }
+            $out = trim(str_replace(["\u{2014}", "\u{2013}"], [', ', '-'], $out));
+            return response()->json(['ok' => $out !== '', 'draft' => $out, 'msg' => $out === '' ? 'Claude sent back nothing. Try again.' : '']);
+        } catch (\Throwable $e) {
+            \Log::warning('open-items draft failed: ' . $e->getMessage());
+            return response()->json(['ok' => false, 'msg' => 'Could not reach Claude right now.']);
+        }
+    }
+
     /** "Fixed it" (what you did) or "ERP bug" (what's broken, goes to Bug Fixes) on one Open Items row. */
     public function openItemsAct(Request $request)
     {
@@ -571,6 +644,9 @@ class DailyChecklistController extends Controller
                 ->where('business_id', $business_id)
                 ->where('id', (int) $m[1])
                 ->update(['status' => 'resolved', 'resolved_by' => auth()->id(), 'resolved_at' => now(), 'resolution_notes' => $note, 'updated_at' => now()]);
+        }
+        if ($request->wantsJson()) {
+            return response()->json(['ok' => true]);
         }
         return redirect($back)->with('oi_msg', 'Nice. Logged as fixed.');
     }
