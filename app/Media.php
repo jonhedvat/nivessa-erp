@@ -160,7 +160,7 @@ class Media extends Model
 
         if ($file->getSize() <= config('constants.document_size_limit')) {
             $new_file_name = time() . '_' . mt_rand() . '_' . $base . '.' . $ext;
-            if ($file->storeAs('/media', $new_file_name)) {
+            if ($file->storeAs('/media', $new_file_name, 'uploads')) {
                 $file_name = $new_file_name;
             }
         }

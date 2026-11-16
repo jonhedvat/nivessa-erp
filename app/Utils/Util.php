@@ -711,7 +711,7 @@ class Util
 
             if ($request->$file_name->getSize() <= config('constants.document_size_limit')) {
                 $new_file_name = time() . '_' . $request->$file_name->getClientOriginalName();
-                if ($request->$file_name->storeAs($dir_name, $new_file_name)) {
+                if ($request->$file_name->storeAs($dir_name, $new_file_name, 'uploads')) {
                     $uploaded_file_name = $new_file_name;
                 }
             }

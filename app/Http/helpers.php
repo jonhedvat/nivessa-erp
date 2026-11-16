@@ -173,10 +173,10 @@ function storeImageFromUrl($url)
     $path = 'public/images/' . $fileName;
 
     // Store the image
-    \Illuminate\Support\Facades\Storage::put($path, $imageContents);
+    \Illuminate\Support\Facades\Storage::disk('uploads')->put($path, $imageContents);
 
     // Optional: If you want the URL of the stored image
-    $storedImageUrl = \Illuminate\Support\Facades\Storage::url($path);
+    $storedImageUrl = \Illuminate\Support\Facades\Storage::disk('uploads')->url($path);
 
     return $storedImageUrl; // You can return this URL or do other logic with it
 }

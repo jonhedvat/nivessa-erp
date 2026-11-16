@@ -26,7 +26,8 @@ Route::middleware('auth:api', 'nivessa.only.api', 'timezone')->prefix('connector
     Route::resource('table', Modules\Connector\Http\Controllers\Api\TableController::class)->only('index', 'show');
 
     Route::get('user/loggedin', [Modules\Connector\Http\Controllers\Api\UserController::class, 'loggedin']);
-    Route::post('user-registration', [Modules\Connector\Http\Controllers\Api\UserController::class, 'registerUser']);
+    // Off (Sarah, 2026-11-16): let any API token create an Admin login.
+    Route::post('user-registration', function () { abort(404); });
     Route::resource('user', Modules\Connector\Http\Controllers\Api\UserController::class)->only('index', 'show');
 
     Route::resource('types-of-service', Modules\Connector\Http\Controllers\Api\TypesOfServiceController::class)->only('index', 'show');
@@ -65,7 +66,8 @@ Route::middleware('auth:api', 'nivessa.only.api', 'timezone')->prefix('connector
     Route::post('clock-out', [Modules\Connector\Http\Controllers\Api\AttendanceController::class, 'clockout']);
     Route::get('holidays', [Modules\Connector\Http\Controllers\Api\AttendanceController::class, 'getHolidays']);
     Route::post('update-password', [Modules\Connector\Http\Controllers\Api\UserController::class, 'updatePassword']);
-    Route::post('forget-password', [Modules\Connector\Http\Controllers\Api\UserController::class, 'forgetPassword']);
+    // Off (Sarah, 2026-11-16): let any API token reset anyone's password.
+    Route::post('forget-password', function () { abort(404); });
     Route::get('get-location', [Modules\Connector\Http\Controllers\Api\CommonResourceController::class, 'getLocation']);
 
     Route::get('new_product', [Modules\Connector\Http\Controllers\Api\ProductSellController::class, 'newProduct'])->name('new_product');

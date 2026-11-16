@@ -68,6 +68,39 @@ else
   git reset --hard "${GIT_REMOTE}/${DEPLOY_BRANCH}"
 fi
 
+# One-time move of app data out of the public web root (Sarah, 2026-11-16).
+# The default storage disk used to be public/uploads, which nginx served to
+# anyone (settings JSON with API keys, snapshots, customer exports). It is now
+# storage/app/erp-data. Copy everything except the public image/document
+# folders there, then delete the non-image files (and bug screenshots) from
+# public/uploads. Runs once; a marker file stops it repeating.
+PRIV="storage/app/erp-data"
+MARK="$PRIV/.moved-from-public-uploads"
+if [ -d public/uploads ] && [ ! -f "$MARK" ]; then
+  echo "deploy: moving app data from public/uploads to $PRIV"
+  mkdir -p "$PRIV"
+  ASSET_DIRS="img media documents contact_avatars receiving_photos business_logos invoice_logos temp"
+  for e in public/uploads/* public/uploads/.[!.]*; do
+    [ -e "$e" ] || continue
+    n=$(basename "$e")
+    case " $ASSET_DIRS " in *" $n "*) continue ;; esac
+    cp -a "$e" "$PRIV/"
+  done
+  EXCL=""
+  for d in $ASSET_DIRS; do EXCL="$EXCL -path public/uploads/$d -prune -o"; done
+  # shellcheck disable=SC2086
+  find public/uploads $EXCL -type f \
+    ! -iname '*.png' ! -iname '*.jpg' ! -iname '*.jpeg' ! -iname '*.gif' ! -iname '*.webp' \
+    ! -iname '*.svg' ! -iname '*.ico' ! -iname '*.heic' ! -iname '*.bmp' \
+    -print > /tmp/erp-public-data-files.txt || true
+  # (-delete would imply -depth and ignore the -prune of the asset folders)
+  while IFS= read -r f; do rm -f -- "$f" && echo "deploy: removed public copy $f"; done < /tmp/erp-public-data-files.txt
+  rm -f /tmp/erp-public-data-files.txt
+  rm -rf public/uploads/bug-queue/screenshots
+  touch "$MARK"
+  echo "deploy: app data move done"
+fi
+
 if [ "$DEPLOY_MIGRATE" = "1" ]; then
   echo "deploy: migrate"
   php artisan migrate --force --no-interaction

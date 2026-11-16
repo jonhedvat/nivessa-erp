@@ -101,7 +101,7 @@ class ImportSalesController extends Controller
     	if ($request->hasFile('sales')) {
 
     		$file_name = time() . '_' . $request->sales->getClientOriginalName();
-    		$request->sales->storeAs('temp', $file_name);
+    		$request->sales->storeAs('temp', $file_name, 'uploads');
 
             $parsed_array = $this->__parseData($file_name);
 

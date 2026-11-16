@@ -26,7 +26,12 @@ class AuthServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
 
-        Passport::routes();
+        // Only the token endpoint. The personal-access-token and client
+        // routes let any logged-in staff mint a year-long API token
+        // (Sarah, 2026-11-16).
+        Passport::routes(function ($router) {
+            $router->forAccessTokens();
+        });
 
         Gate::before(function ($user, $ability) {
             if (in_array($ability, ['backup', 'superadmin', 
