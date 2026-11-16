@@ -28,7 +28,7 @@
         ['Post on social every day', 'One post a day on Instagram and TikTok, never several at once. Use the famous-musician plan below, plus rare finds, new arrivals (ask the cashier on shift for photos), big buys coming in, and every event before its day.'],
         ['Run listening party prep', 'Giveaway box, photo, staffing and playback link for every party. It shows up above when a step is due.'],
         ['Push preorders before every listening party', 'A week before each party, text everyone who RSVP\'d but hasn\'t preordered one short message with the preorder link. Again the day before.'],
-        ['Win back abandoned carts', 'Every morning open Abandoned Carts and email or text anyone who left $40+ in the last 2 days: "Still want [record]? It\'s here and we can hold it or ship today."'],
+        ['Answer replies to the saved cart email', 'The website now emails people automatically when they leave items in their cart. Replies come to hello@nivessa.com: answer each one the same day and help them finish the order.'],
         ['Turn record requests into special orders', 'When someone asks for a record we don\'t have, check AMS and Alliance. If it\'s in print, quote the price, take a deposit and order it. Reply within a day either way.'],
         ['Find sellers every week', 'Once a week post a "We buy records and CDs, cash on the spot, Pico and Hollywood" ad on Craigslist LA, Nextdoor and local Facebook groups.'],
         ['Get and answer Google reviews', 'Text the review link to every happy customer. Thank every review by name within a day, and answer bad ones with how we fixed it. Post one update a week on each store\'s Google profile.'],
