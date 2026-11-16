@@ -180,6 +180,34 @@ class StoreManagerDashboardController extends Controller
             });
         }, []);
 
+        // 10. Items whose stock a shelf count changed, per person.
+        $shelf = $safe('shelf', function () use ($business_id, $location, $roster, $fromStr) {
+            return $this->shelfCountChanges($business_id, $location, $roster, $fromStr);
+        }, []);
+
+        // 11. Website + Discogs items shipped, per person.
+        $shipped = $safe('shipped', function () use ($roster, $from) {
+            $all = Cache::remember('mgr_dash:shipped_by:' . $from->format('Y-m-d'), 300, function () use ($from) {
+                return app(WebsiteOrdersController::class)->shippedByEmployee($from->format('Y-m-d'));
+            });
+            if ($all === null) {
+                Cache::forget('mgr_dash:shipped_by:' . $from->format('Y-m-d'));
+                return null;
+            }
+            $byName = [];
+            foreach ($all['people'] as $name => $row) {
+                $byName[mb_strtolower(trim((string) $name))] = $row;
+            }
+            $out = [];
+            foreach ($roster as $uid => $name) {
+                $row = $byName[mb_strtolower(trim($name))] ?? null;
+                if ($row) {
+                    $out[$uid] = ['web' => (int) ($row['web_items'] ?? 0), 'discogs' => (int) ($row['discogs_items'] ?? 0)];
+                }
+            }
+            return $out;
+        });
+
         // One row per employee for the top table.
         $people = [];
         foreach ($roster as $uid => $name) {
@@ -198,6 +226,9 @@ class StoreManagerDashboardController extends Controller
                 'scheduled' => (int) ($late['by_user'][$uid]['scheduled'] ?? 0),
                 'said_done' => (int) ($checkins['by_user'][$uid]['done'] ?? 0),
                 'said_not_done' => (int) ($checkins['by_user'][$uid]['not_done'] ?? 0),
+                'shelf_changed' => (int) ($shelf[$uid] ?? 0),
+                'shipped_web' => $shipped === null ? null : (int) ($shipped[$uid]['web'] ?? 0),
+                'shipped_discogs' => $shipped === null ? null : (int) ($shipped[$uid]['discogs'] ?? 0),
             ];
         }
         uasort($people, function ($a, $b) {
@@ -225,10 +256,39 @@ class StoreManagerDashboardController extends Controller
             'web' => $web,
             'daily' => $daily,
             'low' => $low,
+            'shippedOk' => $shipped !== null,
             'errors' => $errors,
             'lateMin' => self::LATE_MIN,
             'lowWeeks' => self::LOW_WEEKS,
         ]);
+    }
+
+    /* ---------- 10. shelf counts ---------- */
+
+    /**
+     * [user_id => items]: distinct products whose ERP stock at this store was
+     * changed by a shelf / reorder count (ReorderService::applyCountToErp logs
+     * "stock_changed" with "bin count: <store>: before -> after").
+     */
+    private function shelfCountChanges($business_id, $location, $roster, $fromStr)
+    {
+        if (!$roster) {
+            return [];
+        }
+        $out = [];
+        $rows = DB::table('activity_log')
+            ->where('business_id', $business_id)
+            ->where('description', 'stock_changed')
+            ->where('created_at', '>=', $fromStr)
+            ->whereIn('causer_id', array_keys($roster))
+            ->where('properties', 'like', '%bin count: ' . str_replace(['%', '_'], ['\\%', '\\_'], $location->name) . ':%')
+            ->groupBy('causer_id')
+            ->select('causer_id', DB::raw('COUNT(DISTINCT subject_id) as n'))
+            ->get();
+        foreach ($rows as $r) {
+            $out[(int) $r->causer_id] = (int) $r->n;
+        }
+        return $out;
     }
 
     /* ---------- who works at this store ---------- */
