@@ -27,8 +27,7 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            foreach (['2RDD8N46NED8W','NXYVAWQ88MCTG','NQAG53FJACHE2'] as $o) { $r=\DB::table('clover_payments')->where('clover_order_id',$o)->first(); echo "RAW $o loc={$r->location_id} ".substr(preg_replace('/"(cardNumber|token|authCode|cardholderName|first6)":"[^"]*"/','"$1":"x"',$r->raw_payload),0,2500)."\n"; }
-            echo "DEVICE 68f24928 by day/loc\n";
-            foreach (\DB::table('clover_payments')->where('raw_payload','like','%68f24928-57fe%')->where('paid_on','>=','2026-10-01')->groupBy('paid_on','location_id')->selectRaw('paid_on,location_id,count(*) n,sum(amount_cents)/100 t, min(paid_at) a, max(paid_at) z')->orderBy('paid_on')->get() as $x) echo json_encode($x)."\n";
+            foreach (\DB::table('sling_shifts')->whereBetween('dtstart',['2026-11-12 00:00:00','2026-11-14 06:00:00'])->orderBy('location_name')->orderBy('dtstart')->get(['user_name','event_type','location_name','position_name','dtstart','dtend','published','last_synced_at']) as $r) echo 'SLING '.json_encode($r)."\n";
+            echo 'SLING range '.\DB::table('sling_shifts')->min('dtstart').' .. '.\DB::table('sling_shifts')->max('dtstart').' last_sync '.\DB::table('sling_shifts')->max('last_synced_at')."\n";
             PHP
             echo "=== done ==="
