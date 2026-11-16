@@ -1,0 +1,32 @@
+# Read-only: live Discogs and eBay comparables for sample items (no AI calls).
+
+name: Diag web comparables (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHUgPSBEQjo6dGFibGUoJ3VzZXJzJyktPndoZXJlKCdmaXJzdF9uYW1lJywnSm9uYXRoYW4nKS0+d2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCdIZWR2YXQlJyktPmZpcnN0KCk7CiRjID0gYXBwKEFwcFxIdHRwXENvbnRyb2xsZXJzXE1hc3NBZGRBaVByaWNlQ29udHJvbGxlcjo6Y2xhc3MpOwokbSA9IG5ldyBSZWZsZWN0aW9uTWV0aG9kKCRjLCAnd2ViQ29tcGFyYWJsZXMnKTsgJG0tPnNldEFjY2Vzc2libGUodHJ1ZSk7CmZvcmVhY2ggKFsnTWljaGFlbCBKb3JkYW4gMTk5MC05MSBOQkEgSG9vcHMgIzY1JywnUGluayBGbG95ZCBEYXJrIFNpZGUgb2YgdGhlIE1vb24nLCdOaXJ2YW5hIE5ldmVybWluZCcsJ1Bpa2FjaHUgUG9rZW1vbiBjYXJkIGJhc2Ugc2V0JywnUnVtb3VycyBGbGVldHdvb2QgTWFjJywnVGF5bG9yIFN3aWZ0IFRoZSBMaWZlIE9mIEEgU2hvd2dpcmwgQ0QnXSBhcyAkcSkgewogICR0ID0gbWljcm90aW1lKHRydWUpOwogICRyID0gJG0tPmludm9rZSgkYywgJHUtPmJ1c2luZXNzX2lkLCAkcSk7CiAgcHJpbnRmKCJXRUIgJXMgfCBkaXNjb2dzPSVzIHwgZWJheT0lcyB8ICUuMWZzXG4iLCAkcSwgdmFyX2V4cG9ydCgkclsnZGlzY29ncyddLCB0cnVlKSwganNvbl9lbmNvZGUoJHJbJ2ViYXknXSksIG1pY3JvdGltZSh0cnVlKS0kdCk7Cn0K' | base64 -d > /tmp/diag_web_comps.php
+            php /tmp/diag_web_comps.php
+            rm -f /tmp/diag_web_comps.php

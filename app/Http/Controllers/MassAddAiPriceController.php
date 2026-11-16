@@ -137,7 +137,7 @@ class MassAddAiPriceController extends Controller
             . "Sealed items are new stock: price them at what a record store charges for a new copy today, not at a used or online-discount price.\n"
             . "Staff may write a note or instruction instead of an item (for example 'here are a few DVDs I want to price' or 'all of these are sealed'). "
             . "Do not output those lines as items; apply them to the items they describe (format, condition, category).\n"
-            . "Some items come with 'Our sales' lines: what we actually sold that item for. Price in line with them unless they are clearly a different item.\n\n"
+            . "Some items come with 'Our sales' lines: what we actually sold that item for. Price in line with them unless they are clearly a different item. 'Web' lines are live Discogs (VG+ suggested price) and eBay (asking-price median); eBay asking prices run above what items sell for, so weigh them down.\n\n"
             . "You must answer by calling the price_items tool once with every numbered item, each exactly once, with n set to its item number. price is a plain number. "
             . "condition is the grade ONLY if staff wrote one (Sealed, M, NM, VG+, VG, G+, G, F, P), otherwise an empty string. "
             . "confidence is 'low' if you are not sure of the exact pressing, edition or condition, otherwise 'high'. "
