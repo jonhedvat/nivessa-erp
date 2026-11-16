@@ -1,0 +1,42 @@
+# ONE-TIME (2026-11-16): sale 187094 (Andy, HW 11/13, $54.56) was saved as
+# $10 store credit/other + $44.56 cash, but the customer paid $44.10 by card on
+# the Hollywood Clover at 2:33pm. Change the $44.56 cash line to card (payment
+# + register row). Snapshot first; only touches it while still cash.
+name: Fix Andy 11-13 survey sale tender (one-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Fix
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            $id = 187094;
+            $tp = \DB::table('transaction_payments')->where('transaction_id', $id)->get(['id','method','amount','note','card_type']);
+            $crt = \DB::table('cash_register_transactions')->where('transaction_id', $id)->get(['id','pay_method','amount','cash_register_id']);
+            echo 'BEFORE TP ' . json_encode($tp) . "\nBEFORE CRT " . json_encode($crt) . "\n";
+            \Storage::disk('local')->put('admin-snapshots/andy-1113-survey-sale-' . now()->format('Y-m-d_His') . '.json', json_encode(['tp' => $tp, 'crt' => $crt]));
+            $a = \DB::table('transaction_payments')->where('transaction_id', $id)->where('method', 'cash')->where('amount', 44.56)->update(['method' => 'card', 'updated_at' => now()]);
+            $b = \DB::table('cash_register_transactions')->where('transaction_id', $id)->where('pay_method', 'cash')->where('amount', 44.56)->update(['pay_method' => 'card', 'updated_at' => now()]);
+            echo "UPDATED tp=$a crt=$b\n";
+            echo 'AFTER TP ' . json_encode(\DB::table('transaction_payments')->where('transaction_id', $id)->get(['method','amount','note'])) . "\nAFTER CRT " . json_encode(\DB::table('cash_register_transactions')->where('transaction_id', $id)->get(['pay_method','amount'])) . "\n";
+            PHP
+            echo "=== done ==="
