@@ -27,7 +27,7 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            foreach ([[64,'2026-11-13 00:00:00'],[83,'2026-11-13 00:00:00'],[77,'2026-11-13 00:00:00']] as [$me_id,$today_start]) { echo json_encode([$me_id, \DB::table('cash_registers')->where('user_id',$me_id)->where(function($q) use ($today_start){$q->where('status','open')->orWhere('created_at','>=',$today_start);})->orderByRaw("status = 'open' DESC")->orderByDesc('created_at')->value('location_id')])."\n"; }
-            echo 'HOME_OK=' . (strpos(file_get_contents('app/Http/Controllers/HomeController.php'),'Andy (both stores)')!==false ? 'deployed' : 'missing') . "\n";
+            $locs = \DB::table('business_locations')->where('business_id',1)->orderBy('id')->pluck('id')->all();
+            foreach (\DB::table('cash_registers as r')->join('users as u','u.id','=','r.user_id')->where('r.created_at','>=','2026-09-01')->groupBy('r.user_id','u.first_name','u.last_name')->selectRaw("r.user_id, u.first_name, u.last_name, SUM(r.location_id=2) hw, SUM(r.location_id=1) pico, MIN(r.created_at) first, MAX(r.created_at) last")->get() as $r) { $usr=\App\User::find($r->user_id); $old=null; if ($usr->can('access_all_locations')) $old=$locs[0]; else foreach ($locs as $l) if ($usr->can('location.'.$l)) { $old=$l; break; } if (!$old) $old=$locs[0]; echo json_encode(['who'=>$r->first_name.' '.$r->last_name,'hw_shifts'=>$r->hw,'pico_shifts'=>$r->pico,'old_tally_store'=>$old,'all'=>$usr->can('access_all_locations'),'last'=>$r->last])."\n"; }
             PHP
             echo "=== done ==="
