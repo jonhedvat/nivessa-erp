@@ -465,14 +465,14 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // Graduation vinyl/cassette, ...) get Current Stock set to 0. Snapshot +
     // undo via /admin/admin-action-history ('zero-retired-stock').
     Route::get('/admin/zero-stock-rules', 'ZeroStockRulesController@index');
-    Route::post('/admin/zero-stock-rules/run', 'ZeroStockRulesController@run');
+    Route::post('/admin/zero-stock-rules/run', 'ZeroStockRulesController@run')->middleware('admin.only');
 
     // Bootleg vendor (Adam Mayes) catalog match: fuzzy-matches his uploaded
     // price list against real inventory, Sarah checks off actual bootleg
     // copies to zero. Snapshot + undo via admin-action-history
     // ('zero-bootleg-stock').
     Route::get('/admin/bootleg-vendor-match', 'BootlegVendorMatchController@index');
-    Route::post('/admin/bootleg-vendor-match/apply', 'BootlegVendorMatchController@apply');
+    Route::post('/admin/bootleg-vendor-match/apply', 'BootlegVendorMatchController@apply')->middleware('admin.only');
 
     // Owner-only merge-duplicates tool. Declared BEFORE the products resource
     // so "products/merge" isn't swallowed by the {product} show route.
@@ -1004,7 +1004,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/import-sales', 'ImportSalesController@index');
     Route::post('/import-sales/preview', 'ImportSalesController@preview');
     Route::post('/import-sales', 'ImportSalesController@import');
-    Route::get('/revert-sale-import/{batch}', 'ImportSalesController@revertSaleImport');
+    Route::post('/revert-sale-import/{batch}', 'ImportSalesController@revertSaleImport');
 
     Route::post('/sells/pos/log-empty-search', 'PosSearchRequestController@logEmptySearch')->name('pos.log-empty-search');
 
@@ -1211,7 +1211,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/reports/sale-report', 'ReportController@saleReport');
     Route::get('/reports/lfl-sales', 'ReportController@lflSalesReport')->name('reports.lfl-sales');
     // Owner-only: save the daily Clover sales export the LFL report reads (2026-11-12).
-    Route::post('/admin/clover-daily/import', 'ReportController@cloverDailyImport');
+    Route::post('/admin/clover-daily/import', 'ReportController@cloverDailyImport')->middleware('admin.only');
     Route::post('/reports/lfl-sales/hours', 'ReportController@lflSaveStoreHours')->name('reports.lfl-sales.hours');
     Route::get('/reports/revenue-drivers', 'ReportController@revenueDrivers')->name('reports.revenue-drivers');
     Route::get('/reports/sales-by-hour', 'ReportController@salesByHour')->name('reports.sales-by-hour');
@@ -1471,30 +1471,30 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/reports/cash-flow', 'ReportController@cashFlowReport');
     Route::post('/reports/cash-flow/budget', 'ReportController@uploadCashFlowBudget');
     Route::get('/admin/qb-balance-fix', 'QbBalanceFixController@index');
-    Route::post('/admin/qb-balance-fix', 'QbBalanceFixController@apply');
+    Route::post('/admin/qb-balance-fix', 'QbBalanceFixController@apply')->middleware('admin.only');
 
     // Store-credit reconciliation dashboard: compares ERP vs website backend
     // balances by customer email and lets admins resolve legacy mismatches.
     // One-time move of old web sales off throwaway Website Customer contacts.
     Route::get('/admin/web-order-contacts', 'WebOrderContactsController@index');
-    Route::post('/admin/web-order-contacts/apply', 'WebOrderContactsController@apply');
+    Route::post('/admin/web-order-contacts/apply', 'WebOrderContactsController@apply')->middleware('admin.only');
 
     Route::get('/admin/store-credit-sync', 'StoreCreditSyncController@index');
-    Route::post('/admin/store-credit-sync/reconcile', 'StoreCreditSyncController@reconcile');
+    Route::post('/admin/store-credit-sync/reconcile', 'StoreCreditSyncController@reconcile')->middleware('admin.only');
 
     // Audit log of store credit issued by employees. Parses the full
     // balance_notes history and flags credits given WITHOUT a purchase form.
     Route::get('/admin/store-credit-log', 'StoreCreditLogController@index');
     Route::get('/admin/merge-customers', 'CustomerMergeController@index');
-    Route::post('/admin/merge-customers/run', 'CustomerMergeController@merge');
-    Route::post('/admin/merge-customers/undo', 'CustomerMergeController@undo');
+    Route::post('/admin/merge-customers/run', 'CustomerMergeController@merge')->middleware('admin.only');
+    Route::post('/admin/merge-customers/undo', 'CustomerMergeController@undo')->middleware('admin.only');
 
     // eBay seller OAuth — required to read /sell/fulfillment/v1/order.
     // Tokens land in business.api_settings.ebay_seller (no migration).
     Route::get('/admin/ebay-seller', 'EbaySellerAuthController@index');
     Route::get('/admin/ebay-seller/connect', 'EbaySellerAuthController@connect');
     Route::get('/admin/ebay-seller/callback', 'EbaySellerAuthController@callback');
-    Route::post('/admin/ebay-seller/disconnect', 'EbaySellerAuthController@disconnect');
+    Route::post('/admin/ebay-seller/disconnect', 'EbaySellerAuthController@disconnect')->middleware('admin.only');
     Route::get('/admin/ebay-seller/inventory-location/check', 'EbaySellerAuthController@checkInventoryLocation');
     Route::post('/admin/ebay-seller/inventory-location/create', 'EbaySellerAuthController@createInventoryLocation');
 
@@ -1513,7 +1513,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/admin/sling/shifts/diagnose', 'SlingController@diagnoseShifts');
     Route::get('/admin/sling/shifts/{id}/debug', 'SlingController@debugShift');
     Route::post('/admin/sling/shifts/{id}/map-user', 'SlingController@mapShiftUser');
-    Route::post('/admin/sling/shifts/{id}/clear-mapping', 'SlingController@clearShiftUserMapping');
+    Route::post('/admin/sling/shifts/{id}/clear-mapping', 'SlingController@clearShiftUserMapping')->middleware('admin.only');
     // The old "Clover vs ERP" rollup is superseded by the EOD reconciliation
     // page — same data, better structure (shift cards with drawer math).
     // Redirect preserves any bookmarks pointing at the old URL.
@@ -1860,7 +1860,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // Browser-based runner for the Nivessa Backend xlsx imports.
     // Sarah has no SSH; this page uploads the xlsx and streams artisan output back.
     Route::get('/admin/nivessa-backend-import', 'NivessaBackendImportController@index');
-    Route::post('/admin/nivessa-backend-import/chunk', 'NivessaBackendImportController@chunk');
+    Route::post('/admin/nivessa-backend-import/chunk', 'NivessaBackendImportController@chunk')->middleware('admin.only');
     Route::post('/admin/nivessa-backend-import/run', 'NivessaBackendImportController@run')->middleware('admin.only');
 
     // Channel Sales Sync — pull nivessa.com web orders + space rentals and
@@ -1875,14 +1875,14 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // the live inventory-value ABC used in ICA + ABC report.
     Route::get('/admin/abc-import', 'AbcImportController@index');
     Route::post('/admin/abc-import/preview', 'AbcImportController@preview');
-    Route::post('/admin/abc-import/recalculate', 'AbcImportController@recalculate');
-    Route::post('/admin/abc-import/save', 'AbcImportController@save');
+    Route::post('/admin/abc-import/recalculate', 'AbcImportController@recalculate')->middleware('admin.only');
+    Route::post('/admin/abc-import/save', 'AbcImportController@save')->middleware('admin.only');
     Route::post('/admin/abc-import/clear', 'AbcImportController@clear')->middleware('admin.only');
 
     // Discogs street-date backfill — fills New Releases' street date field
     // from the linked Discogs release, only where it's currently blank.
     Route::get('/admin/discogs-street-dates', 'DiscogsStreetDateController@index');
-    Route::post('/admin/discogs-street-dates/run', 'DiscogsStreetDateController@run');
+    Route::post('/admin/discogs-street-dates/run', 'DiscogsStreetDateController@run')->middleware('admin.only');
 
     // Sarah 2026-05-15 — Discogs inventory bulk import. Browser drives the
     // 60-req/min rate limit by serializing one page per AJAX call, snapshots
@@ -1896,14 +1896,14 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/admin/discogs-import-inventory/apply', 'DiscogsInventoryImportController@apply')->middleware('admin.only');
     Route::get('/admin/discogs-import-inventory/dupes/{snapshotId}', 'DiscogsInventoryImportController@downloadDupes');
     Route::post('/admin/discogs-import-inventory/cleanup-duplicates', 'DiscogsInventoryImportController@cleanupDuplicates')->middleware('admin.only');
-    Route::post('/admin/discogs-import-inventory/reconcile-csv', 'DiscogsInventoryImportController@reconcileCsv');
+    Route::post('/admin/discogs-import-inventory/reconcile-csv', 'DiscogsInventoryImportController@reconcileCsv')->middleware('admin.only');
     Route::post('/admin/discogs-import-inventory/toggle-visibility', 'DiscogsInventoryImportController@toggleVisibility');
     Route::get('/admin/discogs-import-inventory/roles', 'DiscogsInventoryImportController@rolesForLocation');
     Route::post('/admin/discogs-import-inventory/set-pos-access', 'DiscogsInventoryImportController@setPosAccess');
-    Route::post('/admin/discogs-import-inventory/backfill-categories', 'DiscogsInventoryImportController@backfillCategories');
+    Route::post('/admin/discogs-import-inventory/backfill-categories', 'DiscogsInventoryImportController@backfillCategories')->middleware('admin.only');
     Route::post('/admin/discogs-import-inventory/warehouse-sealed-cost', 'DiscogsInventoryImportController@warehouseSealedCost')->middleware('admin.only');
     Route::get('/admin/inventory-value-by-location', 'DiscogsInventoryImportController@inventoryValueByLocation');
-    Route::post('/admin/discogs-import-inventory/warehouse-sealed-cost-restore', 'DiscogsInventoryImportController@warehouseSealedCostRestoreEntered');
+    Route::post('/admin/discogs-import-inventory/warehouse-sealed-cost-restore', 'DiscogsInventoryImportController@warehouseSealedCostRestoreEntered')->middleware('admin.only');
 
     // Flat-rate cost price rules (accountant punch list). Backfills missing
     // default_purchase_price on variations by category. Preview then Apply.
@@ -1917,11 +1917,11 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
 
     // Help assistant key config (self-serve, no SSH / .env editing needed).
     Route::get('/admin/help-assistant', 'HelpAssistantSettingsController@index')->name('help-assistant.settings');
-    Route::post('/admin/help-assistant/save', 'HelpAssistantSettingsController@save');
+    Route::post('/admin/help-assistant/save', 'HelpAssistantSettingsController@save')->middleware('admin.only');
     Route::get('/admin/help-assistant/questions', 'HelpAssistantController@questions')->name('help-assistant.questions');
     Route::get('/admin/help-knowledge', 'HelpKnowledgeController@index')->name('help-knowledge.index');
     Route::post('/admin/help-knowledge', 'HelpKnowledgeController@save');
-    Route::post('/admin/help-knowledge/delete', 'HelpKnowledgeController@delete');
+    Route::post('/admin/help-knowledge/delete', 'HelpKnowledgeController@delete')->middleware('admin.only');
 
     // Consumable supplies tracker (waters, bags, paper, sleeves). The help
     // assistant reads this to answer "are we low on X / when's the next shipment".
@@ -1986,8 +1986,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // JSON sidecar storage/app/manager_checkins.json, no migration.
     // Pay on Clover (REST Pay Display) setup + POS endpoints
     Route::get('/admin/clover-pay', 'CloverPayController@index');
-    Route::post('/admin/clover-pay/app', 'CloverPayController@saveApp');
-    Route::post('/admin/clover-pay/location', 'CloverPayController@saveLocation');
+    Route::post('/admin/clover-pay/app', 'CloverPayController@saveApp')->middleware('admin.only');
+    Route::post('/admin/clover-pay/location', 'CloverPayController@saveLocation')->middleware('admin.only');
     Route::get('/admin/clover-pay/connect', 'CloverPayController@connect');
     Route::post('/admin/clover-pay/ping', 'CloverPayController@ping');
     Route::get('/pos/clover-pay/status', 'CloverPayController@status');
@@ -2035,23 +2035,23 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // from products.created_by + users.cmmsn_percent × sell price; "paid" is
     // tracked in storage/app/listing-commission-payouts.json (no migration).
     Route::get('/admin/listing-commissions', 'ListingCommissionController@index');
-    Route::post('/admin/listing-commissions/mark-paid', 'ListingCommissionController@markPaid');
-    Route::post('/admin/listing-commissions/undo-payout', 'ListingCommissionController@undoPayout');
+    Route::post('/admin/listing-commissions/mark-paid', 'ListingCommissionController@markPaid')->middleware('admin.only');
+    Route::post('/admin/listing-commissions/undo-payout', 'ListingCommissionController@undoPayout')->middleware('admin.only');
     // Sales-goal bonus payouts (own ledger: storage/app/sales-commission-payouts.json).
-    Route::post('/admin/listing-commissions/mark-sales-paid', 'ListingCommissionController@markSalesPaid');
-    Route::post('/admin/listing-commissions/undo-sales-payout', 'ListingCommissionController@undoSalesPayout');
+    Route::post('/admin/listing-commissions/mark-sales-paid', 'ListingCommissionController@markSalesPaid')->middleware('admin.only');
+    Route::post('/admin/listing-commissions/undo-sales-payout', 'ListingCommissionController@undoSalesPayout')->middleware('admin.only');
     // One-click: mark listing + sales commission paid together.
-    Route::post('/admin/listing-commissions/mark-all-paid', 'ListingCommissionController@markAllPaid');
+    Route::post('/admin/listing-commissions/mark-all-paid', 'ListingCommissionController@markAllPaid')->middleware('admin.only');
     // Record the exact amount actually handed to someone (e.g. cash), so the
     // ledger matches reality even if the calculated figure had drifted.
-    Route::post('/admin/listing-commissions/record-payment', 'ListingCommissionController@recordPayment');
+    Route::post('/admin/listing-commissions/record-payment', 'ListingCommissionController@recordPayment')->middleware('admin.only');
     // Freeze/unfreeze a payroll run: lock everyone's owed into a snapshot so the
     // numbers can't drift while you pay them.
-    Route::post('/admin/listing-commissions/freeze', 'ListingCommissionController@freeze');
-    Route::post('/admin/listing-commissions/unfreeze', 'ListingCommissionController@unfreeze');
+    Route::post('/admin/listing-commissions/freeze', 'ListingCommissionController@freeze')->middleware('admin.only');
+    Route::post('/admin/listing-commissions/unfreeze', 'ListingCommissionController@unfreeze')->middleware('admin.only');
     // Bulk-record a past payroll from pasted rows (name, listing, sales). Skips
     // anything already on the ledger so re-pasting can't double-count.
-    Route::post('/admin/listing-commissions/bulk-record', 'ListingCommissionController@bulkRecord');
+    Route::post('/admin/listing-commissions/bulk-record', 'ListingCommissionController@bulkRecord')->middleware('admin.only');
     // Listening Party Bonus: pick date + time window + store + %, pull that
     // window's sales, split the % among the staff who worked the party, and log
     // each person's share to the (undoable) sales payout ledger.
@@ -2059,17 +2059,17 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // store growth vs last year if within labor budget. Owners + Fatteen see
     // all; each manager sees only his own store.
     Route::get('/admin/manager-bonus', 'ManagerBonusController@index');
-    Route::post('/admin/manager-bonus/mark-paid', 'ManagerBonusController@markPaid');
-    Route::post('/admin/manager-bonus/undo', 'ManagerBonusController@undo');
-    Route::post('/admin/manager-bonus/plan', 'ManagerBonusController@savePlan');
+    Route::post('/admin/manager-bonus/mark-paid', 'ManagerBonusController@markPaid')->middleware('admin.only');
+    Route::post('/admin/manager-bonus/undo', 'ManagerBonusController@undo')->middleware('admin.only');
+    Route::post('/admin/manager-bonus/plan', 'ManagerBonusController@savePlan')->middleware('admin.only');
     Route::get('/admin/party-bonus', 'ListingCommissionController@partyBonus');
-    Route::post('/admin/party-bonus/pay', 'ListingCommissionController@partyBonusPay');
+    Route::post('/admin/party-bonus/pay', 'ListingCommissionController@partyBonusPay')->middleware('admin.only');
     // Shift Commission: per-shift commission for a date + store. 2% of sales
     // (split among floor staff sharing the one register), plus the individual
     // 2% over-goal bonus (not split), using the ERP's own goal numbers.
     Route::get('/admin/shift-commission', 'ListingCommissionController@shiftCommission');
-    Route::post('/admin/shift-commission/apply', 'ListingCommissionController@partySplitApply');
-    Route::post('/admin/shift-commission/undo', 'ListingCommissionController@partySplitUndo');
+    Route::post('/admin/shift-commission/apply', 'ListingCommissionController@partySplitApply')->middleware('admin.only');
+    Route::post('/admin/shift-commission/undo', 'ListingCommissionController@partySplitUndo')->middleware('admin.only');
 
     // Payroll Calculator (admin-only). Hours from Clover clock in/out (pasted or
     // uploaded per pay period), OT via CA daily rule, late flags vs the Sling
@@ -2115,27 +2115,27 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // future dates (typos / no-year rows defaulting to 2026). Rewrites them
     // to the 1st of the month encoded in the import source slug.
     Route::get('/admin/fix-imported-dates', 'FixImportedDatesController@index');
-    Route::post('/admin/fix-imported-dates/run', 'FixImportedDatesController@run');
+    Route::post('/admin/fix-imported-dates/run', 'FixImportedDatesController@run')->middleware('admin.only');
 
     // One-shot cleanup: re-parse the In Store New & Used Sales sheet from
     // the uploaded xlsx and rewrite each transaction_date to the actual
     // per-row Sold Date (col P) / Bought Date (col F). Snapshot + undo via
     // /admin/admin-action-history.
     Route::get('/admin/fix-in-store-sold-dates', 'FixInStoreSoldDatesController@index');
-    Route::post('/admin/fix-in-store-sold-dates/run', 'FixInStoreSoldDatesController@run');
+    Route::post('/admin/fix-in-store-sold-dates/run', 'FixInStoreSoldDatesController@run')->middleware('admin.only');
 
     // One-shot cleanup: website/Discogs sales pushed into the ERP before the
     // 2026-07-06 timezone fix stored transaction_date in UTC (showed ~7h ahead
     // on the recon feed). Sets each back to its correct local time (= created_at).
     // Snapshot + undo via /admin/admin-action-history (action 'fix-web-sync-times').
     Route::get('/admin/fix-web-sync-times', 'FixWebSyncTimesController@index');
-    Route::post('/admin/fix-web-sync-times/run', 'FixWebSyncTimesController@run');
+    Route::post('/admin/fix-web-sync-times/run', 'FixWebSyncTimesController@run')->middleware('admin.only');
 
     // Per-row date editor for the leftover In Store transactions whose date
     // is still > CUTOFF after the bulk fix. Lists artist/title/amount so we
     // can pick the right date for each. Snapshot + undo via admin-action-history.
     Route::get('/admin/fix-stray-in-store-date', 'FixStrayInStoreDateController@index');
-    Route::post('/admin/fix-stray-in-store-date/run', 'FixStrayInStoreDateController@run');
+    Route::post('/admin/fix-stray-in-store-date/run', 'FixStrayInStoreDateController@run')->middleware('admin.only');
 
     // Store-mistag fixer — for ERP sales rung before the 2026-05-11 duty
     // picker landed, when HW sales sometimes got stored with Pico's
@@ -2143,13 +2143,13 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // against Clover charges at a different store; lets Sarah retag with
     // snapshot + undo.
     Route::get('/admin/store-mistag-fix', 'StoreMistagFixController@index');
-    Route::post('/admin/store-mistag-fix/run', 'StoreMistagFixController@run');
+    Route::post('/admin/store-mistag-fix/run', 'StoreMistagFixController@run')->middleware('admin.only');
 
     // Flip the channel on a single ERP sale (e.g. whatnot → discogs)
     // with snapshot to admin-snapshots. Manolo's Discogs-pickup case
     // 2026-05-15 was the trigger.
     Route::get('/admin/fix-channel', 'FixSaleChannelController@index');
-    Route::post('/admin/fix-channel/apply', 'FixSaleChannelController@apply');
+    Route::post('/admin/fix-channel/apply', 'FixSaleChannelController@apply')->middleware('admin.only');
 
     // One-shot: apply Sarah's 2026-05-13 register reconciliation findings
     // (CARD→CASH on #18694, manual match #18696 ↔ Clover Interpol pair,
@@ -2162,7 +2162,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // (sync TZ drift wrote them). Snapshots the BEFORE state so it can be
     // undone via /admin/admin-action-history.
     Route::get('/admin/fix-future-product-dates', 'FixFutureProductDatesController@index');
-    Route::post('/admin/fix-future-product-dates/run', 'FixFutureProductDatesController@run');
+    Route::post('/admin/fix-future-product-dates/run', 'FixFutureProductDatesController@run')->middleware('admin.only');
 
     // Read-only audit: per-day overlap between ERP-native and xlsx-imported
     // sells. Flags Sep 2025+ overlaps as likely duplicates (ERP was live).
@@ -2172,24 +2172,24 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // tax-math artifact — Nivessa has resale cert so they should always match).
     // One-click aligns both columns to a chosen value.
     Route::get('/admin/purchase-price-mismatch', 'PurchasePriceMismatchController@index');
-    Route::post('/admin/purchase-price-mismatch/run', 'PurchasePriceMismatchController@run');
+    Route::post('/admin/purchase-price-mismatch/run', 'PurchasePriceMismatchController@run')->middleware('admin.only');
 
     // One-time backfill for the 6 Slack-only cash buys on 2026-05-13.
     // Idempotent — already-filed entries are skipped on re-run.
     Route::get('/admin/backfill-cash-buys', 'BackfillCashBuysController@index');
-    Route::post('/admin/backfill-cash-buys/run', 'BackfillCashBuysController@run');
+    Route::post('/admin/backfill-cash-buys/run', 'BackfillCashBuysController@run')->middleware('admin.only');
 
     // Sister page: variations whose POS sticker (default_sell_price) is below
     // the price entered on the Add Purchase form (sell_price_inc_tax) — the
     // signature of the May 1, 2026 tax-deflation bug. Shows estimated lost
     // revenue and one-click backfills the sticker up to the entered price.
     Route::get('/admin/sell-price-mismatch', 'SellPriceMismatchController@index');
-    Route::post('/admin/sell-price-mismatch/run', 'SellPriceMismatchController@run');
+    Route::post('/admin/sell-price-mismatch/run', 'SellPriceMismatchController@run')->middleware('admin.only');
 
     // Recovery for variations whose cost was zeroed by the 2026-04-27 backfill.
     // Pulls the most recent purchase_lines entry per variation and copies it back.
     Route::get('/admin/recover-zeroed-costs', 'RecoverZeroedCostsController@index');
-    Route::post('/admin/recover-zeroed-costs/run', 'RecoverZeroedCostsController@run');
+    Route::post('/admin/recover-zeroed-costs/run', 'RecoverZeroedCostsController@run')->middleware('admin.only');
 
     // CHOOSE-ROLE INSTALLER ROUTES TEMPORARILY REMOVED — caused outage 2026-04-29.
     // Controller files + view files preserved on disk for re-enable later.
@@ -2199,19 +2199,19 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // `php artisan migrate --force` is high-risk because one bad migration
     // takes the site down. This installer is scope-limited and idempotent.
     Route::get('/admin/install-safe-drop-column', 'InstallSafeDropColumnController@index');
-    Route::post('/admin/install-safe-drop-column/run', 'InstallSafeDropColumnController@run');
+    Route::post('/admin/install-safe-drop-column/run', 'InstallSafeDropColumnController@run')->middleware('admin.only');
 
     // One-shot installer for the cash_deposits table — the per-deposit log
     // behind the post-it deposit numbers (Deposit #N) shown when a cashier
     // drops cash to the safe. Same scope-limited, idempotent pattern.
     Route::get('/admin/install-cash-deposits-table', 'InstallCashDepositsTableController@index');
-    Route::post('/admin/install-cash-deposits-table/run', 'InstallCashDepositsTableController@run');
+    Route::post('/admin/install-cash-deposits-table/run', 'InstallCashDepositsTableController@run')->middleware('admin.only');
 
     // Set where each store's deposit numbering continues from — used when
     // physical deposits happened before the log existed (so #1/#2 were
     // never recorded and the counter should resume at #3, etc.).
     Route::get('/admin/deposit-number-tool', 'DepositNumberToolController@index');
-    Route::post('/admin/deposit-number-tool/run', 'DepositNumberToolController@run');
+    Route::post('/admin/deposit-number-tool/run', 'DepositNumberToolController@run')->middleware('admin.only');
 
     // Same pattern, different column. Adds clover_reconciliations.employee_key
     // + index cr_bdek so the per-cashier "Mark reconciled" + notes textarea
@@ -2219,14 +2219,14 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // was failing because the run-migrations workflow couldn't SSH from
     // GitHub-runner IPs the server's firewall doesn't whitelist.
     Route::get('/admin/install-employee-key-column', 'InstallEmployeeKeyColumnController@index');
-    Route::post('/admin/install-employee-key-column/run', 'InstallEmployeeKeyColumnController@run');
+    Route::post('/admin/install-employee-key-column/run', 'InstallEmployeeKeyColumnController@run')->middleware('admin.only');
 
     // History of destructive admin backfills with one-click Undo. Every /admin/*
     // /run endpoint that mutates rows in bulk should write a snapshot here first.
     Route::get('/admin/admin-action-history', 'AdminActionHistoryController@index');
     Route::get('/admin/admin-action-history/artist-fills', 'AdminActionHistoryController@artistFills');
     Route::get('/admin/admin-action-history/view/{key}', 'AdminActionHistoryController@show');
-    Route::post('/admin/admin-action-history/undo', 'AdminActionHistoryController@undo');
+    Route::post('/admin/admin-action-history/undo', 'AdminActionHistoryController@undo')->middleware('admin.only');
 
     // Re-ring Alec's 103-item Pico cash sale (6/20/26 7:23pm) that 500'd on the
     // old max_input_vars limit before the fix — no transaction was saved and no
@@ -2234,7 +2234,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // + creates the sale via the normal POS logic. Undoable via
     // admin-action-history (action 'ring-backfill' -> TransactionUtil::deleteSale).
     Route::get('/admin/ring-backfill', 'RingBackfillController@index');
-    Route::post('/admin/ring-backfill/apply', 'RingBackfillController@apply');
+    Route::post('/admin/ring-backfill/apply', 'RingBackfillController@apply')->middleware('admin.only');
 
     // Guarded bulk-apply of the legacy Nivessa store credit. Preview shows the
     // safe-to-credit contacts (zero balance, never credited); Apply snapshots
@@ -2242,20 +2242,20 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // (action 'apply-legacy-store-credit'). Never touches anyone who already
     // has a balance — see /admin/store-credit-review.
     Route::get('/admin/apply-legacy-store-credit', 'ApplyLegacyStoreCreditController@preview');
-    Route::post('/admin/apply-legacy-store-credit/run', 'ApplyLegacyStoreCreditController@apply');
+    Route::post('/admin/apply-legacy-store-credit/run', 'ApplyLegacyStoreCreditController@apply')->middleware('admin.only');
 
     // Direct cost-update path for when the regular product-edit form is
     // misbehaving for a given user (see Fatteen 2026-05-14). Search → set
     // new cost → snapshot + write. Undoable via admin-action-history.
     Route::get('/admin/update-product-cost', 'UpdateProductCostController@index');
-    Route::post('/admin/update-product-cost/run', 'UpdateProductCostController@run');
+    Route::post('/admin/update-product-cost/run', 'UpdateProductCostController@run')->middleware('admin.only');
 
     // Reassign a day's sales + listings from one user to another when staff
     // rang up / listed under the wrong login. Preview with per-row checkboxes
     // → snapshot created_by → move. Undoable via admin-action-history
     // (action 'reassign-user-created-by').
     Route::get('/admin/reassign-user-activity', 'ReassignUserActivityController@index');
-    Route::post('/admin/reassign-user-activity/run', 'ReassignUserActivityController@run');
+    Route::post('/admin/reassign-user-activity/run', 'ReassignUserActivityController@run')->middleware('admin.only');
 
     // Read-only diagnostic: finalized sell revenue by store x month x
     // import_source, to explain the LFL report's prior-year n/a cells.
@@ -2265,7 +2265,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // (defaulted to Hollywood pre-June-2024) to Pico, where they belong.
     // Preview + snapshot/undo via admin-action-history ('reassign-import-location').
     Route::get('/admin/move-import-location', 'MoveImportLocationController@index');
-    Route::post('/admin/move-import-location/run', 'MoveImportLocationController@run');
+    Route::post('/admin/move-import-location/run', 'MoveImportLocationController@run')->middleware('admin.only');
 
     // Import the one parked historical sheet (Hollywood Aug 2024) whose broken
     // #REF! price header made the bulk importer skip it. Snapshot/undo via
@@ -2283,7 +2283,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/admin/clover-recon-lfl', 'CloverReconLflController@index');
     Route::get('/admin/clover-gap-preview', 'CloverGapPreviewController@index');
     Route::get('/admin/clover-hw-breakdown', 'CloverHwBreakdownController@index');
-    Route::post('/admin/import-parked-sheets/run', 'ImportParkedSheetsController@run');
+    Route::post('/admin/import-parked-sheets/run', 'ImportParkedSheetsController@run')->middleware('admin.only');
 
     // Store-wide scan for duplicate label print runs (double-logged
     // labels_printed activity_log rows) that inflate "labeled" totals and
@@ -2364,21 +2364,21 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/admin/force-close-registers', 'ForceCloseRegisterController@index');
     Route::post('/admin/force-close-registers/close-one', 'ForceCloseRegisterController@closeOne');
     Route::post('/admin/force-close-registers/close-stale', 'ForceCloseRegisterController@closeStale');
-    Route::post('/admin/force-close-registers/delete-one', 'ForceCloseRegisterController@deleteOne');
+    Route::post('/admin/force-close-registers/delete-one', 'ForceCloseRegisterController@deleteOne')->middleware('admin.only');
     // Reassign an open register to a different cashier (wrong-login shift,
     // e.g. Mica rang up on Manolo's account). Snapshots user_id first;
     // undoable via admin-action-history (action 'reassign-register-user').
-    Route::post('/admin/force-close-registers/reassign-one', 'ForceCloseRegisterController@reassignOne');
+    Route::post('/admin/force-close-registers/reassign-one', 'ForceCloseRegisterController@reassignOne')->middleware('admin.only');
     // Correct a register's opening count (cashier missed bills at open).
     // Snapshots the old initial amount; undo via admin-action-history
     // (action 'adjust-register-opening').
-    Route::post('/admin/force-close-registers/adjust-opening', 'ForceCloseRegisterController@adjustOpening');
+    Route::post('/admin/force-close-registers/adjust-opening', 'ForceCloseRegisterController@adjustOpening')->middleware('admin.only');
 
     // Companion to /admin/cost-price-rules: lists every category that still
     // has $0-cost products, lets Sarah enter a cost per category inline,
     // applies the lot in one go with snapshot-for-undo.
     Route::get('/admin/remainder-costs', 'RemainderCostsController@index');
-    Route::post('/admin/remainder-costs/run', 'RemainderCostsController@run');
+    Route::post('/admin/remainder-costs/run', 'RemainderCostsController@run')->middleware('admin.only');
 
     // One-shot diagnostic: did the Nivessa Backend xlsx imports land on prod?
     // Hit /admin/nivessa-import-status in the browser to see row counts per table.

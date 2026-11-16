@@ -3519,7 +3519,7 @@ class ReportController extends Controller
             $datatable->filterColumn(
                  'product',
                  function($query, $keyword){
-                    $query->whereRaw("IF(P.type='variable', CONCAT(P.name, ' - ', PV.name, ' - ', V.name, ' (', V.sub_sku, ')'), CONCAT(P.name, ' (', P.sku, ')')) LIKE '%{$keyword}%'");
+                    $query->whereRaw("IF(P.type='variable', CONCAT(P.name, ' - ', PV.name, ' - ', V.name, ' (', V.sub_sku, ')'), CONCAT(P.name, ' (', P.sku, ')')) LIKE ?", ['%' . $keyword . '%']);
                  });
         }
         $raw_columns = ['gross_profit'];
@@ -6910,6 +6910,10 @@ class ReportController extends Controller
 
         if ($request->ajax()) {
             $as_of = !empty($request->input('as_of_date')) ? $request->input('as_of_date') : date('Y-m-d');
+            // Pasted into SQL below, so it must be a plain Y-m-d date.
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $as_of) || !strtotime($as_of)) {
+                $as_of = date('Y-m-d');
+            }
 
             $query = DB::table('purchase_lines as pl')
                 ->join('transactions as t', 'pl.transaction_id', '=', 't.id')

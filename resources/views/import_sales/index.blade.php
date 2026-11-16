@@ -144,7 +144,10 @@
             dangerMode: true,
         }).then(willDelete => {
             if (willDelete) {
-                window.location = $(this).attr('href');
+                // POST with CSRF: a plain GET link let any outside page delete a batch.
+                var f = $('<form method="POST"></form>').attr('action', $(this).attr('href'));
+                f.append($('<input type="hidden" name="_token">').val($('meta[name="csrf-token"]').attr('content')));
+                $('body').append(f); f.submit();
             } else {
                 return false;
             }

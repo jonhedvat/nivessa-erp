@@ -710,7 +710,16 @@ class Util
             }
 
             if ($request->$file_name->getSize() <= config('constants.document_size_limit')) {
-                $new_file_name = time() . '_' . $request->$file_name->getClientOriginalName();
+                // Only plain images/office docs, and never the client's own
+                // extension blindly: a .php "PDF" landed in public/uploads
+                // (Sarah, 2026-11-16).
+                $ext = strtolower(pathinfo($request->$file_name->getClientOriginalName(), PATHINFO_EXTENSION));
+                if (!in_array($ext, \App\Media::ALLOWED_UPLOAD_EXTENSIONS, true)) {
+                    throw new \Exception("File type not allowed");
+                }
+                $base = preg_replace('/[^A-Za-z0-9_\-]+/', '_', pathinfo($request->$file_name->getClientOriginalName(), PATHINFO_FILENAME));
+                $base = substr(trim($base, '_'), 0, 80) ?: 'file';
+                $new_file_name = time() . '_' . mt_rand() . '_' . $base . '.' . $ext;
                 if ($request->$file_name->storeAs($dir_name, $new_file_name, 'uploads')) {
                     $uploaded_file_name = $new_file_name;
                 }

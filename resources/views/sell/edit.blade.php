@@ -118,8 +118,8 @@
 							@lang('lang_v1.shipping_address'):
 						</strong>
 						<div id="shipping_address_div">
-							{!! $transaction->contact->supplier_business_name ?? '' !!}, <br>
-							{!! $transaction->contact->name ?? '' !!}, <br>
+							{{ $transaction->contact->supplier_business_name ?? '' }}, <br>
+							{{ $transaction->contact->name ?? '' }}, <br>
 							{!!$transaction->contact->shipping_address ?? '' !!}
 						</div>						
 					</small>

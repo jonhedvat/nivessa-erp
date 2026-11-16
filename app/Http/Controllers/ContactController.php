@@ -2060,7 +2060,11 @@ class ContactController extends Controller
 
             if ($request->hasFile('avatar') && $request->file('avatar')->isValid()) {
                 $avatar = $request->file('avatar');
-                $filename = 'contact_' . $contact->id . '_' . time() . '.' . $avatar->getClientOriginalExtension();
+                $ext = strtolower($avatar->getClientOriginalExtension());
+                if (!in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'], true)) {
+                    return response()->json(['success' => false, 'msg' => 'Please upload a photo (jpg, png, gif, webp).']);
+                }
+                $filename = 'contact_' . $contact->id . '_' . time() . '.' . $ext;
 
                 $upload_path = public_path('uploads/contact_avatars');
                 if (!file_exists($upload_path)) {

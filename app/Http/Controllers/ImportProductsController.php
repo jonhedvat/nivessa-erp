@@ -149,10 +149,23 @@ class ImportProductsController extends Controller
                     $image_name = trim($value[29]);
                     if (!empty($image_name)) {
                         if (filter_var($image_name, FILTER_VALIDATE_URL)) { 
-                            $source_image = file_get_contents($image_name);
-
+                            // http(s) images only: a file:// URL here copied
+                            // server files (e.g. .env) into public uploads.
+                            $scheme = strtolower((string) parse_url($image_name, PHP_URL_SCHEME));
                             $path = parse_url($image_name, PHP_URL_PATH);
-                            $new_name = time() . '_' . basename($path);
+                            $img_ext = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
+                            if (!in_array($scheme, ['http', 'https'], true) || !in_array($img_ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true)) {
+                                $is_valid = false;
+                                $error_msg = "Image URL in row no. $row_no must be an http(s) link to a jpg, png, gif or webp image";
+                                break;
+                            }
+                            $source_image = @file_get_contents($image_name);
+                            if ($source_image === false || @getimagesizefromstring($source_image) === false) {
+                                $is_valid = false;
+                                $error_msg = "Image URL in row no. $row_no is not an image";
+                                break;
+                            }
+                            $new_name = time() . '_' . mt_rand() . '.' . $img_ext;
                             $dest_img = public_path() . '/uploads/' . config('constants.product_img_path') . '/' . $new_name;
                             file_put_contents($dest_img, $source_image);
                           $product_array['image'] = $new_name;
