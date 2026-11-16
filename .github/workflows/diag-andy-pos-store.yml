@@ -5,10 +5,6 @@ name: Diag Andy POS store 11-16 (read-only)
 on:
   workflow_dispatch:
 
-concurrency:
-  group: production-diag
-  cancel-in-progress: false
-
 jobs:
   diag:
     runs-on: ubuntu-latest
