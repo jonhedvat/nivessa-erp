@@ -54,7 +54,7 @@
     <div class="oi-top">
         <div>
             <h1>Open Items</h1>
-            <p>Everything from the last 2 weeks still waiting on someone. Work it top to bottom and solve each one the same day. "Fixed it" means the problem is gone, not that someone was told. If it is still open 48 hours later, it comes back. If the ERP is what's stopping you, report it as an ERP bug. Updated {{ $asOf }}.</p>
+            <p>Everything from the last 2 weeks still waiting on someone. Updated {{ $asOf }}.</p>
             <div class="oi-total {{ $total === 0 ? 'zero' : '' }}">{{ $total === 0 ? 'Nothing open. Nice work.' : $total . ' open' }}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -64,6 +64,16 @@
     </div>
 
     @if(session('oi_msg'))<div class="oi-msg">{{ session('oi_msg') }}</div>@endif
+
+    <div class="oi-card" id="oi-start">
+        <div class="oi-head"><h2>How to use this page</h2></div>
+        <div class="oi-done"><strong>1.</strong> Start with the first box and go down. Each row is one problem to solve today.</div>
+        <div class="oi-done"><strong>2.</strong> Click <strong>Open</strong> on the row. Do what the line under the box title says (reply, ship, call, fix the order). For any message to a customer, use Claude first (bottom of this page).</div>
+        <div class="oi-done"><strong>3.</strong> When the problem is gone, click <strong>Fixed it</strong> and write one line about what you did, e.g. "Called her, sent a swap, she is happy". It disappears.</div>
+        <div class="oi-done"><strong>4.</strong> If the ERP is broken or missing something you need, click <strong>ERP bug</strong> and write what happened. Do not leave it sitting.</div>
+        <div class="oi-done"><strong>5.</strong> When every box says All clear, do today's social post, then the bigger jobs below.</div>
+        <p class="oi-how">"Fixed it" only counts if the problem is really gone. Anything still open 48 hours later comes back here with your note.</p>
+    </div>
 
     @foreach($sections as $key => $s)
         <div class="oi-card" id="oi-{{ $key }}">

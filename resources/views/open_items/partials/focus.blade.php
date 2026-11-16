@@ -54,10 +54,28 @@
     @endforeach
 </div>
 
+@php
+    $todayArtist = $socialCal[$tzNow->format('Y-m-d')] ?? null;
+    $tomorrowArtist = $socialCal[$tzNow->copy()->addDay()->format('Y-m-d')] ?? null;
+    $capPrompt = $todayArtist
+        ? 'Write a 2-sentence Instagram caption for Nivessa Records about ' . $todayArtist . '. If they are alive say happy birthday, if they have passed start with "Remembering". Mention one well-known album and say we have [album] on vinyl at Nivessa [store] right now. Proper grammar, no emojis. Add 4 hashtags.'
+        : 'Write a 2-sentence Instagram caption for Nivessa Records about this rare record we just got in: [artist, title, what makes it special]. Say it is at Nivessa [store] right now. Proper grammar, no emojis. Add 4 hashtags.';
+@endphp
 <div class="oi-card" id="oi-social">
-    <div class="oi-head"><h2>Social: one famous-musician post a day</h2></div>
-    <p class="oi-how">These posts did best. The day before, find the artist in Products and ask the cashier at the store that has a copy for one clear photo of the record in the store. Caption: "Happy birthday to [Artist], born [date, year]. [One true line about them.] We have [album] on vinyl at Nivessa [store] right now." If the artist has passed, start with "Remembering [Artist]" instead of "Happy birthday". Post around 11am, one a day, never several at once. No copy in the store? Post a rare find instead.</p>
-    @foreach($week as $w)
+    <div class="oi-head"><h2>Today's social post</h2><a class="oi-btn" href="https://claude.ai/new?q={{ rawurlencode($capPrompt) }}" target="_blank">Write the caption with Claude</a></div>
+    <div class="oi-done" style="font-size:16px"><strong>Today: {{ $todayArtist ?: 'a rare find or new arrival (no famous birthday today)' }}</strong></div>
+    @if($todayArtist)
+        <div class="oi-done"><strong>1.</strong> Search the artist in <a href="{{ url('/products') }}" style="color:var(--d-accent-text);font-weight:700">Products</a> and see which store has one of their records in stock.</div>
+        <div class="oi-done"><strong>2.</strong> Text the cashier at that store: "Can you send me one clear photo of [record] in the store for today's post?"</div>
+    @else
+        <div class="oi-done"><strong>1.</strong> Text the cashier on shift: "Can you send me one clear photo of the best record that came in today, and what it is?"</div>
+        <div class="oi-done"><strong>2.</strong> Look the record up in Products so the caption has the right title and store.</div>
+    @endif
+    <div class="oi-done"><strong>3.</strong> Click <strong>Write the caption with Claude</strong> above, fill in the [brackets], and copy what it writes.</div>
+    <div class="oi-done"><strong>4.</strong> Post the photo and caption on Instagram and TikTok around 11am. One post a day, never several at once.</div>
+    @if($tomorrowArtist)<div class="oi-done"><strong>Tomorrow:</strong> {{ $tomorrowArtist }}. Ask the cashier for the photo today so it is ready.</div>@endif
+    <p class="oi-how">Coming up this week:</p>
+    @foreach(array_slice($week, 2) as $w)
         <div class="oi-done"><strong>{{ $w[0] }} ({{ $w[1] }}):</strong> {{ $w[2] }}</div>
     @endforeach
 </div>
