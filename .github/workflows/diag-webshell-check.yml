@@ -1,0 +1,72 @@
+# READ-ONLY: did uploaded webshells ever run? (2026-11-16)
+
+
+
+
+name: Diag webshell check
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 0
+
+      - name: Webshell check
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 180s
+            cd /www/playlist.nivessa.com/app || exit 0
+            echo "=== whoami / web user ==="; whoami; ps -eo user,comm | grep -E "nginx|php-fpm|apache|httpd" | sort | uniq -c | head
+            echo "=== nginx php location blocks ==="
+            for f in $(ls /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf /www/server/panel/vhost/nginx/*.conf 2>/dev/null); do echo "--- $f"; grep -nE "server_name|root |location|fastcgi_pass|uploads|\\.php|deny" "$f" 2>/dev/null | head -40; done
+            echo "=== apache? ==="; ls /etc/apache2/sites-enabled 2>/dev/null; ls public/uploads/.htaccess 2>/dev/null && cat public/uploads/.htaccess
+            echo "=== access log hits on uploaded scripts (status counts) ==="
+            LOGS=$(ls /var/log/nginx/*access*.log* /www/wwwlogs/*.log* 2>/dev/null)
+            echo "$LOGS" | head
+            for l in $LOGS; do (zcat -f "$l" 2>/dev/null) ; done | grep -E "/uploads/[^ ]*\.(php[0-9]*|phtml|pht|phar|inc)[ ?]" | awk '{print $9, $7}' | sort | uniq -c | sort -rn | head -60
+            echo "=== earliest/latest such hits ==="
+            for l in $LOGS; do (zcat -f "$l" 2>/dev/null) ; done | grep -E "/uploads/[^ ]*\.(php[0-9]*|phtml|pht|phar|inc)[ ?]" | awk '{print $4, $1, $9, $10, $7}' | sort | sed -n '1,5p;$p'
+            echo "=== POST hits to uploads scripts with 200 ==="
+            for l in $LOGS; do (zcat -f "$l" 2>/dev/null) ; done | grep -E "\"POST /uploads/" | awk '{print $4,$1,$9,$10,$7}' | head -20
+            echo "=== quarantined files: dangerous functions ==="
+            Q=$(ls -d storage/app/quarantine/uploads-* | tail -1); ls "$Q"/media | wc -l
+            grep -lE "eval\(|system\(|shell_exec|passthru|base64_decode|assert\(|proc_open|popen|move_uploaded_file|file_put_contents" -r "$Q" | head -60
+            echo "=== php files in public/ not in git (possible persistence) ==="
+            git ls-files --others --exclude-standard public | grep -iE "\.(php[0-9]*|phtml|pht|phar)$" | head -30
+            git ls-files --others --ignored --exclude-standard public | grep -iE "\.(php[0-9]*|phtml|pht|phar)$" | head -30
+            echo "=== modified tracked php files (should be none) ==="; git status --porcelain | grep -iE "\.php" | head -20
+            echo "=== php files changed in last 240 days outside vendor/storage ==="
+            find . -path ./vendor -prune -o -path ./storage -prune -o -path ./node_modules -prune -o -type f \( -name "*.php*" -o -name "*.phtml" -o -name "*.pht" \) -newermt "2026-03-01" -print 2>/dev/null | while read f; do git ls-files --error-unmatch "$f" >/dev/null 2>&1 || echo "UNTRACKED $f"; done | head -30
+            echo "=== crontab / keys ==="; crontab -l 2>/dev/null | head -20; ls -la ~/.ssh/ 2>/dev/null; cat ~/.ssh/authorized_keys 2>/dev/null | awk '{print $1, $3}'
+            echo "=== done ==="
