@@ -4982,6 +4982,7 @@ class SellPosController extends Controller
 
         $register_details = $this->cashRegisterUtil->getCurrentCashRegister(auth()->user()->id)
             ?: $this->cashRegisterUtil->sharedStoreRegisterForManager();
+        view()->share('cross_store_msg', $this->crossStoreRingMessage(request()));
 
         $walk_in_customer = $this->contactUtil->getWalkInCustomer($business_id);
         $walk_in_display_name = 'Ask for phone # to look up rewards account';
@@ -5131,6 +5132,38 @@ class SellPosController extends Controller
      * @param  \Illuminate\Http\Request  $request
      * @return \Illuminate\Http\Response
      */
+    /**
+     * Message to show when this computer is at one store (known store
+     * network) but the sale would go to the other store's register. Null
+     * when fine or unknown. Never throws, so the POS can't break on it.
+     */
+    protected function crossStoreRingMessage(Request $request): ?string
+    {
+        try {
+            $business_id = (int) $request->session()->get('user.business_id');
+            $ip = \App\Services\TimeClockService::clientIp($request);
+            $here = \App\Services\TimeClockService::resolveStore($business_id, $ip, []);
+            if (($here['verify'] ?? '') !== 'ip' || empty($here['location_id'])) {
+                return null;
+            }
+            $hereId = (int) $here['location_id'];
+            $register = $this->cashRegisterUtil->registerForCurrentUserPayments();
+            $saleLoc = (int) (!empty($register->location_id) ? $register->location_id : $request->input('location_id'));
+            $stores = \App\Services\TimeClockService::stores($business_id);
+            if (!$saleLoc || $saleLoc === $hereId || !isset($stores[$saleLoc])) {
+                return null;
+            }
+            $user = auth()->user();
+            \Log::warning("POS cross-store ring blocked: user {$user->id} ip {$ip} at store {$hereId}, sale store {$saleLoc}");
+            return 'This computer is at ' . $stores[$hereId]['name'] . ', but it is signed in as '
+                . trim($user->first_name . ' ' . $user->last_name) . ' with a ' . $stores[$saleLoc]['name']
+                . ' register. Please log out and sign in as yourself, then open your own register.';
+        } catch (\Throwable $e) {
+            \Log::warning('crossStoreRingMessage failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
     public function store(Request $request)
     {
         if (!auth()->user()->can('sell.create') && !auth()->user()->can('direct_sell.access') && !auth()->user()->can('so.create') ) {
@@ -5164,6 +5197,17 @@ class SellPosController extends Controller
         }
         if (!$is_direct_sale && !$skip_register && $this->cashRegisterUtil->countOpenedRegister() == 0) {
             return redirect()->action('CashRegisterController@create');
+        }
+
+        // Sarah 2026-11-16: on 11/13 the Pico computer was still signed in as
+        // Andy from his Thursday close, so Pico sales went into his Hollywood
+        // register. Refuse a sale when this computer is on one store's network
+        // and the register (or chosen store) belongs to the other store.
+        if (!$is_direct_sale) {
+            $cross = $this->crossStoreRingMessage($request);
+            if ($cross !== null) {
+                return response()->json(['success' => 0, 'msg' => $cross]);
+            }
         }
 
         try {

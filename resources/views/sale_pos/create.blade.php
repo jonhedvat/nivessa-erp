@@ -9,6 +9,12 @@
      2026-04-22: bumped to force Blade recompile after _redesign_v2 CSS
      changes (compiled-view cache was holding the pre-hotfix inline). --}}
 @section('content')
+@if(!empty($cross_store_msg))
+<div style="background:#c62828; color:#fff; padding:14px 18px; font-size:17px; font-weight:600; text-align:center; position:relative; z-index:2000;">
+    {{ $cross_store_msg }}
+    <a href="{{ url('/logout') }}" style="color:#fff; text-decoration:underline; margin-left:12px;">Log out</a>
+</div>
+@endif
 @include('sale_pos.partials._redesign_v2')
 <script>document.body.classList.add('pos-v2');</script>
 {{-- Sarah 2026-04-22 LAYOUT HOTFIX — the rules live in a real static
