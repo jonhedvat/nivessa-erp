@@ -319,7 +319,8 @@ class AmsInvoiceImportController extends Controller
             'new_products' => $newCount,
             'view_url' => action('PurchaseController@show', [$tx->id]),
             'msg' => 'Created purchase #' . $tx->id . ' with ' . $res['lines'] . ' line(s), total $' . number_format($res['total'], 2)
-                . ($newCount ? ', including ' . $newCount . ' new product(s)' : '') . '.',
+                . ($newCount ? ', including ' . $newCount . ' new product(s)' : '') . '.'
+            . (!empty($res['settled']) ? ' Replaced the order logged before this invoice: ' . implode(', ', array_map(function ($s) { return '#' . $s['transaction_id'] . ($s['deleted'] ? ' (removed)' : ' (' . $s['qty'] . ' taken off)'); }, $res['settled'])) . '.' : ''),
         ]);
     }
 }

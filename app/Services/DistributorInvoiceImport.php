@@ -296,6 +296,7 @@ class DistributorInvoiceImport
                 'current_cost' => $best && $best->default_purchase_price !== null ? round((float) $best->default_purchase_price, 2) : null,
                 'existing' => [],   // same invoice already logged on another purchase: skip
                 'earlier' => [],    // the title is on an older purchase: just FYI
+                'on_order' => [],   // open order logged before its invoice: the import replaces it
                 'new_product' => null,
                 // Every product carrying this UPC (the catalog has duplicates),
                 // so "already on a purchase" checks catch any of them.
@@ -346,16 +347,19 @@ class DistributorInvoiceImport
                 ->whereBetween('t.transaction_date', [$from, $to])
                 ->whereIn('pl.variation_id', $vids)
                 ->get(['pl.variation_id', 't.id', 't.ref_no', 't.additional_notes', 't.status', 'pl.quantity']);
-            $same = []; $earlier = [];
+            $same = []; $earlier = []; $onOrder = [];
             foreach ($hits as $h) {
                 $row = ['transaction_id' => (int) $h->id, 'ref_no' => $h->ref_no, 'status' => $h->status, 'qty' => (float) $h->quantity];
                 $isSame = isset($registered[(int) $h->id])
                     || ($key !== '' && (stripos((string) $h->ref_no, $key) !== false || stripos((string) $h->additional_notes, $key) !== false));
-                if ($isSame) $same[(int) $h->variation_id][] = $row; else $earlier[(int) $h->variation_id][] = $row;
+                if ($isSame) $same[(int) $h->variation_id][] = $row;
+                elseif (self::isOpenOrderPlaceholder($h->status, $h->ref_no)) $onOrder[(int) $h->variation_id][] = $row;
+                else $earlier[(int) $h->variation_id][] = $row;
             }
             foreach ($out as &$line) {
                 foreach ($line['upc_variation_ids'] as $v) {
                     if (isset($same[$v])) $line['existing'] = array_merge($line['existing'], $same[$v]);
+                    if (isset($onOrder[$v])) $line['on_order'] = array_merge($line['on_order'], $onOrder[$v]);
                     if (isset($earlier[$v])) $line['earlier'] = array_merge($line['earlier'], $earlier[$v]);
                 }
             }
@@ -532,6 +536,15 @@ class DistributorInvoiceImport
                 $pl->save();
             }
 
+            $settled = empty($opts['no_settle'])
+                ? self::settleOrderPlaceholders($business_id, $contact_id, $location_id, $transaction->id, $invoiceDate, $clean)
+                : [];
+            if ($settled) {
+                $transaction->additional_notes = trim($notes . '. Replaces the order logged before this invoice: '
+                    . implode(', ', array_map(function ($s) { return '#' . $s['transaction_id'] . ' ' . $s['ref_no'] . ' (-' . $s['qty'] . ($s['deleted'] ? ', removed' : '') . ')'; }, $settled)));
+                $transaction->save();
+            }
+
             DB::commit();
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -547,6 +560,7 @@ class DistributorInvoiceImport
             'invoice' => $invoiceKey . $suffix,
             'transaction_id' => $transaction->id,
             'created_products' => $created,
+            'settled_order_placeholders' => $settled,
         ], JSON_PRETTY_PRINT));
 
         if ($writeSidecar) Storage::disk('local')->put(self::sidecarPath($distributor, $invoiceKey), json_encode([
@@ -561,7 +575,77 @@ class DistributorInvoiceImport
             'applied_by' => $user_id,
         ], JSON_PRETTY_PRINT));
 
-        return ['transaction' => $transaction, 'created_products' => $created, 'lines' => count($clean), 'total' => $total];
+        return ['transaction' => $transaction, 'created_products' => $created, 'lines' => count($clean), 'total' => $total, 'settled' => $settled];
+    }
+
+    /**
+     * An order logged in the ERP before its invoice exists (e.g. ref
+     * "ALLIANCE-ORD320180114516A1", "Alliance 275142054736a1", "AMS-ORDER-1627466").
+     * Only purchases still Ordered/Pending count; received ones moved stock.
+     */
+    public static function isOpenOrderPlaceholder($status, $ref)
+    {
+        if (!in_array(strtolower((string) $status), ['ordered', 'pending'], true)) return false;
+        $ref = strtoupper((string) $ref);
+        return (bool) (preg_match('/(^|[^A-Z])ORD(ER)?[-_ ]?\d/', $ref) || preg_match('/\d{12}A1\b/', $ref));
+    }
+
+    /**
+     * When an invoice is imported, the order placeholders for the same
+     * supplier + store are used up by what the invoice shipped (oldest first),
+     * so the order isn't counted twice. Lines that reach 0 are removed and a
+     * placeholder with no lines left is deleted; anything not invoiced yet
+     * (back-orders) stays on it. Ordered purchases never touched stock.
+     */
+    private static function settleOrderPlaceholders($business_id, $contact_id, $location_id, $newTxId, $invoiceDate, array $clean)
+    {
+        $d = self::normalizeDate($invoiceDate);
+        $from = date('Y-m-d', strtotime($d . ' -120 days'));
+        $to = date('Y-m-d 23:59:59', strtotime($d . ' +10 days'));
+        $byTx = [];
+        foreach ($clean as $l) {
+            $left = (float) $l['qty'];
+            if ($left <= 0) continue;
+            $cands = DB::table('purchase_lines as pl')
+                ->join('transactions as t', 't.id', '=', 'pl.transaction_id')
+                ->where('t.business_id', $business_id)->where('t.type', 'purchase')
+                ->where('t.contact_id', $contact_id)->where('t.location_id', $location_id)
+                ->where('t.id', '!=', $newTxId)
+                ->whereIn('t.status', ['ordered', 'pending'])
+                ->whereBetween('t.transaction_date', [$from, $to])
+                ->where('pl.variation_id', (int) $l['variation_id'])
+                ->orderBy('t.transaction_date')->orderBy('pl.id')
+                ->get(['pl.id', 'pl.quantity', 'pl.purchase_price', 't.id as tx_id', 't.ref_no', 't.status']);
+            foreach ($cands as $c) {
+                if ($left <= 0) break;
+                if (!self::isOpenOrderPlaceholder($c->status, $c->ref_no)) continue;
+                $take = min($left, (float) $c->quantity);
+                if ($take <= 0) continue;
+                $left -= $take;
+                $remaining = (float) $c->quantity - $take;
+                if ($remaining > 0) {
+                    DB::table('purchase_lines')->where('id', $c->id)->update(['quantity' => $remaining]);
+                } else {
+                    DB::table('purchase_lines')->where('id', $c->id)->delete();
+                }
+                $amt = round($take * (float) $c->purchase_price, 2);
+                DB::table('transactions')->where('id', $c->tx_id)->update([
+                    'total_before_tax' => DB::raw('GREATEST(0, total_before_tax - ' . $amt . ')'),
+                    'final_total' => DB::raw('GREATEST(0, final_total - ' . $amt . ')'),
+                ]);
+                $k = (int) $c->tx_id;
+                if (!isset($byTx[$k])) $byTx[$k] = ['transaction_id' => $k, 'ref_no' => $c->ref_no, 'qty' => 0, 'deleted' => false];
+                $byTx[$k]['qty'] += $take;
+            }
+        }
+        foreach ($byTx as $k => &$s) {
+            if (!DB::table('purchase_lines')->where('transaction_id', $k)->exists()) {
+                DB::table('transactions')->where('id', $k)->where('type', 'purchase')->whereIn('status', ['ordered', 'pending'])->delete();
+                $s['deleted'] = true;
+            }
+        }
+        unset($s);
+        return array_values($byTx);
     }
 
     // Add catalog lines to a purchase that is still Ordered (no stock moves):
