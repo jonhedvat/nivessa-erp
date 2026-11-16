@@ -95,7 +95,7 @@
     {{-- Team, in the picked window --}}
     <div class="md-box">
         <div class="md-h">Your team, last {{ $days }} days</div>
-        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start.</div>
+        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
         <div class="md-scroll">
         <table class="md-t">
             <thead><tr>
@@ -106,6 +106,9 @@
                 <th class="r">Priced / shift</th>
                 <th class="r">Signups</th>
                 <th class="r">Signups / shift</th>
+                <th class="r">Fixed by shelf count</th>
+                <th class="r">Shipped web</th>
+                <th class="r">Shipped Discogs</th>
                 <th class="r">Tasks done</th>
                 <th class="r">In progress</th>
                 <th class="r">Opened late</th>
@@ -122,6 +125,9 @@
                     <td class="r">{{ $p['shifts'] ? number_format($p['priced'] / $p['shifts'], 1) : '-' }}</td>
                     <td class="r">{{ $num($p['signups']) }}</td>
                     <td class="r">{{ $p['shifts'] ? number_format($p['signups'] / $p['shifts'], 1) : '-' }}</td>
+                    <td class="r">{{ $num($p['shelf_changed']) }}</td>
+                    <td class="r">{{ $p['shipped_web'] === null ? '-' : $num($p['shipped_web']) }}</td>
+                    <td class="r">{{ $p['shipped_discogs'] === null ? '-' : $num($p['shipped_discogs']) }}</td>
                     <td class="r">{{ $p['tasks_done'] }}</td>
                     <td class="r">{{ $p['tasks_in_progress'] }}</td>
                     <td class="r">
@@ -137,7 +143,7 @@
                     <td class="r">@if($p['said_not_done'] > 0)<span class="md-bad">{{ $p['said_not_done'] }}</span>@else 0 @endif</td>
                 </tr>
             @empty
-                <tr><td colspan="12" class="md-dim">No one is set up at {{ $storeLabel }} yet.</td></tr>
+                <tr><td colspan="15" class="md-dim">No one is set up at {{ $storeLabel }} yet.</td></tr>
             @endforelse
             </tbody>
         </table>

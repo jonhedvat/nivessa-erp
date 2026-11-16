@@ -2450,6 +2450,20 @@ class WebsiteOrdersController extends Controller
         return $out;
     }
 
+    /**
+     * Web + Discogs orders shipped since $since (Y-m-d), per ERP user name, for
+     * the Manager Dashboard. Null when the website can't be reached.
+     * ['people' => [name => [web_orders, web_items, discogs_orders, discogs_items]], 'unnamed' => [...]]
+     */
+    public function shippedByEmployee(string $since): ?array
+    {
+        $resp = $this->websiteApi('GET', '/erp/shipped-by?since=' . urlencode($since), null, 20);
+        if ($resp === null || ($resp['success'] ?? false) !== true) {
+            return null;
+        }
+        return ['people' => (array) ($resp['people'] ?? []), 'unnamed' => (array) ($resp['unnamed'] ?? [])];
+    }
+
     protected function websiteApi(string $method, string $path, array $body = null, int $timeout = 10): ?array
     {
         $key = $this->erpApiKey();
