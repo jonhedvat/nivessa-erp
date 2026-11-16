@@ -1,0 +1,56 @@
+# READ-ONLY (2026-11-16): Andy says his sales today did not tally on the POS page,
+# maybe "seeing me as Pico but ringing Hollywood". Sales, registers, locations. No writes.
+name: Diag Andy POS store 11-16 (read-only)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            $day = '2026-11-16'; $from = "$day 00:00:00"; $to = "$day 23:59:59";
+            echo 'TZ app=' . config('app.timezone') . ' db_now=' . \DB::selectOne('select now() as n')->n . "\n";
+            echo 'LOCATIONS ' . json_encode(\DB::table('business_locations')->get(['id','name','location_id'])) . "\n";
+            $users = \DB::table('users')->where('first_name','like','%andy%')->orWhere('username','like','%andy%')->orWhere('last_name','like','%theiss%')->get(['id','first_name','last_name','username','business_id']);
+            echo 'USERS ' . json_encode($users) . "\n";
+            $uids = $users->pluck('id')->all();
+            foreach ($uids as $u) { $usr = \App\User::find($u); try { echo "PERMITTED $u " . json_encode($usr->permitted_locations()) . " roles=" . json_encode($usr->getRoleNames()) . "\n"; } catch (\Throwable $e) { echo "perm err ".$e->getMessage()."\n"; } }
+            echo "\n=== CASH REGISTERS touching today (all users) ===\n";
+            foreach (\DB::table('cash_registers as r')->leftJoin('users as u','u.id','=','r.user_id')->leftJoin('business_locations as bl','bl.id','=','r.location_id')->where(fn($q)=>$q->whereBetween('r.created_at',[$from,$to])->orWhereBetween('r.closed_at',[$from,$to])->orWhere('r.status','open'))->orderBy('r.created_at')->get(['r.id','r.user_id','u.first_name','r.location_id','bl.name as loc','r.status','r.created_at','r.closed_at','r.closing_amount']) as $r) echo json_encode($r)."\n";
+            echo "\n=== ANDY SELLS today ===\n";
+            $s = \DB::table('transactions as t')->leftJoin('business_locations as bl','bl.id','=','t.location_id')->leftJoin('contacts as c','c.id','=','t.contact_id')->whereIn('t.created_by',$uids)->where('t.type','sell')->where(fn($q)=>$q->whereBetween('t.transaction_date',[$from,$to])->orWhereBetween('t.created_at',[$from,$to]))->orderBy('t.created_at')->get(['t.id','t.invoice_no','t.status','t.sub_status','t.location_id','bl.name as loc','t.transaction_date','t.created_at','t.final_total','c.name as contact','t.is_suspend','t.is_direct_sale','t.channel']);
+            foreach ($s as $r) { $pm = \DB::table('transaction_payments')->where('transaction_id',$r->id)->get(['method','amount','note']); echo json_encode($r)." PAY ".json_encode($pm)."\n"; }
+            echo "BY LOC/STATUS " . json_encode($s->groupBy(fn($r)=>$r->loc.'|'.$r->status)->map(fn($g)=>[$g->count(), round($g->sum('final_total'),2)])) . "\n";
+            echo "\n=== CASH REGISTER TRANSACTIONS for Andy registers today ===\n";
+            $rids = \DB::table('cash_registers')->whereIn('user_id',$uids)->where(fn($q)=>$q->whereBetween('created_at',[$from,$to])->orWhere('status','open'))->pluck('id');
+            echo 'RIDS '.json_encode($rids)."\n";
+            foreach (\DB::table('cash_register_transactions')->whereIn('cash_register_id',$rids)->orderBy('id')->get(['cash_register_id','amount','pay_method','type','transaction_type','transaction_id','created_at']) as $r) echo json_encode($r)."\n";
+            echo "\n=== ALL SELLS today per location + creator ===\n";
+            foreach (\DB::table('transactions as t')->leftJoin('business_locations as bl','bl.id','=','t.location_id')->leftJoin('users as u','u.id','=','t.created_by')->where('t.type','sell')->whereBetween('t.transaction_date',[$from,$to])->groupBy('bl.name','u.first_name','t.status')->selectRaw('bl.name loc, u.first_name who, t.status, count(*) n, round(sum(final_total),2) tot')->get() as $r) echo json_encode($r)."\n";
+            echo "\n=== activity_log Andy today (non-product) ===\n";
+            foreach (\DB::table('activity_log')->whereIn('causer_id',$uids)->whereBetween('created_at',[$from,$to])->orderBy('created_at')->limit(80)->get(['created_at','description','subject_type','subject_id']) as $r) echo json_encode($r)."\n";
+            PHP
+            echo "=== done ==="
