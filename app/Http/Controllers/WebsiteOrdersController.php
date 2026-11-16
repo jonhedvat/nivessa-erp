@@ -2477,6 +2477,11 @@ class WebsiteOrdersController extends Controller
             return ['success' => false, 'message' => 'No ERP bridge key configured (set one on the Events page).'];
         }
         try {
+            // The website API restarts on every server deploy (a few seconds of
+            // nginx 502). Reads retry through that window instead of showing
+            // the error; writes never retry so nothing is sent twice.
+            $attempts = strtoupper($method) === 'GET' ? 3 : 1;
+            for ($attempt = 1; $attempt <= $attempts; $attempt++) {
             $ch = curl_init($this->bridgeBaseUrl() . $path);
             $headers = ['Accept: application/json', 'x-erp-key: ' . $key];
             curl_setopt_array($ch, [
@@ -2494,6 +2499,14 @@ class WebsiteOrdersController extends Controller
             $curlErr = curl_error($ch);
             $curlErrNo = curl_errno($ch);
             curl_close($ch);
+            $restarting = ($raw === false && $curlErrNo !== CURLE_OPERATION_TIMEDOUT)
+                || in_array((int) $code, [502, 503, 504], true);
+            if ($restarting && $attempt < $attempts) {
+                sleep(2);
+                continue;
+            }
+            break;
+            }
             if ($raw === false && $curlErrNo === CURLE_OPERATION_TIMEDOUT) {
                 return ['success' => false, 'timedOut' => true, 'message' => 'The website took too long to answer.'];
             }
