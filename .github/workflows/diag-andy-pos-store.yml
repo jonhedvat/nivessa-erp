@@ -27,15 +27,8 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             php artisan tinker --no-ansi <<'PHP'
-            $b=\App\Business::first(); \Auth::setUser(\App\User::find($b->owner_id)); $ss=app('session')->driver(); $ss->put('user.business_id',$b->id); $ss->put('user.id',$b->owner_id);
-            $req=\Illuminate\Http\Request::create('/pos/recent-feed','GET',['date'=>'2026-11-13']); $req->setLaravelSession($ss);
-            $d=app(\App\Http\Controllers\SellPosController::class)->recentSalesFeed($req)->getData();
-            $cf=$d['cashier_for_orphan']??[]; $cn=$d['cashierNameById']??[];
-            echo "ORPHANS (Clover, no ERP sale)\n";
-            foreach (($d['unclaimed_clover_payments']??collect()) as $o) { $o=json_decode(json_encode($o),true); $p=json_decode($o['raw_payload']??'',true)?:[]; $id=$o['id']??null; echo json_encode(['loc'=>$o['location_id']??null,'amt'=>($o['amount_cents']??0)/100,'paid_at'=>$o['paid_at']??null,'paid_on'=>$o['paid_on']??null,'cashier'=>$cn[$cf[$id]??0]??($cf[$id]??null),'dev'=>$p['device']['id']??null,'order'=>$o['clover_order_id']??null,'emp'=>$p['employee']['id']??null])."\n"; }
-            echo "ANDY ERP SALES with no Clover match\n";
-            $by=$d['clover_by_transaction']??[]; echo '';
-            foreach ($d['sales'] as $s) { $s=json_decode(json_encode($s),true); if (($s['created_by']??0)!=64) continue; if (!empty($by[$s['id']])) continue; echo json_encode([$s['id'],$s['transaction_date'],$s['final_total'],$s['location_id']])."\n"; }
-            echo "TZ ".config('app.timezone')." sample paid_at ".\DB::table('clover_payments')->where('paid_on','2026-11-13')->min('paid_at')." .. ".\DB::table('clover_payments')->where('paid_on','2026-11-13')->max('paid_at')." n=".\DB::table('clover_payments')->where('paid_on','2026-11-13')->count()."\n";
+            foreach (['2RDD8N46NED8W','NXYVAWQ88MCTG','NQAG53FJACHE2'] as $o) { $r=\DB::table('clover_payments')->where('clover_order_id',$o)->first(); echo "RAW $o loc={$r->location_id} ".substr(preg_replace('/"(cardNumber|token|authCode|cardholderName|first6)":"[^"]*"/','"$1":"x"',$r->raw_payload),0,2500)."\n"; }
+            echo "DEVICE 68f24928 by day/loc\n";
+            foreach (\DB::table('clover_payments')->where('raw_payload','like','%68f24928-57fe%')->where('paid_on','>=','2026-10-01')->groupBy('paid_on','location_id')->selectRaw('paid_on,location_id,count(*) n,sum(amount_cents)/100 t, min(paid_at) a, max(paid_at) z')->orderBy('paid_on')->get() as $x) echo json_encode($x)."\n";
             PHP
             echo "=== done ==="
