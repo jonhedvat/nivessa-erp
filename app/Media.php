@@ -14,6 +14,11 @@ class Media extends Model
      */
     protected $guarded = ['id'];
 
+    const ALLOWED_UPLOAD_EXTENSIONS = [
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp',
+        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'txt',
+    ];
+
     protected $appends = ['display_name', 'display_url'];
 
 
@@ -141,8 +146,20 @@ class Media extends Model
     public static function uploadFile($file)
     {
         $file_name = null;
+
+        // Only plain images and office documents. The client file name used
+        // to be kept as-is, so a script (e.g. "as.phtml") could be uploaded
+        // as a profile photo into the public folder (found 2026-11-16).
+        $ext = strtolower(pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+        if (!in_array($ext, self::ALLOWED_UPLOAD_EXTENSIONS, true)) {
+            \Log::warning('Media upload rejected, extension not allowed: ' . $file->getClientOriginalName() . ' user ' . optional(auth()->user())->id);
+            return null;
+        }
+        $base = preg_replace('/[^A-Za-z0-9_\-]+/', '_', pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME));
+        $base = substr(trim($base, '_'), 0, 80) ?: 'file';
+
         if ($file->getSize() <= config('constants.document_size_limit')) {
-            $new_file_name = time() . '_' . mt_rand() . '_' . $file->getClientOriginalName();
+            $new_file_name = time() . '_' . mt_rand() . '_' . $base . '.' . $ext;
             if ($file->storeAs('/media', $new_file_name)) {
                 $file_name = $new_file_name;
             }
