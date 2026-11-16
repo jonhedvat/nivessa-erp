@@ -28,6 +28,7 @@ class StoreManagerDashboardController extends Controller
     const LOW_WEEKS = 8;          // under this many weeks of stock = low
     const LOW_MIN_SOLD = 13;      // needs ~1 sale a week over 90 days to be flagged
     const CACHE_SECONDS = 600;
+    const DISCOGS_SHIPPER = 'nick'; // first name credited with Discogs orders shipped outside the ERP
 
     /** Admins and the owners (they may switch stores). */
     public static function isOwnerOrAdmin()
@@ -203,6 +204,17 @@ class StoreManagerDashboardController extends Controller
                 $row = $byName[mb_strtolower(trim($name))] ?? null;
                 if ($row) {
                     $out[$uid] = ['web' => (int) ($row['web_items'] ?? 0), 'discogs' => (int) ($row['discogs_items'] ?? 0)];
+                }
+            }
+            // Discogs orders marked shipped on Discogs.com carry no name: they're Nick's (Jon 11/16).
+            $unnamed = (int) ($all['unnamed']['discogs_items'] ?? 0);
+            if ($unnamed > 0) {
+                foreach ($roster as $uid => $name) {
+                    if (mb_strtolower(strtok(trim($name), ' ')) === self::DISCOGS_SHIPPER) {
+                        $out[$uid] = ($out[$uid] ?? ['web' => 0, 'discogs' => 0]);
+                        $out[$uid]['discogs'] += $unnamed;
+                        break;
+                    }
                 }
             }
             return $out;
