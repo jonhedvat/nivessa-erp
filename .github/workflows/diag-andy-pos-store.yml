@@ -27,7 +27,8 @@ jobs:
             set +e
             cd /www/playlist.nivessa.com/app
             F=$(sudo -n true 2>/dev/null && echo sudo -n)
-            for f in $($F ls /www/wwwlogs/*playlist* /var/log/nginx/access.log* 2>/dev/null); do echo "FILE $f"; $F zgrep -ahE "13/Nov/2026" $f | grep -E "^99\.51\.151\.186" | grep -E "POST /pos|POST /sells" | cut -c1-200 | head -40; done
+            for f in /var/log/nginx/access.log.3.gz /var/log/nginx/access.log.4.gz /var/log/nginx/access.log.2.gz; do echo "FILE $f"; $F zgrep -ah "99.51.151.186" $f | grep -E "13/Nov/2026" | grep "POST" | cut -c1-220 | head -40; done
+            $F zgrep -ah "13/Nov/2026:2" /var/log/nginx/access.log.3.gz | grep POST | head -3 | cut -c1-250
             php artisan tinker --no-ansi <<'PHP'
             foreach (\DB::table('transactions')->where('created_by',64)->where('type','sell')->whereBetween('transaction_date',['2026-11-13 11:00:00','2026-11-13 15:10:00'])->orderBy('created_at')->get(['id','invoice_no','created_at','final_total']) as $r) echo 'TX '.json_encode($r)."\n";
             PHP
