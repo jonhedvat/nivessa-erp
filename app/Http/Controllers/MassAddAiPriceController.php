@@ -126,6 +126,8 @@ class MassAddAiPriceController extends Controller
             $res = $callModel($model, $userText);
             $used = $model;
             if (in_array($res['status'], [400, 403, 404], true) && stripos($res['body'], 'model') !== false && $model !== $fallbackModel) {
+                // Log why, so we can see when the pricing model is silently replaced.
+                \Log::warning('MassAddAiPrice model fell back', ['from' => $model, 'to' => $fallbackModel, 'status' => $res['status'], 'message' => mb_substr($res['body'], 0, 300)]);
                 $used = $fallbackModel;
                 $res = $callModel($fallbackModel, $userText);
             }
