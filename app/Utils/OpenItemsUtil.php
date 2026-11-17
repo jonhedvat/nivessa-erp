@@ -83,7 +83,7 @@ class OpenItemsUtil
     }
 
     /** Channels whose messages show up here (everything the Communications Hub pulls in). */
-    const REPLY_CHANNELS = ['phone_1', 'phone_2', 'instagram', 'facebook', 'whatsapp', 'tiktok', 'email'];
+    const REPLY_CHANNELS = ['phone_1', 'phone_2', 'instagram', 'facebook', 'whatsapp', 'tiktok', 'email', 'discogs'];
 
     protected static function whoWithChannel($r): string
     {
@@ -106,8 +106,8 @@ class OpenItemsUtil
             'kind'    => $kind,
             'text'    => mb_substr(trim(preg_replace('/<!--.*?-->/s', '', $text)), 0, 3000),
             'commId'  => $commId,
-            'canSend' => $commId && in_array($channel, ['phone_1', 'phone_2', 'instagram'], true),
-            'via'     => in_array($channel, ['phone_1', 'phone_2'], true) ? 'text' : ($channel === 'instagram' ? 'Instagram' : ''),
+            'canSend' => $commId && in_array($channel, ['phone_1', 'phone_2', 'instagram', 'discogs'], true),
+            'via'     => in_array($channel, ['phone_1', 'phone_2'], true) ? 'text' : ($channel === 'instagram' ? 'Instagram' : ($channel === 'discogs' ? 'Discogs' : '')),
         ];
         return $row;
     }

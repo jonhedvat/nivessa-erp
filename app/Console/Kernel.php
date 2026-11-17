@@ -100,6 +100,12 @@ class Kernel extends ConsoleKernel
             \App\Http\Controllers\InstagramWebhookController::importConversations();
         })->name('instagram-dm-import')->everyTenMinutes()->withoutOverlapping(10);
 
+        // Discogs buyer messages + website contact messages into the Hub.
+        $schedule->call(function () {
+            \App\Services\HubImportService::discogs();
+            \App\Services\HubImportService::website();
+        })->name('hub-discogs-website-import')->everyFifteenMinutes()->withoutOverlapping(15);
+
         // Distributor invoices -> ERP purchases with no one uploading them:
         // AMS portal (both accounts) + Alliance e-invoice emails, every 3
         // hours 7am-7pm PT (Sarah 10/20). Each run only downloads invoices it

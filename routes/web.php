@@ -330,6 +330,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::resource('communications', 'CommunicationController')->except(['show', 'create']);
     Route::get('/communications-stats', 'CommunicationController@stats');
     Route::get('/communications/{id}/thread', 'CommunicationController@thread');
+    Route::post('/communications/hub-import', 'CommunicationController@hubImportNow');
     Route::post('/communications/{id}/send-reply', 'CommunicationController@sendReply');
     Route::post('/communications/{id}/mark-resolved', 'CommunicationController@markResolved');
     Route::post('/communications/{id}/mark-pending', 'CommunicationController@markPending');

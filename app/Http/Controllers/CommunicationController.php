@@ -365,7 +365,7 @@ class CommunicationController extends Controller
             'channel' => $c->channel,
             'channel_label' => Communication::CHANNELS[$c->channel] ?? $c->channel,
             'contact_info' => $c->contact_info,
-            'can_reply' => in_array($c->channel, ['phone_1', 'phone_2', 'instagram'], true),
+            'can_reply' => in_array($c->channel, ['phone_1', 'phone_2', 'instagram', 'discogs'], true),
             'entries' => $entries,
         ]);
     }
@@ -381,6 +381,12 @@ class CommunicationController extends Controller
         $c = Communication::where('business_id', $business_id)->findOrFail($id);
 
         $request->validate(['message' => 'required|string|max:1000']);
+
+        if ($c->channel === 'discogs') {
+
+            return $this->sendDiscogsReply($c, (string) $request->message);
+
+        }
 
         if ($c->channel === 'instagram') {
             return $this->sendInstagramReply($c, (string) $request->message, $business_id);
@@ -413,6 +419,29 @@ class CommunicationController extends Controller
     }
 
     /** Reply to an Instagram DM through the Meta Graph API with the saved page token. */
+    public function hubImportNow()
+    {
+        $a = \App\Services\HubImportService::discogs();
+        $b = \App\Services\HubImportService::website();
+        $c = \App\Http\Controllers\InstagramWebhookController::importConversations();
+        return response()->json(['discogs' => $a, 'website' => $b, 'instagram' => $c]);
+    }
+
+    private function sendDiscogsReply(Communication $c, string $message)
+    {
+        if (!preg_match('/^discogs-order-(.+)$/', (string) $c->external_id, $mm)) {
+            return response()->json(['success' => false, 'msg' => 'No Discogs order on this message.']);
+        }
+        $r = \App\Services\WebsiteBridge::erp('POST', '/discogs/orders/' . rawurlencode($mm[1]) . '/message', ['message' => $message]);
+        if (empty($r['success'])) {
+            return response()->json(['success' => false, 'msg' => 'Discogs did not send it: ' . ($r['message'] ?? 'unknown error')]);
+        }
+        $stamp = now()->format('n/j g:ia');
+        $c->resolution_notes = trim(($c->resolution_notes ? $c->resolution_notes . "\n" : '') . "[$stamp] " . $message);
+        $c->save();
+        return response()->json(['success' => true, 'msg' => 'Sent']);
+    }
+
     private function sendInstagramReply(Communication $c, string $message, $business_id)
     {
         $token = \App\Http\Controllers\InstagramWebhookController::storedPageAccessToken();
@@ -423,7 +452,7 @@ class CommunicationController extends Controller
             return response()->json(['success' => false, 'msg' => 'No Instagram sender on this message to reply to.']);
         }
         try {
-            $resp = (new \GuzzleHttp\Client(['timeout' => 20]))->post('https://graph.facebook.com/v21.0/me/messages', [
+            $resp = (new \GuzzleHttp\Client(['timeout' => 20]))->post(\App\Http\Controllers\InstagramWebhookController::graphBase($token) . 'me/messages', [
                 'query' => ['access_token' => $token],
                 'json' => ['recipient' => ['id' => $m[1]], 'messaging_type' => 'RESPONSE', 'message' => ['text' => $message]],
                 'http_errors' => false,

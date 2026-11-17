@@ -22,6 +22,8 @@ class Communication extends Model
         'facebook' => 'Facebook',
         'tiktok' => 'TikTok',
         'email' => 'Email',
+        'discogs' => 'Discogs',
+        'website' => 'Website message',
         'other' => 'Other',
     ];
 

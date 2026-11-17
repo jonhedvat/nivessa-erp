@@ -223,16 +223,18 @@ class InstagramWebhookController extends Controller
         $system_user_id = $business_id ? optional(\DB::table('users')->where('business_id', $business_id)->orderBy('id')->first())->id : null;
         $http = new \GuzzleHttp\Client(['timeout' => 30]);
         $get = function ($path, $query) use ($http, $token) {
-            $resp = $http->get('https://graph.facebook.com/v21.0/' . $path, ['query' => $query + ['access_token' => $token], 'http_errors' => false]);
+            $resp = $http->get(self::graphBase($token) . $path, ['query' => $query + ['access_token' => $token], 'http_errors' => false]);
             return [$resp->getStatusCode(), json_decode((string) $resp->getBody(), true) ?: []];
         };
         try {
-            [$code, $me] = $get('me', ['fields' => 'id,name,instagram_business_account{id,username}']);
+            $igLogin = self::isInstagramLoginToken($token);
+            [$code, $me] = $igLogin ? $get('me', ['fields' => 'id,user_id,username']) : $get('me', ['fields' => 'id,name,instagram_business_account{id,username}']);
             if ($code !== 200) {
-                return ['ok' => false, 'msg' => 'Meta rejected the saved token: ' . ($me['error']['message'] ?? 'HTTP ' . $code)];
+                $kind = $igLogin ? 'an Instagram token' : (stripos($token, 'EA') === 0 ? 'a Facebook Page token' : 'not a token Meta recognizes (it should start with IG or EA)');
+                return ['ok' => false, 'msg' => 'Meta rejected the saved token (' . $kind . ', ' . strlen($token) . ' characters): ' . ($me['error']['message'] ?? 'HTTP ' . $code)];
             }
-            $igId = $me['instagram_business_account']['id'] ?? null;
-            $igName = $me['instagram_business_account']['username'] ?? null;
+            $igId = $igLogin ? ($me['user_id'] ?? $me['id'] ?? null) : ($me['instagram_business_account']['id'] ?? null);
+            $igName = $igLogin ? ($me['username'] ?? null) : ($me['instagram_business_account']['username'] ?? null);
             [$code, $convs] = $get('me/conversations', ['platform' => 'instagram', 'limit' => $limit, 'fields' => 'id,updated_time,participants,messages.limit(25){id,message,created_time,from}']);
             if ($code !== 200) {
                 return ['ok' => false, 'msg' => 'Connected to ' . ($me['name'] ?? 'the Page') . ', but Meta would not share DMs: ' . ($convs['error']['message'] ?? 'HTTP ' . $code)];
@@ -290,6 +292,17 @@ class InstagramWebhookController extends Controller
             Log::warning('Instagram import failed: ' . $e->getMessage());
             return ['ok' => false, 'msg' => 'Could not reach Instagram right now.'];
         }
+    }
+
+    public static function isInstagramLoginToken(string $token): bool
+    {
+        return stripos($token, 'IG') === 0;
+    }
+
+    /** Instagram-login tokens (IG...) use graph.instagram.com; Facebook Page tokens (EA...) use graph.facebook.com. */
+    public static function graphBase(string $token): string
+    {
+        return self::isInstagramLoginToken($token) ? 'https://graph.instagram.com/v21.0/' : 'https://graph.facebook.com/v21.0/';
     }
 
     public function importNow()
