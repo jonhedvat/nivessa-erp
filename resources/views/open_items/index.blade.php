@@ -165,14 +165,14 @@
                 <span class="bk-left">{{ $open[$b] === 0 ? 'All done!' : $open[$b] . ' left' }}@if($b === $startB) &middot; <strong>Start here</strong>@endif</span>
             </button>
         @endforeach
-        <a class="bk" href="#oi-social"><span class="bk-step">5</span><span class="bk-name">Social post</span><span class="bk-left">1 post at 11am</span></a>
+        <a class="bk" href="#oi-social"><span class="bk-step">5</span><span class="bk-name">Social posts</span><span class="bk-left">Schedule the week</span></a>
         <a class="bk" href="#oi-bigger"><span class="bk-step">6</span><span class="bk-name">If you have time</span><span class="bk-left">Bigger jobs</span></a>
     </div>
 
     <div class="oi-card" id="oi-list">
         @if($failed)<div class="oi-err">Could not load right now: {{ implode(', ', $failed) }}. Click Refresh in a few minutes.</div>@endif
         @if(count($items) === 0)
-            <div class="oi-empty">All done. Amazing work! Now do the social post.</div>
+            <div class="oi-empty">All done. Amazing work! Now schedule the social posts.</div>
         @endif
         @foreach($bucketName as $b => $nm)
             <div class="oi-empty bk-clear" data-b="{{ $b }}" style="{{ $open[$b] === 0 ? '' : 'display:none' }}">{{ $nm }}: all done! Click the next box above.</div>

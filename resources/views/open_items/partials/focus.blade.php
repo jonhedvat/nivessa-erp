@@ -48,23 +48,22 @@
 
 
 @php
-    $todayArtist = $socialCal[$tzNow->format('Y-m-d')] ?? null;
-    $tomorrowArtist = $socialCal[$tzNow->copy()->addDay()->format('Y-m-d')] ?? null;
-    $capPrompt = $todayArtist
-        ? 'Write a 2-sentence Instagram caption for Nivessa Records about ' . $todayArtist . '. If they are alive say happy birthday, if they have passed start with "Remembering". Mention one well-known album and say we have [album] on vinyl at Nivessa [store] right now. Proper grammar, no emojis. Add 4 hashtags.'
-        : 'Write a 2-sentence Instagram caption for Nivessa Records about this rare record we just got in: [artist, title, what makes it special]. Say it is at Nivessa [store] right now. Proper grammar, no emojis. Add 4 hashtags.';
+    $socialDays = [];
+    for ($d = 0; $d < 7; $d++) {
+        $day = $tzNow->copy()->addDays($d);
+        $artist = $socialCal[$day->format('Y-m-d')] ?? null;
+        $prompt = $artist
+            ? 'Write a 2-sentence Instagram caption for Nivessa Records about ' . $artist . '. If they are alive say happy birthday, if they have passed start with "Remembering". Mention one well-known album and say we have [album] on vinyl at Nivessa [store] right now. Proper grammar, no emojis. Add 4 hashtags.'
+            : 'Write a 2-sentence Instagram caption for Nivessa Records about this rare record we just got in: [artist, title, what makes it special]. Say it is at Nivessa [store] right now. Proper grammar, no emojis. Add 4 hashtags.';
+        $socialDays[] = [$day->format('D m/d'), $artist ?: 'Rare find or new arrival', $prompt];
+    }
 @endphp
 <div class="oi-card" id="oi-social">
-    <div class="oi-head"><h2>Today's social post</h2><a class="oi-btn" href="https://claude.ai/new?q={{ rawurlencode($capPrompt) }}" target="_blank">Write the caption with Claude</a></div>
-    <div class="oi-done" style="font-size:16px"><strong>Today: {{ $todayArtist ?: 'a rare find or new arrival (no famous birthday today)' }}</strong></div>
-    @if($todayArtist)
-        <div class="oi-done"><strong>1.</strong> Ask the cashier for a photo of their record.</div>
-    @else
-        <div class="oi-done"><strong>1.</strong> Ask the cashier for a photo of today's best record.</div>
-    @endif
-    <div class="oi-done"><strong>2.</strong> Write the caption with Claude.</div>
-    <div class="oi-done"><strong>3.</strong> Post on Instagram and TikTok at 11am.</div>
-    @if($tomorrowArtist)<div class="oi-done"><strong>Tomorrow:</strong> {{ $tomorrowArtist }}</div>@endif
+    <div class="oi-head"><h2>Schedule the week's posts</h2></div>
+    <p class="oi-how">One post a day at 11am. Get the photo, write the caption with Claude, then schedule it for its day.</p>
+    @foreach($socialDays as $sd)
+        <div class="oi-done" style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><span><strong>{{ $sd[0] }}:</strong> {{ $sd[1] }}</span><a class="oi-btn" style="padding:5px 10px;font-size:12px" href="https://claude.ai/new?q={{ rawurlencode($sd[2]) }}" target="_blank">Caption</a></div>
+    @endforeach
 </div>
 
 <div class="oi-card" id="oi-bigger">
