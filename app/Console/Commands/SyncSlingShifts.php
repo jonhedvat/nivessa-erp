@@ -48,6 +48,13 @@ class SyncSlingShifts extends Command
         // columns and for the lowercased-email join into ERP users (matches
         // the convention SlingClient::hoursByErpUser already relies on).
         $slingUsers = $client->users();
+        if (empty($slingUsers)) {
+            // Sling refused us (token dead and no re-login): say so loudly
+            // instead of "Fetched 0" (11/5-11/17 went unnoticed).
+            $this->error('Sling returned no users (login expired?).');
+            SlingClient::alertBroken('Sling shift sync failed: Sling returned no staff, so shifts are not updating (the time clock lets everyone in meanwhile). Log in again at ' . url('/admin/sling/login') . '.');
+            return 1;
+        }
         $emailById = [];
         $nameById = [];
         foreach ($slingUsers as $u) {

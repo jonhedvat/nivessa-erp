@@ -291,6 +291,122 @@ class SlingClient
         return ['ok' => false, 'message' => $msg, 'count' => 0];
     }
 
+    /** Sarah's Slack ID: Sling connection alerts are DMed to her. */
+    const ALERT_SLACK_ID = 'U07D33PMQLA';
+
+    /**
+     * Swap a Sling email + password for an Authorization token via
+     * /account/login (no /v1: that one is captcha-gated).
+     * ['ok', 'token', 'org_id', 'user_id', 'error'].
+     */
+    public static function loginWith(string $email, string $password): array
+    {
+        $fail = function (string $e) { return ['ok' => false, 'token' => null, 'org_id' => null, 'user_id' => null, 'error' => $e]; };
+        try {
+            $ch = curl_init('https://api.getsling.com/account/login');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HEADER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['email' => $email, 'password' => $password]));
+            // Headers exactly as Sling's bash example: a custom User-Agent /
+            // Accept flips them into the captcha path.
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'accept: */*']);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            $raw = curl_exec($ch);
+            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $curlError = (string) curl_error($ch);
+            curl_close($ch);
+            if ($curlError !== '' || !is_string($raw)) {
+                throw new \RuntimeException($curlError !== '' ? $curlError : 'Empty response');
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Sling login failed: ' . $e->getMessage());
+            return $fail('Could not reach Sling: ' . $e->getMessage());
+        }
+        $headers = [];
+        foreach (preg_split("/\r\n|\n|\r/", substr($raw, 0, $headerSize)) as $line) {
+            if (strpos($line, ':') === false) continue;
+            [$k, $v] = explode(':', $line, 2);
+            $headers[strtolower(trim($k))] = trim($v);
+        }
+        $bodyStr = substr($raw, $headerSize);
+        $body = $bodyStr !== '' ? json_decode($bodyStr, true) : null;
+        if ($httpCode < 200 || $httpCode >= 300) {
+            $msg = 'Sling rejected the login (HTTP ' . $httpCode . ').';
+            if (is_array($body) && !empty($body['message'])) {
+                $msg .= ' ' . $body['message'];
+            }
+            return $fail($msg);
+        }
+        $token = $headers['authorization'] ?? null;
+        if (!$token) {
+            return $fail('Sling did not return an Authorization token. Check the email/password.');
+        }
+        $body = is_array($body) ? $body : [];
+        $orgId = $body['user']['orgs'][0]['id'] ?? ($body['orgs'][0]['id'] ?? ($body['user']['org']['id'] ?? null));
+        return ['ok' => true, 'token' => $token, 'org_id' => $orgId, 'user_id' => $body['user']['id'] ?? null, 'error' => ''];
+    }
+
+    /** Save the Sling login encrypted (app key) for automatic re-login. */
+    public static function rememberLogin(string $email, string $password): void
+    {
+        System::addProperty('sling_login_secret', \Crypt::encryptString(json_encode(['e' => $email, 'p' => $password])));
+    }
+
+    /**
+     * Sling said 401: log back in with the saved login and keep the new
+     * token. At most once per 10 minutes. True if a fresh token was saved.
+     */
+    private function reLogin(): bool
+    {
+        $secret = (string) (System::getProperty('sling_login_secret') ?? '');
+        if ($secret === '') {
+            self::alertBroken('Sling stopped accepting the ERP\'s login, so shifts are not updating (the time clock lets everyone in meanwhile). Please log in once at ' . url('/admin/sling/login') . ' and the ERP will keep itself logged in from then on.');
+            return false;
+        }
+        if (!\Cache::add('sling_relogin_try', 1, 600)) {
+            return false;
+        }
+        try {
+            $cred = json_decode(\Crypt::decryptString($secret), true);
+        } catch (\Throwable $e) {
+            $cred = null;
+        }
+        if (!is_array($cred) || empty($cred['e']) || empty($cred['p'])) {
+            return false;
+        }
+        $r = self::loginWith((string) $cred['e'], (string) $cred['p']);
+        if (!$r['ok']) {
+            \Log::error('Sling auto re-login failed: ' . $r['error']);
+            self::alertBroken('The ERP could not log back in to Sling (' . $r['error'] . '), so shifts are not updating (the time clock lets everyone in meanwhile). Please log in again at ' . url('/admin/sling/login') . ' (did the Sling password change?).');
+            return false;
+        }
+        $this->token = $r['token'];
+        System::addProperty('sling_auth_token', $r['token']);
+        System::addProperty('sling_token_saved_at', now()->toDateTimeString());
+        \Log::info('Sling token expired, logged back in automatically.');
+        return true;
+    }
+
+    /** DM Sarah on Slack, at most once every 6 hours. */
+    public static function alertBroken(string $text): void
+    {
+        try {
+            if (!\Cache::add('sling_broken_alert', 1, 6 * 3600)) {
+                return;
+            }
+            \Log::error('Sling connection: ' . $text);
+            $r = \App\Services\TimeClockService::slackDm(self::ALERT_SLACK_ID, $text);
+            if (empty($r['ok'])) {
+                \Log::warning('Sling alert DM failed: ' . ($r['error'] ?? ''));
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Sling alert failed: ' . $e->getMessage());
+        }
+    }
+
     private function get(string $url)
     {
         $det = $this->getDetailed($url);
@@ -322,7 +438,11 @@ class SlingClient
                 return $retry;
             }
             // Surface whichever response is more informative.
-            return $retry['body'] !== '' ? $retry : $det;
+            $det = $retry['body'] !== '' ? $retry : $det;
+        }
+        // Token expired: log back in with the saved login and try once more.
+        if ($det['http_code'] === 401 && $this->reLogin()) {
+            return $this->doGet($url, $this->token);
         }
         return $det;
     }

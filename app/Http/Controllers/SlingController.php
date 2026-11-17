@@ -36,7 +36,8 @@ class SlingController extends Controller
         $email = (string) (System::getProperty(self::EMAIL_KEY) ?? '');
         $savedAt = (string) (System::getProperty(self::SAVED_AT_KEY) ?? '');
         $connected = $token !== '' && $orgId !== '';
-        return view('admin.sling_login', compact('connected', 'orgId', 'email', 'savedAt'));
+        $autoRelogin = (string) (System::getProperty('sling_login_secret') ?? '') !== '';
+        return view('admin.sling_login', compact('connected', 'orgId', 'email', 'savedAt', 'autoRelogin'));
     }
 
     public function login(Request $request)
@@ -48,80 +49,17 @@ class SlingController extends Controller
             return back()->with('status_error', 'Email and password are both required.');
         }
 
-        $headers = [];
-        $body = null;
-        $httpCode = 0;
-        $curlError = '';
-        try {
-            // Use the no-/v1/ path: /v1/account/login is captcha-gated
-            // for human/UI logins, but /account/login (matching Sling's
-            // own bash example) accepts plain email + password POSTs.
-            $ch = curl_init('https://api.getsling.com/account/login');
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_HEADER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-                'email' => $email,
-                'password' => $password,
-            ]));
-            // Headers EXACTLY as Sling's published bash example uses them.
-            // A custom User-Agent / Accept appears to flip them into the
-            // captcha-required code path; keeping it minimal mirrors the
-            // working script.
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'accept: */*',
-            ]);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-            $raw = curl_exec($ch);
-            $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-            $curlError = (string) curl_error($ch);
-            curl_close($ch);
-
-            if ($curlError !== '' || !is_string($raw)) {
-                throw new \RuntimeException($curlError !== '' ? $curlError : 'Empty response');
-            }
-
-            $rawHeaders = substr($raw, 0, $headerSize);
-            $bodyStr = substr($raw, $headerSize);
-            foreach (preg_split("/\r\n|\n|\r/", $rawHeaders) as $line) {
-                if (strpos($line, ':') === false) continue;
-                [$k, $v] = explode(':', $line, 2);
-                $headers[strtolower(trim($k))] = trim($v);
-            }
-            $body = $bodyStr !== '' ? json_decode($bodyStr, true) : null;
-        } catch (\Throwable $e) {
-            \Log::warning('Sling login failed: ' . $e->getMessage());
-            return back()->with('status_error', 'Could not reach Sling: ' . $e->getMessage());
+        $r = \App\Services\SlingClient::loginWith($email, $password);
+        if (!$r['ok']) {
+            return back()->with('status_error', $r['error']);
         }
-
-        if ($httpCode < 200 || $httpCode >= 300) {
-            $msg = 'Sling rejected the login (HTTP ' . $httpCode . ').';
-            if (is_array($body) && !empty($body['message'])) {
-                $msg .= ' ' . $body['message'];
-            }
-            return back()->with('status_error', $msg);
-        }
-
-        $token = $headers['authorization'] ?? null;
-        if (!$token) {
-            return back()->with('status_error', 'Sling did not return an Authorization token. Check the email/password.');
-        }
-
-        $body = is_array($body) ? $body : [];
-        $userId = $body['user']['id'] ?? null;
-        $orgId = null;
-        if (!empty($body['user']['orgs']) && is_array($body['user']['orgs'])) {
-            $orgId = $body['user']['orgs'][0]['id'] ?? null;
-        }
-        if (!$orgId && !empty($body['orgs']) && is_array($body['orgs'])) {
-            $orgId = $body['orgs'][0]['id'] ?? null;
-        }
-        if (!$orgId && !empty($body['user']['org']['id'])) {
-            $orgId = $body['user']['org']['id'];
-        }
+        $token = $r['token'];
+        $orgId = $r['org_id'];
+        $userId = $r['user_id'];
+        // Kept (encrypted) so the ERP logs itself back in when Sling expires
+        // the token (Sarah 11/17: the 5/8 token died ~11/5 and the time
+        // clock ran on a two-week-old schedule).
+        \App\Services\SlingClient::rememberLogin($email, $password);
 
         System::addProperty(self::TOKEN_KEY, $token);
         if ($orgId) {
@@ -572,6 +510,7 @@ class SlingController extends Controller
         System::removeProperty(self::USER_KEY);
         System::removeProperty(self::EMAIL_KEY);
         System::removeProperty(self::SAVED_AT_KEY);
+        System::removeProperty('sling_login_secret');
         return back()->with('status_success', 'Disconnected.');
     }
 }
