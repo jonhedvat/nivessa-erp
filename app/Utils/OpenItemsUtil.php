@@ -704,9 +704,13 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         $byDay = [];
         $total = 0;
         $feed = [];
+        $seen = [];
         foreach (self::readScore() as $e) {
             if (($e['who'] ?? '') !== $who) {
                 continue;
+            }
+            if (!empty($e['once'])) {
+                $seen[$e['once']] = true;
             }
             $byDay[$e['d']] = ($byDay[$e['d']] ?? 0) + (int) $e['pts'];
             $total += (int) $e['pts'];
@@ -714,6 +718,42 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
                 $feed[] = $e;
             }
         }
+        // Everything he finished before the scoreboard existed also counts:
+        // his "Fixed it" history and messages he resolved in the Communications Hub.
+        $recent = [];
+        foreach (self::readActions() as $k => $a) {
+            if (($a['action'] ?? '') !== 'fixed' || ($a['by'] ?? '') !== $who || empty($a['at'])) {
+                continue;
+            }
+            $at = Carbon::parse($a['at'])->setTimezone(self::TZ);
+            $recent[] = ['label' => (string) ($a['label'] ?? ''), 'note' => (string) ($a['note'] ?? ''), 'at' => $at->toIso8601String()];
+            if (!isset($seen['fix:' . $k . ':' . $at->format('Y-m-d')])) {
+                $byDay[$at->format('Y-m-d')] = ($byDay[$at->format('Y-m-d')] ?? 0) + 1;
+                $total++;
+            }
+            $seen['comm-key:' . $k] = true;
+        }
+        try {
+            $uid = \DB::table('users')->where('first_name', $who)->whereNull('deleted_at')->value('id');
+            if ($uid) {
+                $res = \DB::table('communications')->where('resolved_by', $uid)->whereNotNull('resolved_at')
+                    ->where('resolved_at', '>=', $now->copy()->subDays(60)->format('Y-m-d H:i:s'))
+                    ->orderByDesc('resolved_at')->limit(500)->get(['id', 'customer_name', 'contact_info', 'resolution_notes', 'resolved_at']);
+                foreach ($res as $c) {
+                    if (isset($seen['comm-key:comm:' . $c->id])) {
+                        continue; // already counted through Fixed it
+                    }
+                    $at = Carbon::parse($c->resolved_at, config('app.timezone'))->setTimezone(self::TZ);
+                    $byDay[$at->format('Y-m-d')] = ($byDay[$at->format('Y-m-d')] ?? 0) + 1;
+                    $total++;
+                    $last = trim((string) last(preg_split('/\n\s*\n|(?=\[\d{1,2}\/\d{1,2}\s)/', trim(preg_replace('/<!--.*?-->/s', '', (string) $c->resolution_notes)))));
+                    $recent[] = ['label' => 'Replied to ' . ($c->customer_name ?: $c->contact_info), 'note' => mb_strimwidth(preg_replace('/^\[[^\]]*\]\s*/', '', $last), 0, 90, '...'), 'at' => $at->toIso8601String()];
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('scoreboard hub wins: ' . $e->getMessage());
+        }
+        usort($recent, fn ($x, $y) => strcmp($y['at'], $x['at']));
         // Streak: days he hit the target in a row. Days he didn't work (no points) are skipped, not counted against him.
         $streak = 0;
         $days = array_keys($byDay);
@@ -764,6 +804,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             'levelFrom' => $levelFrom,
             'next' => $next,
             'feed' => array_slice($feed, 0, 6),
+            'recent' => array_slice($recent, 0, 12),
         ];
     }
 

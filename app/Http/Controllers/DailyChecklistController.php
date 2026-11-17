@@ -514,7 +514,7 @@ class DailyChecklistController extends Controller
             }
         }
         list($sections, $done) = \App\Utils\OpenItemsUtil::applyActions(\App\Utils\OpenItemsUtil::sections($business_id));
-        $me = trim((string) auth()->user()->first_name);
+        $me = 'Fatteen'; // this page is Fatteen's dashboard; the scoreboard is his no matter who is looking
         $openNow = \App\Utils\OpenItemsUtil::total($sections);
         $sb = \App\Utils\OpenItemsUtil::scoreboard($me);
         return view('open_items.index', [

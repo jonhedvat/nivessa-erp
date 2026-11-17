@@ -173,11 +173,12 @@
             <div><b>{{ max($sb['best'], $sb['today']) }}</b><span>best day</span></div>
         </div>
         <div class="oi-wins-list">
-            <div class="oi-wins-title">Today's wins</div>
-            @forelse($wins as $w)
-                <div class="oi-win"><span class="oi-check">&#10003;</span><span><strong>{{ \Illuminate\Support\Str::after($w['label'] ?? '', ': ') }}</strong> {{ \Illuminate\Support\Str::limit($w['note'] ?? '', 90) }}</span><em>{{ \Carbon\Carbon::parse($w['at'])->setTimezone('America/Los_Angeles')->format('g:i A') }}</em></div>
+            <div class="oi-wins-title">Recent wins</div>
+            @forelse($sb['recent'] as $w)
+                @php $wa = \Carbon\Carbon::parse($w['at'])->setTimezone('America/Los_Angeles'); @endphp
+                <div class="oi-win"><span class="oi-check">&#10003;</span><span><strong>{{ \Illuminate\Support\Str::contains($w['label'], ': ') ? \Illuminate\Support\Str::after($w['label'], ': ') : $w['label'] }}</strong> {{ $w['note'] }}</span><em>{{ $wa->isToday() ? $wa->format('g:i A') : $wa->format('m/d/y') }}</em></div>
             @empty
-                <div class="oi-win-empty">Your first win today is one click away. Start with box 1.</div>
+                <div class="oi-win-empty">Your first win is one click away. Start with box 1.</div>
             @endforelse
         </div>
     </div>
