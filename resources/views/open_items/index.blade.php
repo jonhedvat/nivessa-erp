@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'Open Items')
+@section('title', "Fatteen's Dashboard")
 
 @section('content')
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -131,13 +131,30 @@
 .open-shell .oi-side.open { display:block; }
 .open-shell .oi-side-body { max-height:75vh; }
 @media (max-width: 900px) { .open-shell .oi-layout { grid-template-columns:1fr; } .open-shell .oi-nav { position:static; grid-template-columns:repeat(2, minmax(0,1fr)); } .open-shell .oi-goal { grid-column:1 / -1; } }
+.open-shell .oi-wins { margin-top:16px; background:linear-gradient(135deg,#3B2E2A,#5A4038); color:#fff; border-radius:14px; padding:18px 20px; display:grid; grid-template-columns:minmax(0,340px) minmax(0,1fr); gap:20px; }
+.open-shell .oi-wins-stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.open-shell .oi-wins-stats div { background:rgba(255,255,255,.08); border-radius:10px; padding:10px 12px; }
+.open-shell .oi-wins-stats b { display:block; font-size:30px; line-height:1.1; color:#FFEE94; font-variant-numeric:tabular-nums; }
+.open-shell .oi-wins-stats span { font-size:13px; font-weight:600; }
+.open-shell .oi-wins-title { font-size:15px; font-weight:800; color:#FFEE94; margin-bottom:6px; letter-spacing:.5px; text-transform:uppercase; }
+.open-shell .oi-wins-list { display:grid; align-content:start; gap:6px; max-height:220px; overflow:auto; }
+.open-shell .oi-win { display:grid; grid-template-columns:24px minmax(0,1fr) auto; gap:8px; align-items:start; font-size:14px; }
+.open-shell .oi-win em { font-style:normal; font-size:12px; opacity:.85; white-space:nowrap; }
+.open-shell .oi-check { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#3FA35B; color:#fff; font-weight:800; font-size:13px; }
+.open-shell .oi-win-empty { font-size:15px; font-weight:600; }
+.open-shell .bk-done { font-size:12px; font-weight:800; color:#1B5E20; }
+.open-shell #oi-flash { background:#DDF1DE; color:#1B5E20; font-size:16px; }
+.oi-confetti { position:fixed; top:-12px; width:10px; height:14px; z-index:2000; border-radius:2px; animation:oiFall 1.8s ease-in forwards; pointer-events:none; }
+@keyframes oiFall { to { transform:translateY(105vh) rotate(720deg); opacity:.9; } }
+@media (max-width: 900px) { .open-shell .oi-wins { grid-template-columns:1fr; } }
 </style>
 
 <div class="open-shell">
     <div class="oi-top">
         <div>
-            <h1>Open Items</h1>
-            <p>Updated {{ $asOf }}.</p>
+            <h1>Fatteen's Dashboard</h1>
+            @php $hr = (int) now('America/Los_Angeles')->format('G'); @endphp
+            <p style="font-size:16px;font-weight:600">{{ $hr < 12 ? 'Good morning' : ($hr < 17 ? 'Good afternoon' : 'Good evening') }}, {{ $me }}! {{ $sb['week'] > 0 ? 'You have finished ' . $sb['week'] . ' this week. Keep it going!' : 'Let\'s get your first win of the week.' }}</p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
             <a class="oi-btn" href="{{ url('/open-items?refresh=1') }}">Refresh</a>
@@ -145,7 +162,25 @@
         </div>
     </div>
 
-    @if(session('oi_msg'))<div class="oi-msg">{{ session('oi_msg') }}</div>@endif
+    @if(session('oi_msg'))<div class="oi-msg" id="oi-flash">{{ session('oi_msg') }}</div>@endif
+
+    @php $wins = array_values(array_filter($done, fn ($a) => ($a['action'] ?? '') === 'fixed')); @endphp
+    <div class="oi-wins">
+        <div class="oi-wins-stats">
+            <div><b>{{ $sb['today'] }}</b><span>done today</span></div>
+            <div><b>{{ $sb['week'] }}</b><span>this week</span></div>
+            <div><b>{{ $sb['streak'] }}</b><span>day streak</span></div>
+            <div><b>{{ max($sb['best'], $sb['today']) }}</b><span>best day</span></div>
+        </div>
+        <div class="oi-wins-list">
+            <div class="oi-wins-title">Today's wins</div>
+            @forelse($wins as $w)
+                <div class="oi-win"><span class="oi-check">&#10003;</span><span><strong>{{ \Illuminate\Support\Str::after($w['label'] ?? '', ': ') }}</strong> {{ \Illuminate\Support\Str::limit($w['note'] ?? '', 90) }}</span><em>{{ \Carbon\Carbon::parse($w['at'])->setTimezone('America/Los_Angeles')->format('g:i A') }}</em></div>
+            @empty
+                <div class="oi-win-empty">Your first win today is one click away. Start with box 1.</div>
+            @endforelse
+        </div>
+    </div>
 
 
 
@@ -186,6 +221,7 @@
                 <button type="button" class="bk {{ $open[$bk] === 0 ? 'clear' : '' }}" data-b="{{ $bk }}">
                     <span class="bk-top"><span class="bk-name">{{ $loop->iteration }}. {{ $nm }}</span><span class="bk-n">{{ $open[$bk] === 0 ? 'Done' : $open[$bk] }}</span></span>
                     <span class="sb-bar {{ $open[$bk] === 0 ? 'hit' : '' }}"><span style="width:{{ $p }}%"></span></span>
+                    @if($doneB[$bk] > 0)<span class="bk-done">{{ $doneB[$bk] }} done today</span>@endif
                 </button>
             @endforeach
             <button type="button" class="bk" data-b="week"><span class="bk-top"><span class="bk-name">5. Once a week</span></span></button>
@@ -281,16 +317,22 @@
     </aside>
     </div>
 
-    <div class="oi-card" id="oi-done">
-        <div class="oi-head"><h2>Fixed or reported today <span class="oi-count zero">{{ count($done) }}</span></h2></div>
-        @forelse($done as $a)
-            <div class="oi-done"><strong>{{ $a['label'] ?? '' }}</strong> ({{ $a['by'] ?? '' }}, {{ \Carbon\Carbon::parse($a['at'])->setTimezone('America/Los_Angeles')->format('g:i A') }}): {{ $a['note'] ?? '' }}</div>
-        @empty
-            <div class="oi-done">Nothing marked fixed yet today.</div>
-        @endforelse
-    </div>
 </div>
 <script>
+(function () {
+    var f = document.getElementById('oi-flash');
+    if (!f || !/^Nice\./.test(f.textContent.trim())) return;
+    var colors = ['#FFEE94', '#3FA35B', '#F2C94C', '#174E7C', '#E8735A'];
+    for (var i = 0; i < 70; i++) {
+        var c = document.createElement('div');
+        c.className = 'oi-confetti';
+        c.style.left = Math.random() * 100 + 'vw';
+        c.style.background = colors[i % colors.length];
+        c.style.animationDelay = (Math.random() * 0.6) + 's';
+        document.body.appendChild(c);
+        setTimeout(function (el) { return function () { el.remove(); }; }(c), 2800);
+    }
+})();
 (function () {
     var week = document.querySelector('.oi-panel[data-b="week"]');
     var time = document.querySelector('.oi-panel[data-b="time"]');

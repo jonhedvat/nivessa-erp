@@ -658,7 +658,7 @@ Their message:
         }
         $sbNow = \App\Utils\OpenItemsUtil::scoreboard($who);
         $left = max(0, $sbNow['target'] - $sbNow['today']);
-        return redirect($back)->with('oi_msg', 'Nice. ' . $sbNow['today'] . ' fixed today. ' . ($left > 0 ? $left . ' more to hit your goal.' : 'Goal hit!'));
+        return redirect($back)->with('oi_msg', 'Nice. That is ' . $sbNow['today'] . ' today! ' . ($left > 0 ? $left . ' more to hit your goal.' : 'Goal hit, amazing work!'));
     }
 }
 
