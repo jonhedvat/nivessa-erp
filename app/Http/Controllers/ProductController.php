@@ -5509,7 +5509,8 @@ class ProductController extends Controller
                         \Log::warning('mass-add price guard eBay "' . $q . '": ' . $e->getMessage());
                     }
                 }
-                if (!empty($ebayOut['median'])) {
+                // 5+ of our own sales beat eBay asking prices too.
+                if (!empty($ebayOut['median']) && !$ownTrack) {
                     $refs['eBay asking x0.8'] = round($ebayOut['median'] * 0.8, 2);
                 }
             }
