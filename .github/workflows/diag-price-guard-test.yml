@@ -11,6 +11,14 @@ on:
         description: "Release IDs per group (sold / never sold)"
         required: false
         default: "25"
+      artist:
+        description: "Instead: run recent SALES by this artist (at the price sold) through the guard"
+        required: false
+        default: ""
+      days:
+        description: "With artist: how many days back"
+        required: false
+        default: "2"
 
 concurrency:
   group: production-diag
@@ -44,6 +52,8 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           PG_COUNT: ${{ github.event.inputs.count }}
+          PG_ARTIST: ${{ github.event.inputs.artist }}
+          PG_DAYS: ${{ github.event.inputs.days }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -51,11 +61,11 @@ jobs:
           port: ${{ steps.flags.outputs.ssh_port }}
           script_stop: false
           command_timeout: 55m
-          envs: PG_COUNT
+          envs: PG_COUNT,PG_ARTIST,PG_DAYS
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
-            export PG_COUNT
+            export PG_COUNT PG_ARTIST PG_DAYS
             F=$(mktemp /tmp/pgtest.XXXXXX.php)
             cat > "$F" <<'PHP'
             <?php
@@ -98,6 +108,25 @@ jobs:
 
             $k = 0;
             foreach ($seven as $r) { $tests[] = ['group' => 'seven', 'r' => $r, 'price' => [0.99, 1.5, 2.5, 4.99, 0.5, 2.99][$k % 6], 'note' => '7in']; $k++; }
+            $artistQ = trim((string) getenv('PG_ARTIST'));
+            if ($artistQ !== '') {
+                $tests = [];
+                $lines = DB::table('transaction_sell_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')
+                    ->join('products as p', 'p.id', '=', 'l.product_id')
+                    ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+                    ->leftJoin('business_locations as bl', 'bl.id', '=', 't.location_id')
+                    ->where('t.type', 'sell')->where('t.status', 'final')
+                    ->where('t.transaction_date', '>=', now()->subDays(max(1, (int) getenv('PG_DAYS')))->startOfDay())
+                    ->where(function ($q) use ($artistQ) { $q->where('p.artist', 'like', '%' . $artistQ . '%')->orWhere('p.name', 'like', '%' . $artistQ . '%'); })
+                    ->select('p.id', 'p.business_id', 'p.name', 'p.artist', 'p.discogs_release_id', 'c.id as cat_id', 'c.name as cat', 'sc.name as sub',
+                        'l.unit_price_inc_tax as sold_at', 't.transaction_date', 't.invoice_no', 'bl.name as store')
+                    ->orderBy('t.transaction_date')->get();
+                echo "SALES " . $lines->count() . "\n";
+                foreach ($lines as $r) {
+                    $tests[] = ['group' => 'sale', 'r' => $r, 'price' => round((float) $r->sold_at, 2),
+                        'note' => 'sold ' . $r->transaction_date . ' ' . $r->store . ' #' . $r->invoice_no . ' product ' . $r->id];
+                }
+            }
             $bid = (int) ($tests[0]['r']->business_id ?? 1);
             $sess = app('session')->driver();
             $sess->put('user.business_id', $bid);
