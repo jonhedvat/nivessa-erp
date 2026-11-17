@@ -311,6 +311,7 @@ class AmsInvoiceImportController extends Controller
 
         $tx = $res['transaction'];
         $newCount = count($res['created_products']);
+        $onOrders = !empty($res['attached']) ? ' Lines already on an order were put on that order: ' . implode(', ', array_map(function ($a) { return '#' . $a['transaction_id']; }, $res['attached'])) . '.' : '';
         return response()->json([
             'success' => true,
             'transaction_id' => $tx->id,
@@ -318,9 +319,10 @@ class AmsInvoiceImportController extends Controller
             'total' => $res['total'],
             'new_products' => $newCount,
             'view_url' => action('PurchaseController@show', [$tx->id]),
-            'msg' => 'Created purchase #' . $tx->id . ' with ' . $res['lines'] . ' line(s), total $' . number_format($res['total'], 2)
-                . ($newCount ? ', including ' . $newCount . ' new product(s)' : '') . '.'
-            . (!empty($res['settled']) ? ' Replaced the order logged before this invoice: ' . implode(', ', array_map(function ($s) { return '#' . $s['transaction_id'] . ($s['deleted'] ? ' (removed)' : ' (' . $s['qty'] . ' taken off)'); }, $res['settled'])) . '.' : ''),
+            'msg' => (!empty($res['new_purchase'])
+                ? 'Created purchase #' . $tx->id . ' with ' . $res['lines'] . ' line(s), total $' . number_format($res['total'], 2)
+                    . ($newCount ? ', including ' . $newCount . ' new product(s)' : '') . '.'
+                : 'No new purchase needed.') . $onOrders,
         ]);
     }
 }

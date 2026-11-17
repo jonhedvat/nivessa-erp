@@ -389,7 +389,7 @@ function renderReview(data) {
         const note = onOther
             ? 'This invoice is already on ' + l.existing.map(e => `<a href="/purchases/${e.transaction_id}" target="_blank">purchase #${e.transaction_id}</a> (${esc(e.status)}, qty ${Number(e.qty)})`).join(', ')
             : ((l.on_order && l.on_order.length)
-                ? 'Replaces the order logged before this invoice: ' + l.on_order.map(e => `<a href="/purchases/${e.transaction_id}" target="_blank">#${e.transaction_id}</a> (qty ${Number(e.qty)})`).join(', ')
+                ? 'Goes on the order already logged: ' + l.on_order.map(e => `<a href="/purchases/${e.transaction_id}" target="_blank">#${e.transaction_id}</a> (qty ${Number(e.qty)})`).join(', ')
             : ((l.earlier && l.earlier.length)
                 ? 'Also on earlier ' + l.earlier.slice(0, 2).map(e => `<a href="/purchases/${e.transaction_id}" target="_blank">#${e.transaction_id}</a> (${esc(e.status)})`).join(', ') + ', imported as new copies'
                 : (l.product_inactive ? 'Matched product is inactive' : '')));

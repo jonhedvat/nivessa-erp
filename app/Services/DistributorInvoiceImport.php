@@ -495,7 +495,16 @@ class DistributorInvoiceImport
                 $clean[] = ['variation_id' => (int) $variation->id, 'product_id' => $product->id, 'qty' => $qty, 'unit_price' => $unit];
             }
 
-            if (count($clean) === 0) {
+            // Lines already on an order logged before this invoice go onto
+            // that order (invoice cost, invoice # in its notes). Nothing is
+            // deleted; only lines with no logged order make a new purchase.
+            $att = empty($opts['no_settle'])
+                ? self::attachToOrderPlaceholders($business_id, $contact_id, $location_id, $invoiceDate, $clean, $cfg['label'], $invoiceKey . $suffix)
+                : ['remaining' => $clean, 'attached' => []];
+            $attached = $att['attached'];
+            $clean = $att['remaining'];
+
+            if (count($clean) === 0 && !$attached) {
                 throw new \RuntimeException('No lines to import.');
             }
 
@@ -503,6 +512,10 @@ class DistributorInvoiceImport
             foreach ($clean as $l) { $total += $l['qty'] * $l['unit_price']; }
             $total = round($total, 2);
 
+            $newPurchase = count($clean) > 0;
+            if (!$newPurchase) {
+                $transaction = Transaction::find($attached[0]['transaction_id']);
+            } else {
             $productUtil->setAndGetReferenceCount('purchase', $business_id);
             $transaction = Transaction::create([
                 'business_id' => $business_id,
@@ -536,13 +549,11 @@ class DistributorInvoiceImport
                 $pl->save();
             }
 
-            $settled = empty($opts['no_settle'])
-                ? self::settleOrderPlaceholders($business_id, $contact_id, $location_id, $transaction->id, $invoiceDate, $clean)
-                : [];
-            if ($settled) {
-                $transaction->additional_notes = trim($notes . '. Replaces the order logged before this invoice: '
-                    . implode(', ', array_map(function ($s) { return '#' . $s['transaction_id'] . ' ' . $s['ref_no'] . ' (-' . $s['qty'] . ($s['deleted'] ? ', removed' : '') . ')'; }, $settled)));
+            if ($attached) {
+                $transaction->additional_notes = trim($notes . '. Lines already on the order logged before this invoice were put on that order: '
+                    . implode(', ', array_map(function ($a) { return '#' . $a['transaction_id'] . ' ' . $a['ref_no']; }, $attached)));
                 $transaction->save();
+            }
             }
 
             DB::commit();
@@ -555,12 +566,12 @@ class DistributorInvoiceImport
         Storage::disk('local')->put('admin-snapshots/' . $cfg['action'] . '_' . $invoiceKey . $suffix . '_' . now()->format('Ymd_His') . '.json', json_encode([
             'action' => $cfg['action'],
             'timestamp' => $stamp,
-            'direction' => $cfg['label'] . " invoice {$invoiceKey}{$suffix} → purchase #{$transaction->id} (" . count($clean) . ' lines, ' . count($created) . ' new products)',
+            'direction' => $cfg['label'] . " invoice {$invoiceKey}{$suffix} → " . ($newPurchase ? "purchase #{$transaction->id} (" . count($clean) . ' lines, ' . count($created) . ' new products)' : 'added to existing order(s) only'),
             'business_id' => $business_id,
             'invoice' => $invoiceKey . $suffix,
-            'transaction_id' => $transaction->id,
+            'transaction_id' => $newPurchase ? $transaction->id : null,
             'created_products' => $created,
-            'settled_order_placeholders' => $settled,
+            'attached_to_orders' => $attached,
         ], JSON_PRETTY_PRINT));
 
         if ($writeSidecar) Storage::disk('local')->put(self::sidecarPath($distributor, $invoiceKey), json_encode([
@@ -575,7 +586,7 @@ class DistributorInvoiceImport
             'applied_by' => $user_id,
         ], JSON_PRETTY_PRINT));
 
-        return ['transaction' => $transaction, 'created_products' => $created, 'lines' => count($clean), 'total' => $total, 'settled' => $settled];
+        return ['transaction' => $transaction, 'created_products' => $created, 'lines' => count($clean), 'total' => $total, 'attached' => $attached, 'new_purchase' => $newPurchase];
     }
 
     /**
@@ -591,61 +602,59 @@ class DistributorInvoiceImport
     }
 
     /**
-     * When an invoice is imported, the order placeholders for the same
-     * supplier + store are used up by what the invoice shipped (oldest first),
-     * so the order isn't counted twice. Lines that reach 0 are removed and a
-     * placeholder with no lines left is deleted; anything not invoiced yet
-     * (back-orders) stays on it. Ordered purchases never touched stock.
+     * Put invoice lines onto orders logged before the invoice existed (same
+     * supplier + store, still Ordered/Pending, oldest first) instead of
+     * creating a second purchase for them. The order line takes the invoice
+     * cost and the order's notes get the invoice #, so the invoice is never
+     * imported again. Nothing is deleted or reduced. Invoice qty beyond what
+     * the order holds stays in 'remaining' and goes on a new purchase.
      */
-    private static function settleOrderPlaceholders($business_id, $contact_id, $location_id, $newTxId, $invoiceDate, array $clean)
+    private static function attachToOrderPlaceholders($business_id, $contact_id, $location_id, $invoiceDate, array $clean, $label, $invoiceKey)
     {
         $d = self::normalizeDate($invoiceDate);
         $from = date('Y-m-d', strtotime($d . ' -120 days'));
         $to = date('Y-m-d 23:59:59', strtotime($d . ' +10 days'));
-        $byTx = [];
+        $remaining = []; $byTx = []; $used = [];
         foreach ($clean as $l) {
             $left = (float) $l['qty'];
-            if ($left <= 0) continue;
             $cands = DB::table('purchase_lines as pl')
                 ->join('transactions as t', 't.id', '=', 'pl.transaction_id')
                 ->where('t.business_id', $business_id)->where('t.type', 'purchase')
                 ->where('t.contact_id', $contact_id)->where('t.location_id', $location_id)
-                ->where('t.id', '!=', $newTxId)
                 ->whereIn('t.status', ['ordered', 'pending'])
                 ->whereBetween('t.transaction_date', [$from, $to])
                 ->where('pl.variation_id', (int) $l['variation_id'])
                 ->orderBy('t.transaction_date')->orderBy('pl.id')
-                ->get(['pl.id', 'pl.quantity', 'pl.purchase_price', 't.id as tx_id', 't.ref_no', 't.status']);
+                ->get(['pl.id', 'pl.quantity', 'pl.purchase_price', 't.id as tx_id', 't.ref_no', 't.status', 't.additional_notes']);
             foreach ($cands as $c) {
                 if ($left <= 0) break;
-                if (!self::isOpenOrderPlaceholder($c->status, $c->ref_no)) continue;
-                $take = min($left, (float) $c->quantity);
-                if ($take <= 0) continue;
-                $left -= $take;
-                $remaining = (float) $c->quantity - $take;
-                if ($remaining > 0) {
-                    DB::table('purchase_lines')->where('id', $c->id)->update(['quantity' => $remaining]);
-                } else {
-                    DB::table('purchase_lines')->where('id', $c->id)->delete();
+                if (isset($used[$c->id]) || !self::isOpenOrderPlaceholder($c->status, $c->ref_no)) continue;
+                // An order already matched to another invoice is not reused.
+                if (stripos((string) $c->additional_notes, $label . ' invoice ') !== false && stripos((string) $c->additional_notes, 'invoiced on') !== false) continue;
+                $used[$c->id] = true;
+                $left -= min($left, (float) $c->quantity);
+                $unit = round((float) $l['unit_price'], 4);
+                if (abs($unit - (float) $c->purchase_price) > 0.0001) {
+                    $diff = round(((float) $c->quantity) * ($unit - (float) $c->purchase_price), 2);
+                    DB::table('purchase_lines')->where('id', $c->id)->update([
+                        'purchase_price' => $unit, 'purchase_price_inc_tax' => $unit, 'pp_without_discount' => $unit,
+                    ]);
+                    DB::table('transactions')->where('id', $c->tx_id)->update([
+                        'total_before_tax' => DB::raw('total_before_tax + (' . $diff . ')'),
+                        'final_total' => DB::raw('final_total + (' . $diff . ')'),
+                    ]);
                 }
-                $amt = round($take * (float) $c->purchase_price, 2);
-                DB::table('transactions')->where('id', $c->tx_id)->update([
-                    'total_before_tax' => DB::raw('GREATEST(0, total_before_tax - ' . $amt . ')'),
-                    'final_total' => DB::raw('GREATEST(0, final_total - ' . $amt . ')'),
-                ]);
-                $k = (int) $c->tx_id;
-                if (!isset($byTx[$k])) $byTx[$k] = ['transaction_id' => $k, 'ref_no' => $c->ref_no, 'qty' => 0, 'deleted' => false];
-                $byTx[$k]['qty'] += $take;
+                $byTx[(int) $c->tx_id] = ['transaction_id' => (int) $c->tx_id, 'ref_no' => $c->ref_no];
             }
+            if ($left > 0) { $r = $l; $r['qty'] = $left; $remaining[] = $r; }
         }
-        foreach ($byTx as $k => &$s) {
-            if (!DB::table('purchase_lines')->where('transaction_id', $k)->exists()) {
-                DB::table('transactions')->where('id', $k)->where('type', 'purchase')->whereIn('status', ['ordered', 'pending'])->delete();
-                $s['deleted'] = true;
-            }
+        foreach ($byTx as $k => $a) {
+            $n = DB::table('transactions')->where('id', $k)->value('additional_notes');
+            DB::table('transactions')->where('id', $k)->update([
+                'additional_notes' => trim(((string) $n) . ' / ' . $label . ' invoice ' . $invoiceKey . ' invoiced on ' . substr($d, 0, 10)),
+            ]);
         }
-        unset($s);
-        return array_values($byTx);
+        return ['remaining' => $remaining, 'attached' => array_values($byTx)];
     }
 
     // Add catalog lines to a purchase that is still Ordered (no stock moves):

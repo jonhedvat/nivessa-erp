@@ -495,7 +495,7 @@ class DistributorInvoiceIntake
                 . ($ownStatus === 'received' ? '. That box was already received with #' . $own->id . ', so count these before receiving.' : '');
             try {
                 $res = DistributorInvoiceImport::apply($distributor, $this->business_id, $this->user_id, $own->location_id, $own->contact_id, $inv,
-                    substr($own->transaction_date, 0, 10), $notes, $take, ['ref_suffix' => '-B', 'sidecar' => false]);
+                    substr($own->transaction_date, 0, 10), $notes, $take, ['ref_suffix' => '-B', 'sidecar' => false, 'no_settle' => true]);
                 $txId = $res['transaction']->id;
                 $this->addLog(['distributor' => $distributor, 'invoice' => $inv, 'status' => 'imported', 'source' => $source, 'transaction_id' => $txId,
                     'msg' => sprintf('Catch-up purchase #%d: %d line(s) missing from #%d, %d new products.', $txId, $res['lines'], $own->id, count($res['created_products']))]);
@@ -676,7 +676,7 @@ class DistributorInvoiceIntake
                 . ($ownStatus === 'received' ? '. That box was already received with #' . $own->id . ', so count these before receiving.' : '');
             try {
                 $res = DistributorInvoiceImport::apply($distributor, $this->business_id, $this->user_id, $own->location_id, $own->contact_id, $inv,
-                    substr($own->transaction_date, 0, 10), $notes, $take, ['ref_suffix' => $suffix, 'sidecar' => false]);
+                    substr($own->transaction_date, 0, 10), $notes, $take, ['ref_suffix' => $suffix, 'sidecar' => false, 'no_settle' => true]);
                 $txId = $res['transaction']->id;
                 $this->addLog(['distributor' => $distributor, 'invoice' => $inv, 'status' => 'imported', 'source' => $source, 'transaction_id' => $txId,
                     'msg' => sprintf('Purchase #%d: %d %s missing from #%d, %d new products.', $txId, $res['lines'], $what, $own->id, count($res['created_products']))]);
@@ -849,7 +849,7 @@ class DistributorInvoiceIntake
             'transaction_id' => $res['transaction']->id,
             'msg' => sprintf('Purchase #%d: %d lines, $%.2f, %d new products.%s', $res['transaction']->id, $res['lines'], $res['total'], count($res['created_products']),
                 $onOther ? ' Left off (this invoice already logged): ' . implode('; ', $onOther) . '.' : '')
-                . (!empty($res['settled']) ? ' Replaced order(s) logged before the invoice: ' . implode(', ', array_map(function ($s) { return '#' . $s['transaction_id']; }, $res['settled'])) . '.' : '')]);
+                . (!empty($res['attached']) ? ' Lines put on the order(s) logged before the invoice: ' . implode(', ', array_map(function ($a) { return '#' . $a['transaction_id']; }, $res['attached'])) . '.' : '')]);
         if ($noCategory) {
             $this->alert($distributor, $inv, 'Imported as purchase #' . $res['transaction']->id . ', but these lines had no category and were left off: ' . implode('; ', $noCategory) . '. Add them on the purchase.');
         }
