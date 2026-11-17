@@ -1,0 +1,77 @@
+# READ-ONLY (2026-11-17): distinct listing_location / bin_position codes with counts.
+name: Diag listing location codes
+
+on:
+  workflow_dispatch:
+    inputs: {}
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+
+      - name: Price guard test (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PG_QUERY: ${{ github.event.inputs.query }}
+          PG_PRICE: ${{ github.event.inputs.price }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 25m
+          envs: PG_QUERY,PG_PRICE
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export PG_QUERY PG_PRICE
+            F=$(mktemp /tmp/pgtest.XXXXXX.php)
+            cat > "$F" <<'PHP'
+            <?php
+            require __DIR__ . '/vendor/autoload.php';
+            PHP
+            sed -i "s#__DIR__ . '/vendor#'$(pwd)/vendor#" "$F"
+            cat >> "$F" <<'PHP'
+            $app = require getcwd() . '/bootstrap/app.php';
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            foreach (['listing_location', 'bin_position'] as $col) {
+                $rows = DB::table('products')->whereNotNull($col)->where($col, '!=', '')
+                    ->where('created_at', '>=', now()->subMonths(6))
+                    ->selectRaw("UPPER(TRIM($col)) as code, count(*) as n, max(created_at) as last")
+                    ->groupBy('code')->orderByDesc('n')->limit(400)->get();
+                echo "== $col (" . $rows->count() . ")\n";
+                foreach ($rows as $r) echo "CODE $col\t{$r->code}\t{$r->n}\t{$r->last}\n";
+            }
+            $p = DB::table('products as p')->join('variations as v', 'v.product_id', '=', 'p.id')
+                ->where('p.created_at', '>=', now()->subMonths(6))->where('v.sell_price_inc_tax', '>=', 100)
+                ->selectRaw("UPPER(TRIM(COALESCE(NULLIF(p.listing_location,''), p.bin_position))) as code, count(*) as n")->groupBy('code')->orderByDesc('n')->limit(80)->get();
+            foreach ($p as $r) echo "HUNDRED\t{$r->code}\t{$r->n}\n";
+            PHP
+            php "$F"
+            rm -f "$F"
+            echo "=== done ==="
