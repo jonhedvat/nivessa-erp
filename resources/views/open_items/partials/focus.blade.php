@@ -46,13 +46,6 @@
     ];
 @endphp
 
-<div class="oi-card" id="oi-bigger">
-    <div class="oi-head"><h2>When the list above is clear: bigger jobs</h2></div>
-    <p class="oi-how">Most important first. These are what bring in money and keep customers happy.</p>
-    @foreach($jobs as $i => $j)
-        <div class="oi-done"><strong>{{ $i + 1 }}. {{ $j[0] }}.</strong> {{ $j[1] }} @if(isset($jobLinks[$i]))<a href="{{ url($jobLinks[$i]) }}" style="color:var(--d-accent-text);font-weight:700">Open</a>@endif</div>
-    @endforeach
-</div>
 
 @php
     $todayArtist = $socialCal[$tzNow->format('Y-m-d')] ?? null;
@@ -77,6 +70,14 @@
     <p class="oi-how">Coming up this week:</p>
     @foreach(array_slice($week, 2) as $w)
         <div class="oi-done"><strong>{{ $w[0] }} ({{ $w[1] }}):</strong> {{ $w[2] }}</div>
+    @endforeach
+</div>
+
+<div class="oi-card" id="oi-bigger">
+    <div class="oi-head"><h2>If you have time</h2></div>
+    <p class="oi-how">After your list and today's social post. Most important first: these bring in money and keep customers happy.</p>
+    @foreach($jobs as $i => $j)
+        <div class="oi-done"><strong>{{ $i + 1 }}. {{ $j[0] }}.</strong> {{ $j[1] }} @if(isset($jobLinks[$i]))<a href="{{ url($jobLinks[$i]) }}" style="color:var(--d-accent-text);font-weight:700">Open</a>@endif</div>
     @endforeach
 </div>
 

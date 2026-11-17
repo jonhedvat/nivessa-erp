@@ -23,6 +23,12 @@
 .open-shell .oi-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; grid-template-areas:"who age open" "what what what"; gap:4px 14px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--d-line); font-size:14px; color:var(--d-ink); }
 .open-shell .oi-row .oi-who { grid-area:who; white-space:normal; }
 .open-shell .oi-row .oi-what { grid-area:what; }
+.open-shell .oi-row .oi-todo { grid-column:1 / -1; font-size:13px; color:var(--d-ink); background:var(--d-surface-2); border-radius:8px; padding:6px 10px; margin-top:4px; }
+.open-shell .oi-num { font-weight:800; margin-right:2px; }
+.open-shell .oi-tag { display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:2px 8px; margin-right:4px; background:#E3F0FB; color:#174E7C; vertical-align:1px; }
+.open-shell .oi-tag-unhappy { background:#FFE3D6; color:#7A2E0E; }
+.open-shell .oi-tag-orders, .open-shell .oi-tag-discogs { background:#FFF4C2; color:#5B4A00; }
+.open-shell .oi-tag-sellers { background:#DDF1DE; color:#1B5E20; }
 .open-shell .oi-row .oi-age { grid-area:age; }
 .open-shell .oi-row .oi-open { grid-area:open; }
 .open-shell .oi-row:last-child { border-bottom:0; }
@@ -116,32 +122,46 @@
 
     <div class="oi-card" id="oi-start">
         <div class="oi-head"><h2>How to use this page</h2></div>
-        <div class="oi-done"><strong>1.</strong> Start with the first box and go down. Each row is one problem to solve today.</div>
-        <div class="oi-done"><strong>2.</strong> Click <strong>Open</strong> on the row. Do what the line under the box title says (reply, ship, call, fix the order). To answer a customer, click <strong>Reply with Claude</strong> on the row: it writes the reply on the right, you check it and send it.</div>
+        <div class="oi-done"><strong>1.</strong> Start at number 1 in "Your list" and go down in order. Each one is one thing to finish today.</div>
+        <div class="oi-done"><strong>2.</strong> Click <strong>Open</strong> on the row. Do what the "What to do" line says (reply, ship, call, fix the order). To answer a customer, click <strong>Reply with Claude</strong> on the row: it writes the reply on the right, you check it and send it.</div>
         <div class="oi-done"><strong>3.</strong> When the problem is gone, click <strong>Fixed it</strong> and write one line about what you did, e.g. "Called her, sent a swap, she is happy". It disappears.</div>
         <div class="oi-done"><strong>4.</strong> If the ERP is broken or missing something you need, click <strong>ERP bug</strong> and write what happened. Do not leave it sitting.</div>
-        <div class="oi-done"><strong>5.</strong> When every box says All clear, do today's social post, then the bigger jobs below.</div>
+        <div class="oi-done"><strong>5.</strong> When the list is done, do today's social post, then "If you have time" below.</div>
         <p class="oi-how">"Fixed it" means it is really finished. If something comes back within 48 hours, it shows up here again with your note so you can finish it.</p>
     </div>
 
     <div class="oi-layout"><div class="oi-main">
-    @foreach($sections as $key => $s)
-        <div class="oi-card" id="oi-{{ $key }}">
-            <div class="oi-head">
-                <h2>{{ $s['title'] }} <span class="oi-count {{ count($s['rows']) === 0 ? 'zero' : '' }}">{{ count($s['rows']) }}</span></h2>
-                @if($s['link'])<a class="oi-btn" href="{{ $s['link'] }}">Open page</a>@endif
-            </div>
-            @if($s['how'])<p class="oi-how">{{ $s['how'] }}</p>@endif
-            @if(!empty($s['older']))<p class="oi-how" style="background:var(--d-surface)">Plus {{ $s['older'] }} older than 2 weeks, not shown here. @if($s['link'])<a href="{{ $s['link'] }}" style="color:var(--d-accent-text);font-weight:700">See them</a>@endif</p>@endif
-            @if($s['error'])
-                <div class="oi-err">{{ $s['error'] }}</div>
-            @elseif(count($s['rows']) === 0)
-                <div class="oi-empty">{{ empty($s['older']) ? 'All clear.' : 'Nothing new in the last 2 weeks.' }}</div>
-            @else
-                @foreach($s['rows'] as $r)
+    @php
+        // One list for the whole day, most important first. Lower rank = sooner.
+        $rank = ['unhappy' => 1, 'orders' => 2, 'customers' => 3, 'events' => 3, 'sellers' => 4, 'discogs' => 5, 'contact' => 6, 'staff' => 7, 'bookings' => 8, 'buys' => 9];
+        $items = [];
+        $failed = [];
+        $older = [];
+        foreach ($sections as $sk => $sec) {
+            if (!empty($sec['error'])) { $failed[] = $sec['title']; }
+            if (!empty($sec['older'])) { $older[] = [$sec['title'], $sec['older'], $sec['link']]; }
+            foreach ($sec['rows'] as $row) {
+                $rk = $rank[$sk] ?? 9;
+                if (!empty($row['late']) && in_array($sk, ['staff', 'events'], true)) { $rk = 1; } // shift or party within a day
+                if (!empty($row['reopened'])) { $rk = max(1, $rk - 1); } // came back: finish it first
+                $items[] = ['sk' => $sk, 'r' => $row, 'rk' => $rk];
+            }
+        }
+        usort($items, fn ($x, $y) => [$x['rk'], -$x['r']['hours']] <=> [$y['rk'], -$y['r']['hours']]);
+    @endphp
+    <div class="oi-card" id="oi-list">
+        <div class="oi-head"><h2>Your list, most important first <span class="oi-count {{ count($items) === 0 ? 'zero' : '' }}">{{ count($items) }}</span></h2></div>
+        <p class="oi-how">Start at number 1 and go down in order. The line under each one tells you exactly what to do.</p>
+        @if($failed)<div class="oi-err">Could not load right now: {{ implode(', ', $failed) }}. Click Refresh in a few minutes.</div>@endif
+        @if(count($items) === 0)
+            <div class="oi-empty">All done. Amazing work! Now do today's social post below.</div>
+        @endif
+                @foreach($items as $n => $it)
+                    @php $key = $it['sk']; $s = $sections[$key]; $r = $it['r']; @endphp
                     <div class="oi-row">
-                        <div class="oi-who" title="{{ $r['who'] }}">{{ $r['who'] }}</div>
+                        <div class="oi-who" title="{{ $r['who'] }}"><span class="oi-num">{{ $n + 1 }}.</span> <span class="oi-tag oi-tag-{{ $key }}">{{ $s['title'] }}</span> {{ $r['who'] }}</div>
                         <div class="oi-what">{{ $r['what'] }}</div>
+                        @if($s['how'])<div class="oi-todo"><strong>What to do:</strong> {{ $s['how'] }}</div>@endif
                         <div class="oi-age {{ ($r['late'] ?? ($r['hours'] >= 72)) ? 'late' : '' }}" title="{{ $r['since'] }}">{{ $r['age'] }}</div>
                         <div class="oi-open"><a href="{{ $r['link'] }}">Open</a></div>
                         <div class="oi-acts">
@@ -178,9 +198,12 @@
                         @if(!empty($r['reopened']))<div class="oi-reopen">{{ $r['reopened'] }}</div>@endif
                     </div>
                 @endforeach
-            @endif
-        </div>
-    @endforeach
+        @if($older)
+            <p class="oi-how" style="background:var(--d-surface)">Older than 2 weeks (not in the list):
+                @foreach($older as $o)<a href="{{ $o[2] }}" style="color:var(--d-accent-text);font-weight:700">{{ $o[0] }} ({{ $o[1] }})</a>@if(!$loop->last), @endif @endforeach
+            </p>
+        @endif
+    </div>
 
     @include('open_items.partials.focus')
     </div>
