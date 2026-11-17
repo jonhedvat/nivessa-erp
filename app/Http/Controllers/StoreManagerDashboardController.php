@@ -123,6 +123,13 @@ class StoreManagerDashboardController extends Controller
             });
         }, ['people' => [], 'formats' => [], 'total' => 0]);
 
+        // 1a. Median price per item, by person and category: all time + the window.
+        $medians = $safe('medians', function () use ($ck, $ttl, $business_id, $loc, $roster) {
+            return Cache::remember($ck . 'medians:' . md5(implode(',', array_keys($roster))), $ttl, function () use ($business_id, $loc, $roster) {
+                return $this->medianPrices($business_id, $loc, $roster, null);
+            });
+        }, ['people' => [], 'team' => []]);
+
         // 1b. Sold % and days to sell, by genre.
         $genres = $safe('genres', function () use ($ck, $ttl, $business_id, $loc, $employeeId) {
             return Cache::remember($ck . 'genres:' . $employeeId, $ttl, function () use ($business_id, $loc, $employeeId) {
@@ -185,6 +192,10 @@ class StoreManagerDashboardController extends Controller
         $valueListed = $safe('value', function () use ($business_id, $loc, $roster, $fromStr) {
             return $this->valueListed($business_id, $loc, $roster, $fromStr);
         }, []);
+
+        $mediansWindow = $safe('medians_window', function () use ($business_id, $loc, $roster, $fromStr) {
+            return $this->medianPrices($business_id, $loc, $roster, $fromStr);
+        }, ['people' => [], 'team' => []]);
 
         // 10. Items whose stock a shelf count changed, per person.
         $shelf = $safe('shelf', function () use ($business_id, $location, $roster, $fromStr) {
@@ -267,6 +278,8 @@ class StoreManagerDashboardController extends Controller
             'employeeId' => $employeeId,
             'people' => $people,
             'priced' => $priced,
+            'medians' => $medians,
+            'mediansWindow' => $mediansWindow,
             'genres' => $genres,
             'shiftRows' => $shiftData['rows'],
             'tasks' => $tasks,
@@ -413,6 +426,77 @@ class StoreManagerDashboardController extends Controller
         unset($p);
         uasort($out['people'], function ($a, $b) { return $b['total'] <=> $a['total']; });
         return $out;
+    }
+
+    /**
+     * Median sale price per item (inc. tax), by person and category, for what
+     * was priced at this store (all time, or since $fromStr). Each unit counts
+     * once, so a 10-copy line weighs 10. $0 items are left out.
+     * ['people' => [uid => [category => median]], 'team' => [category => median]]
+     */
+    private function medianPrices($business_id, $loc, array $roster, $fromStr)
+    {
+        $out = ['people' => [], 'team' => []];
+        if (!$roster) {
+            return $out;
+        }
+        $q = $this->pricedBase($business_id, $loc)
+            ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+            ->join('variations as va', 'va.id', '=', 'pl.variation_id')
+            ->whereIn('t.created_by', array_keys($roster))
+            ->where('va.sell_price_inc_tax', '>', 0)
+            ->where('pl.quantity', '>', 0);
+        if ($fromStr !== null) {
+            $q->whereRaw('COALESCE(pl.created_at, t.created_at) >= ?', [$fromStr]);
+        }
+        $rows = $q->groupBy('t.created_by', 'c.name', 'va.sell_price_inc_tax')
+            ->select('t.created_by', DB::raw("COALESCE(NULLIF(c.name, ''), 'Uncategorized') as format"),
+                DB::raw('ROUND(va.sell_price_inc_tax, 2) as price'), DB::raw('SUM(pl.quantity) as qty'))
+            ->get();
+
+        $byPerson = [];
+        $byTeam = [];
+        foreach ($rows as $r) {
+            $qty = (float) $r->qty;
+            $price = (string) $r->price;
+            $uid = (int) $r->created_by;
+            $byPerson[$uid][$r->format][$price] = ($byPerson[$uid][$r->format][$price] ?? 0) + $qty;
+            $byTeam[$r->format][$price] = ($byTeam[$r->format][$price] ?? 0) + $qty;
+        }
+        foreach ($byPerson as $uid => $cats) {
+            foreach ($cats as $cat => $dist) {
+                $out['people'][$uid][$cat] = self::weightedMedian($dist);
+            }
+        }
+        foreach ($byTeam as $cat => $dist) {
+            $out['team'][$cat] = self::weightedMedian($dist);
+        }
+        return $out;
+    }
+
+    /** Median of a [price => count] distribution. */
+    private static function weightedMedian(array $dist)
+    {
+        ksort($dist, SORT_NUMERIC);
+        $total = array_sum($dist);
+        if ($total <= 0) {
+            return null;
+        }
+        $half = $total / 2;
+        $run = 0;
+        $prices = array_keys($dist);
+        foreach ($prices as $i => $price) {
+            $run += $dist[$price];
+            if ($run > $half) {
+                return (float) $price;
+            }
+            if ($run == $half) {
+                // Even split right between two prices: average them.
+                $next = $prices[$i + 1] ?? $price;
+                return ((float) $price + (float) $next) / 2;
+            }
+        }
+        return (float) end($prices);
     }
 
     /** Per format + genre: priced, sold, % sold, average days to sell. */
