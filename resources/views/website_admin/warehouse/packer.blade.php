@@ -44,6 +44,7 @@
   .pk-done { text-align:center; font-weight:700; font-size:14px; padding:8px; border-radius:10px; }
   .pk-done.ok { background:#dcfce7; color:#166534; }
   .pk-done.bad { background:#fee2e2; color:#991b1b; }
+  .pk-alt { font-size:12px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:6px 8px; text-align:center; }
   .pk-by { font-size:12px; color:#6b7280; text-align:center; }
   .pk-toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:#111827; color:#fff; padding:12px 18px; border-radius:10px; font-size:14px; z-index:2000; display:none; max-width:90vw; }
   .pk-toast.err { background:#b91c1c; }
@@ -71,6 +72,8 @@
   </div>
 
   @include('website_admin.warehouse._nav')
+
+  <div class="wh-note warn"><b>Can't find an item?</b> We can use AMS or Alliance if you do not find it.</div>
 
   <div class="wh-filters">
     <div class="wh-field">
@@ -202,6 +205,9 @@
                 <button type="button" class="wh-btn wh-btn-red" onclick="pkPick(this, &quot;Can't Find&quot;)">Can't find</button>
               @else
                 <div class="pk-done {{ $ps === 'Picked' ? 'ok' : 'bad' }}">{{ $ps === 'Picked' ? 'Picked' : "Can't find" }}</div>
+                @if($ps !== 'Picked')
+                  <div class="pk-alt">We can use AMS or Alliance if you do not find it.</div>
+                @endif
                 @if(!empty($it['picked_by_name']))
                   <div class="pk-by">{{ $it['picked_by_name'] }}@if(!empty($it['picked_at'])), {{ \Carbon\Carbon::parse($it['picked_at'])->setTimezone($tz)->format('M j, g:i a') }}@endif</div>
                 @endif
@@ -261,6 +267,7 @@
     } else {
       row.classList.add(status === 'Picked' ? 'st-picked' : 'st-cant');
       box.innerHTML = '<div class="pk-done ' + (status === 'Picked' ? 'ok' : 'bad') + '">' + (status === 'Picked' ? 'Picked' : 'Can\'t find') + '</div>'
+        + (status === 'Picked' ? '' : '<div class="pk-alt">We can use AMS or Alliance if you do not find it.</div>')
         + (by ? '<div class="pk-by">' + pkEsc(by) + ', just now</div>' : '')
         + '<button type="button" class="wh-btn" onclick="pkPick(this, \'Not Picked\')">Undo</button>';
     }
@@ -333,7 +340,7 @@
       .then(function (j) {
         row.dataset.busy = '0';
         if (!j.success) throw new Error(j.message || 'Could not save the pick.');
-        pkToast(status === 'Not Picked' ? 'Undone.' : (status === 'Picked' ? 'Marked picked.' : "Marked can't find."));
+        pkToast(status === 'Not Picked' ? 'Undone.' : (status === 'Picked' ? 'Marked picked.' : "Marked can't find. We can use AMS or Alliance if you do not find it."));
       })
       .catch(function (e) {
         row.dataset.busy = '0';
