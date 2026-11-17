@@ -125,8 +125,8 @@
 .open-shell .oi-row .oi-age { grid-area:age; }
 .open-shell .oi-row .oi-what { grid-area:what; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--d-ink); }
 .open-shell .oi-row .oi-acts { grid-area:acts; justify-content:flex-start; margin-top:6px; position:relative; flex-wrap:wrap; }
-.open-shell .oi-act { font-size:12px; font-weight:700; border-radius:999px; padding:5px 12px; background:#3B2E2A; color:#FFEE94; text-decoration:none; white-space:nowrap; }
-.open-shell .oi-act:hover { text-decoration:none; color:#fff; }
+.open-shell a.oi-act, .open-shell a.oi-act:visited { font-size:12px; font-weight:700; border-radius:999px; padding:5px 12px; background:#3B2E2A !important; color:#FFEE94 !important; text-decoration:none; white-space:nowrap; }
+.open-shell a.oi-act:hover { text-decoration:none; color:#fff !important; }
 .open-shell .oi-side { position:fixed; left:auto; right:16px; bottom:16px; top:auto; width:min(440px, calc(100vw - 32px)); z-index:1050; display:none; box-shadow:0 10px 30px rgba(0,0,0,.25); margin:0; }
 .open-shell .oi-side.open { display:block; }
 .open-shell .oi-side-body { max-height:75vh; }
