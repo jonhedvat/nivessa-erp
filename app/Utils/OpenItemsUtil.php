@@ -277,7 +277,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             ['name' => 'Store texts and calls', 'on' => true, 'setup' => '/communications/quo-settings'],
             ['name' => 'Website messages', 'on' => true, 'setup' => null],
             ['name' => 'Discogs buyers', 'on' => true, 'setup' => null],
-            ['name' => 'Email (hello@)', 'on' => !empty($mail['hello']['password']), 'setup' => '/communications/email-settings'],
+            ['name' => 'Email (hello@)', 'on' => !empty($mail['hello']['password']), 'setup' => '/communications/email-settings', 'gmail' => empty($mail['hello']['password'])],
             ['name' => 'Instagram', 'on' => trim((string) ($j('instagram-webhook.json')['page_access_token'] ?? '')) !== '', 'setup' => '/communications/instagram-settings'],
             ['name' => 'Facebook', 'on' => trim((string) ($j('facebook-oauth.json')['page_access_token'] ?? '')) !== '', 'setup' => '/communications/facebook-settings'],
             ['name' => 'TikTok', 'on' => trim((string) ($j('tiktok-oauth.json')['access_token'] ?? '')) !== '', 'setup' => '/communications/tiktok-settings'],

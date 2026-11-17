@@ -246,7 +246,8 @@
                     @if($bk === 'customers')
                         <div class="oi-chans">
                             @foreach(\App\Utils\OpenItemsUtil::channelStatus() as $ch)
-                                @if($ch['on'])<span class="oi-chan on">{{ $ch['name'] }}: on</span>
+                                @if(!empty($ch['gmail']))<a class="oi-chan on" href="https://mail.google.com/mail/u/?authuser=hello@nivessa.com" target="_blank">Email (hello@): answer in Gmail</a>
+                                @elseif($ch['on'])<span class="oi-chan on">{{ $ch['name'] }}: on</span>
                                 @elseif($isOwner && $ch['setup'])<a class="oi-chan off" href="{{ url($ch['setup']) }}">{{ $ch['name'] }}: connect</a>
                                 @else<span class="oi-chan off">{{ $ch['name'] }}: not connected</span>@endif
                             @endforeach
