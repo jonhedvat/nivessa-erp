@@ -160,19 +160,23 @@
               @php
                 $iid = $it['_id'] ?? '';
                 $loc = $WH::effectiveLocation($it);
+                $e = $erp[(string) $iid] ?? ['artist' => '', 'album' => ($it['name'] ?? ''), 'category' => null, 'subcategory' => null, 'bin' => ''];
                 $ps = $it['picking_status']['status'] ?? 'Not Picked';
                 $by = $it['picking_status']['picked_by']['name'] ?? ($it['picking_status']['picked_by_erp_user'] ?? null);
                 $img = ($it['image'] ?? '') ?: ($it['product_id']['image'] ?? '');
               @endphp
               <tr>
                 <td style="max-width:280px;">
-                  <div style="font-weight:600;">{{ $it['name'] ?? '' }}</div>
+                  @if($e['artist'] !== '')<div style="font-size:13px; font-weight:600; color:#4b5563;">{{ $e['artist'] }}</div>@endif
+                  <div style="font-weight:600;">{{ $e['album'] }}</div>
+                  @if($e['category'])<div class="wh-muted">{{ $e['category'] }}@if($e['subcategory']) › {{ $e['subcategory'] }}@endif</div>@endif
                   @if(!empty($it['product_id']['sku']))<div class="wh-muted">SKU {{ $it['product_id']['sku'] }}</div>@endif
                   @if(!empty($it['media_condition']) || !empty($it['sleeve_condition']))
                     <div class="wh-muted">{{ implode(' / ', array_filter([$it['media_condition'] ?? null, $it['sleeve_condition'] ?? null])) }}</div>
                   @endif
                 </td>
                 <td style="min-width:220px;">
+                  @if($e['bin'] !== '')<div style="margin-bottom:4px;"><span style="display:inline-block; background:#111827; color:#fff; font-weight:800; font-size:14px; border-radius:7px; padding:2px 9px;">{{ $e['bin'] }}</span></div>@endif
                   @if($loc)
                     @if(!empty($loc['fromProduct']))<div class="wh-muted" style="font-size:10.5px; text-transform:uppercase;">From product catalog</div>@endif
                     @if(!empty($loc['zone']))<span class="wh-tag zone">{{ $loc['zone'] }}</span>@else<span class="wh-pill red">No zone set</span>@endif
@@ -180,7 +184,7 @@
                     @if(!empty($loc['sub_location']))<span class="wh-tag sub">{{ $loc['sub_location'] }}</span>@endif
                     @if(!empty($loc['shelf_details']))<span class="wh-tag shelf">{{ $loc['shelf_details'] }}</span>@endif
                     @if(!empty($loc['discogs_location_code']))<span class="wh-tag code">{{ $loc['discogs_location_code'] }}</span>@endif
-                  @else
+                  @elseif($e['bin'] === '')
                     <span class="wh-pill red">No location data</span>
                   @endif
                   <form method="POST" action="{{ route('wa.warehouse.location', ['id' => $oid, 'itemId' => $iid]) }}" style="display:flex; gap:6px; margin-top:8px;">
