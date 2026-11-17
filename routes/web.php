@@ -354,6 +354,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // access token — same gitignored-file pattern as Quo/email above.
     Route::get('/communications/instagram-settings', 'InstagramWebhookController@settings')->name('instagram.settings');
     Route::post('/communications/instagram-settings', 'InstagramWebhookController@saveSettings')->name('instagram.settings.save');
+    Route::post('/communications/instagram-import', 'InstagramWebhookController@importNow')->name('instagram.import');
 
     // Admin-only: paste the TikTok Login Kit client key/secret + OAuth
     // tokens — powers live follower/likes/video counts on the Archer report.

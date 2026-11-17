@@ -205,6 +205,103 @@ class InstagramWebhookController extends Controller
         return response()->json(['success' => true]);
     }
 
+    /**
+     * Pull recent DM conversations straight from the Graph API with the saved
+     * Page token (no webhook needed). One Hub row per conversation: what the
+     * customer sent in `message`, what we sent in `resolution_notes`, so the
+     * dashboard shows the whole thread. Safe to run again: rows are matched by
+     * conversation id and only updated. A conversation whose last message is
+     * from the customer goes back to pending.
+     */
+    public static function importConversations(int $limit = 40): array
+    {
+        $token = self::storedPageAccessToken();
+        if ($token === '') {
+            return ['ok' => false, 'msg' => 'No Instagram Page token saved yet.'];
+        }
+        $business_id = optional(Business::first())->id;
+        $system_user_id = $business_id ? optional(\DB::table('users')->where('business_id', $business_id)->orderBy('id')->first())->id : null;
+        $http = new \GuzzleHttp\Client(['timeout' => 30]);
+        $get = function ($path, $query) use ($http, $token) {
+            $resp = $http->get('https://graph.facebook.com/v21.0/' . $path, ['query' => $query + ['access_token' => $token], 'http_errors' => false]);
+            return [$resp->getStatusCode(), json_decode((string) $resp->getBody(), true) ?: []];
+        };
+        try {
+            [$code, $me] = $get('me', ['fields' => 'id,name,instagram_business_account{id,username}']);
+            if ($code !== 200) {
+                return ['ok' => false, 'msg' => 'Meta rejected the saved token: ' . ($me['error']['message'] ?? 'HTTP ' . $code)];
+            }
+            $igId = $me['instagram_business_account']['id'] ?? null;
+            $igName = $me['instagram_business_account']['username'] ?? null;
+            [$code, $convs] = $get('me/conversations', ['platform' => 'instagram', 'limit' => $limit, 'fields' => 'id,updated_time,participants,messages.limit(25){id,message,created_time,from}']);
+            if ($code !== 200) {
+                return ['ok' => false, 'msg' => 'Connected to ' . ($me['name'] ?? 'the Page') . ', but Meta would not share DMs: ' . ($convs['error']['message'] ?? 'HTTP ' . $code)];
+            }
+            $tz = 'America/Los_Angeles';
+            $new = 0; $updated = 0;
+            foreach (($convs['data'] ?? []) as $cv) {
+                $msgs = array_reverse((array) ($cv['messages']['data'] ?? [])); // oldest first
+                $them = null;
+                foreach ((array) ($cv['participants']['data'] ?? []) as $p) {
+                    if (($p['id'] ?? '') !== $igId && ($p['username'] ?? '') !== $igName) { $them = $p; }
+                }
+                if (!$them || !$msgs) {
+                    continue;
+                }
+                $in = []; $out = []; $lastFromThem = false; $first = null;
+                foreach ($msgs as $m) {
+                    $txt = trim((string) ($m['message'] ?? ''));
+                    if ($txt === '') { $txt = '(photo or attachment)'; }
+                    $at = \Carbon\Carbon::parse($m['created_time'])->setTimezone($tz);
+                    $first = $first ?: $at;
+                    $line = '[' . $at->format('n/j g:ia') . '] ' . $txt;
+                    $fromThem = ($m['from']['id'] ?? '') === ($them['id'] ?? '-');
+                    if ($fromThem) { $in[] = $line; } else { $out[] = $line; }
+                    $lastFromThem = $fromThem;
+                }
+                if (!$in) {
+                    continue; // we started it and they never wrote back
+                }
+                $ext = 'ig-conv-' . $cv['id'];
+                $c = Communication::where('business_id', $business_id)->where('external_id', $ext)->first();
+                $isNew = !$c;
+                if ($isNew) {
+                    $c = new Communication();
+                    $c->business_id = $business_id;
+                    $c->channel = 'instagram';
+                    $c->external_id = $ext;
+                    $c->created_by = $system_user_id;
+                    $c->status = 'pending';
+                    $c->created_at = $first;
+                }
+                $c->customer_name = '@' . ($them['username'] ?? $them['id']);
+                $c->contact_info = 'IG user ' . $them['id'];
+                $c->message = implode("\n", $in);
+                $c->resolution_notes = $out ? implode("\n", $out) : null;
+                $c->topic = $c->topic ?: Communication::guessTopic(implode(' ', $in));
+                if ($lastFromThem && !$isNew && $c->status === 'resolved') {
+                    $c->status = 'pending';
+                }
+                $c->save();
+                $isNew ? $new++ : $updated++;
+            }
+            return ['ok' => true, 'msg' => 'Instagram (@' . ($igName ?: '?') . '): ' . $new . ' new conversations, ' . $updated . ' updated.'];
+        } catch (\Throwable $e) {
+            Log::warning('Instagram import failed: ' . $e->getMessage());
+            return ['ok' => false, 'msg' => 'Could not reach Instagram right now.'];
+        }
+    }
+
+    public function importNow()
+    {
+        $this->requireAdmin();
+        $r = self::importConversations();
+        if (request()->wantsJson()) {
+            return response()->json($r);
+        }
+        return redirect()->back()->with('status', ['success' => $r['ok'] ? 1 : 0, 'msg' => $r['msg']]);
+    }
+
     private function verifySignature(string $raw, string $header): bool
     {
         $secret = $this->appSecret();

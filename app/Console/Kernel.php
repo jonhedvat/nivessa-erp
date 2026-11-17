@@ -94,6 +94,12 @@ class Kernel extends ConsoleKernel
             ->everyFiveMinutes()
             ->withoutOverlapping(5);
 
+        // Instagram DMs straight from the Graph API with the saved Page token
+        // (Sarah 11/17: the webhook never delivered anything). No-ops if no token.
+        $schedule->call(function () {
+            \App\Http\Controllers\InstagramWebhookController::importConversations();
+        })->name('instagram-dm-import')->everyTenMinutes()->withoutOverlapping(10);
+
         // Distributor invoices -> ERP purchases with no one uploading them:
         // AMS portal (both accounts) + Alliance e-invoice emails, every 3
         // hours 7am-7pm PT (Sarah 10/20). Each run only downloads invoices it
