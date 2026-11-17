@@ -150,13 +150,7 @@
             $dloc = trim((string) (($it['discogs_location'] ?? '') ?: ($it['location']['discogs_location_code'] ?? '')));
             $ps = $it['picking_status'] ?? 'Not Picked';
             $cls = $ps === 'Picked' ? 'st-picked' : ($ps === "Can't Find" ? 'st-cant' : '');
-            // Can't-find reminder: sealed vinyl/CD/cassette -> order from AMS/Alliance; used -> dropship via eBay/Discogs.
-            $catTxt = strtolower(($e['category'] ?? '') . ' ' . ($e['subcategory'] ?? ''));
-            $alt = '';
-            if (preg_match('/vinyl|\blp\b|\bcds?\b|compact disc|cassette/', $catTxt)) {
-              if (strpos($catTxt, 'seal') !== false || preg_match('/\bnew\b/', strtolower($e['category'] ?? ''))) $alt = 'We can use AMS or Alliance if you do not find it.';
-              elseif (strpos($catTxt, 'used') !== false) $alt = 'Reminder: we can dropship this on eBay or Discogs if you do not find it.';
-            }
+            $alt = \App\Http\Controllers\WebsiteOrdersController::cantFindHint($e['category'] ?? '', $e['subcategory'] ?? '');
           @endphp
           <div class="pk-item {{ $cls }}" data-order="{{ $it['order_id'] ?? '' }}" data-item="{{ $it['_id'] ?? '' }}" data-status="{{ $ps }}" data-zone="{{ $zid }}" data-alt="{{ $alt }}">
             @if(!empty($it['image']))
