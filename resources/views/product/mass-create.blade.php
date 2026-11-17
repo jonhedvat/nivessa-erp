@@ -2292,7 +2292,28 @@
         const oldHtml = $('#save_all_products').html();
         $btns.prop('disabled', true);
         $('#save_all_products').html('<i class="fa fa-spinner fa-spin"></i> Checking prices vs Discogs/eBay&hellip;');
-        runPriceGuard(items).then(function (res) {
+        // Discogs limits us to ~60 lookups/min (shared with the stock sync), so
+        // rows it couldn't answer are retried after a pause before we give up
+        // and show them in the pop-up (Sarah 2026-11-17).
+        const waits = [20, 40];
+        const guardWithRetry = function (list, round, acc) {
+            return runPriceGuard(list).then(function (res) {
+                if (!res) return round === 0 ? null : acc;
+                Object.keys(res).forEach(function (k) { acc[k] = res[k]; });
+                const again = list.filter(function (it) { return res[it.idx] && res[it.idx].unchecked; });
+                if (!again.length || round >= waits.length) return acc;
+                return new Promise(function (resolve) {
+                    let left = waits[round];
+                    const tick = function () {
+                        $('#save_all_products').html('<i class="fa fa-spinner fa-spin"></i> Discogs is busy, re-checking ' + again.length + ' row' + (again.length > 1 ? 's' : '') + ' in ' + left + 's&hellip;');
+                        if (left-- <= 0) { resolve(guardWithRetry(again, round + 1, acc)); return; }
+                        setTimeout(tick, 1000);
+                    };
+                    tick();
+                });
+            });
+        };
+        guardWithRetry(items, 0, {}).then(function (res) {
             $btns.prop('disabled', false);
             $('#save_all_products').html(oldHtml);
             if (!res) {
