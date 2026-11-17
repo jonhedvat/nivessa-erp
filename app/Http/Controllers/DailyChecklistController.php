@@ -515,14 +515,8 @@ class DailyChecklistController extends Controller
         }
         list($sections, $done) = \App\Utils\OpenItemsUtil::applyActions(\App\Utils\OpenItemsUtil::sections($business_id));
         $me = trim((string) auth()->user()->first_name);
-        // Board cleared: bonus once a day, only if he actually fixed something today.
         $openNow = \App\Utils\OpenItemsUtil::total($sections);
         $sb = \App\Utils\OpenItemsUtil::scoreboard($me);
-        if ($openNow === 0 && $sb['today'] > 0) {
-            if (\App\Utils\OpenItemsUtil::addPoints($me, \App\Utils\OpenItemsUtil::CLEAR_BONUS, 'Cleared the whole board', 'clear:' . $me . ':' . now('America/Los_Angeles')->format('Y-m-d'))) {
-                $sb = \App\Utils\OpenItemsUtil::scoreboard($me);
-            }
-        }
         return view('open_items.index', [
             'sections' => $sections,
             'done'     => $done,
@@ -640,8 +634,7 @@ Their message:
                 'updated_at'    => now(),
             ]);
             \App\Utils\OpenItemsUtil::saveAction($key, 'bug', $note . ' (bug #' . $id . ')', $who, $label);
-            \App\Utils\OpenItemsUtil::addPoints($who, \App\Utils\OpenItemsUtil::BUG_POINTS, 'Bug report: ' . $label, 'bug:' . $key);
-            return redirect($back)->with('oi_msg', '+' . \App\Utils\OpenItemsUtil::BUG_POINTS . ' points. Filed as ERP bug #' . $id . ' in Bug Fixes. It comes back here in 48 hours if it is still open.');
+            return redirect($back)->with('oi_msg', 'Filed as ERP bug #' . $id . ' in Bug Fixes. It comes back here in 48 hours if it is still open.');
         }
 
         $section = preg_replace('/[^a-z]/', '', (string) $request->input('section', ''));
@@ -663,8 +656,9 @@ Their message:
         if ($request->wantsJson()) {
             return response()->json(['ok' => true, 'pts' => $pts]);
         }
-        $cheers = ['Nice.', 'Boom.', 'On a roll.', 'Clean.', 'That is how it is done.'];
-        return redirect($back)->with('oi_msg', '+' . $pts . ' points. ' . $cheers[array_rand($cheers)] . ' Logged as fixed.');
+        $sbNow = \App\Utils\OpenItemsUtil::scoreboard($who);
+        $left = max(0, $sbNow['target'] - $sbNow['today']);
+        return redirect($back)->with('oi_msg', 'Nice. ' . $sbNow['today'] . ' fixed today. ' . ($left > 0 ? $left . ' more to hit your goal.' : 'Goal hit!'));
     }
 }
 

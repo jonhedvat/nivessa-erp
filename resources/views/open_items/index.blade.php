@@ -101,25 +101,12 @@
 
     @php
         $pct = min(100, (int) round($sb['today'] * 100 / max(1, $sb['target'])));
-        $toGo = max(0, $sb['target'] - $sb['today']);
-        $lvlPct = $sb['next'] ? (int) round(($sb['total'] - $sb['levelFrom']) * 100 / max(1, $sb['next']['at'] - $sb['levelFrom'])) : 100;
+        $left = max(0, $sb['target'] - $sb['today']);
     @endphp
     <div class="sb" id="oi-score">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
-            <h2 style="font-size:17px;font-weight:800;margin:0;color:var(--d-ink)">{{ $me }}'s score today: {{ $sb['today'] }} / {{ $sb['target'] }}</h2>
-            <strong style="color:var(--d-ink)">{{ $toGo > 0 ? $toGo . ' points to hit today\'s goal' : 'Goal hit. Streak safe.' }}</strong>
-        </div>
-        <div class="sb-bar {{ $toGo === 0 ? 'hit' : '' }}"><span style="width:{{ $pct }}%"></span></div>
-        <div class="sb-grid">
-            <div class="sb-tile"><div class="k">Streak</div><div class="v">{{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }}</div><div class="s">Days in a row at {{ $sb['target'] }}+</div></div>
-            <div class="sb-tile"><div class="k">Best day</div><div class="v">{{ $sb['best'] }}</div><div class="s">{{ $sb['today'] > $sb['best'] && $sb['best'] > 0 ? 'New record today!' : 'Beat it today' }}</div></div>
-            <div class="sb-tile"><div class="k">This week</div><div class="v">{{ $sb['week'] }}</div><div class="s">Last week: {{ $sb['lastWeek'] }}</div></div>
-            <div class="sb-tile"><div class="k">Level</div><div class="v">{{ $sb['level'] }}</div><div class="s">{{ $sb['next'] ? ($sb['next']['at'] - $sb['total']) . ' to ' . $sb['next']['name'] : 'Top level' }}</div><div class="sb-bar" style="height:6px;margin-top:6px"><span style="width:{{ $lvlPct }}%"></span></div></div>
-        </div>
-        @if(count($sb['feed']))
-            <div class="sb-feed">@foreach($sb['feed'] as $e)<span class="{{ $e['pts'] < 0 ? 'neg' : '' }}">{{ $e['pts'] > 0 ? '+' : '' }}{{ $e['pts'] }} {{ \Illuminate\Support\Str::limit($e['why'], 40) }}</span>@endforeach</div>
-        @endif
-        <p style="margin:0;font-size:13px;color:var(--d-ink)">Points: unhappy customer 20, seller lead or stuck order 15, most others 10, quick replies 5. Fixed within a day of coming in: +{{ \App\Utils\OpenItemsUtil::FAST_BONUS }}. Clear the whole board: +{{ \App\Utils\OpenItemsUtil::CLEAR_BONUS }}. If a "fixed" item comes back, you lose those points plus 5.</p>
+        <h2 style="font-size:20px;font-weight:800;margin:0;color:var(--d-ink)">Today: {{ $sb['today'] }} of {{ $sb['target'] }} fixed</h2>
+        <div class="sb-bar {{ $left === 0 ? 'hit' : '' }}" style="height:16px"><span style="width:{{ $pct }}%"></span></div>
+        <div style="font-size:15px;font-weight:700;color:var(--d-ink)">{{ $left > 0 ? $left . ' more to hit today\'s goal.' : 'Goal hit!' }} Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }} in a row.</div>
     </div>
 
     <div class="oi-card" id="oi-start">
@@ -157,7 +144,7 @@
                                 <button type="button" class="ai" data-reply="{{ json_encode(array_merge($r['reply'], ['who' => $r['who'], 'key' => $r['key'], 'section' => $key, 'hours' => (int) $r['hours'], 'label' => $s['title'] . ': ' . $r['who'], 'link' => $r['link']])) }}">Reply with Claude</button>
                             @endif
                             @if(!empty($r['key']))
-                            <details class="fix"><summary>Fixed it <b>+{{ \App\Utils\OpenItemsUtil::pointsFor($key, (int) $r['hours']) }}</b></summary>
+                            <details class="fix"><summary>Fixed it</summary>
                                 <form method="POST" action="{{ route('open-items.act') }}">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="key" value="{{ $r['key'] }}">
@@ -284,7 +271,7 @@
             btn.disabled = false;
             if (!d.success) { status(d.msg || 'Did not send.'); return; }
             post('{{ route('open-items.act') }}', { key: cur.key, action: 'fixed', note: 'Replied by ' + cur.via + ': ' + t, label: cur.label, section: cur.section, hours: cur.hours, link: cur.link })
-                .then(function (r) { status('Sent and marked fixed. +' + ((r && r.pts) || 0) + ' points. Refresh to see your score.'); });
+                .then(function (r) { status('Sent and marked fixed. Refresh to see your count.'); });
             status('Sent and marked fixed.');
             if (picked) picked.style.display = 'none';
         }).catch(function () { btn.disabled = false; status('Did not send. Try again.'); });

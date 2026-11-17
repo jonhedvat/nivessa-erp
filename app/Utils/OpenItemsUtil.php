@@ -496,16 +496,17 @@ class OpenItemsUtil
 
     // ---- Scoreboard: points for real fixes, lost again if a fix bounces back ----
     const SCORE_FILE = 'open_items_score.json';
-    const DAILY_TARGET = 75;
+    const DAILY_TARGET = 8;
     const CLEAR_BONUS = 25;
     const FAST_BONUS = 5;
     const BUG_POINTS = 3;
     const POINTS = ['unhappy' => 20, 'sellers' => 15, 'orders' => 15, 'discogs' => 10, 'staff' => 10, 'events' => 10, 'bookings' => 10, 'customers' => 5, 'contact' => 5, 'buys' => 5];
     const LEVELS = [0 => 'Rookie', 250 => 'Crate Digger', 750 => 'Selector', 1500 => 'Headliner', 3000 => 'Legend'];
 
+    // Kept simple on purpose: every real fix counts as 1.
     public static function pointsFor(string $section, int $hours = 9999): int
     {
-        return (self::POINTS[$section] ?? 5) + ($hours < 24 ? self::FAST_BONUS : 0);
+        return 1;
     }
 
     public static function readScore(): array
@@ -684,11 +685,11 @@ class OpenItemsUtil
                     $r['reopened'] = ($a['action'] === 'bug' ? 'Reported as an ERP bug ' : 'Marked fixed ')
                         . $at->format('m/d/y') . ' ("' . $a['note'] . '") but it is still open.';
                     if ($a['action'] === 'fixed' && !empty($a['by']) && !empty($a['pts'])) {
-                        $lost = (int) $a['pts'] + 5;
+                        $lost = (int) $a['pts'];
                         if (self::addPoints($a['by'], -$lost, 'Came back: ' . ($a['label'] ?? $r['key']), 'back:' . $r['key'] . ':' . $a['at'])) {
                             \Log::info('open-items bounce-back -' . $lost . ' ' . $r['key']);
                         }
-                        $r['reopened'] .= ' Lost ' . $lost . ' points. Fix it for real to earn them back.';
+                        $r['reopened'] .= ' It no longer counts toward your fixes. Fix it for real to count it again.';
                     }
                 }
                 $keep[] = $r;
