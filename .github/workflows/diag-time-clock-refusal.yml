@@ -67,6 +67,7 @@ jobs:
             echo 'SLING_TODAY_ALL ' . json_encode(\DB::table('sling_shifts')->whereBetween('dtstart', [$TC::now()->toDateString() . ' 00:00:00', $TC::now()->toDateString() . ' 23:59:59'])->get(['erp_user_id', 'user_email', 'location_name', 'dtstart', 'dtend', 'event_type'])) . "\n";
             foreach ($ids as $id) { foreach ([null, 1, 2, 3, 4] as $loc) { try { echo 'ALLOWS ' . $id . ' loc=' . json_encode($loc) . ' ' . json_encode($TC::scheduleAllows($id, $loc, 1)) . "\n"; } catch (\Throwable $e) { echo 'ALLOWS_ERR ' . $e->getMessage() . "\n"; } } }
             try { echo 'SLING_PING ' . json_encode((new \App\Services\SlingClient())->ping()) . "\n"; } catch (\Throwable $e) { echo 'SLING_PING_ERR ' . $e->getMessage() . "\n"; }
+            echo 'SLING_TOKEN ' . json_encode(['saved_at' => \App\System::getProperty('sling_token_saved_at'), 'org' => \App\System::getProperty('sling_org_id'), 'len' => strlen((string) \App\System::getProperty('sling_auth_token')), 'prefix' => substr((string) \App\System::getProperty('sling_auth_token'), 0, 7)]) . "\n";
             echo 'SLING_LAST_SYNC ' . \DB::table('sling_shifts')->max('last_synced_at') . "\n";
             echo 'LOCS ' . json_encode(\DB::table('business_locations')->get(['id', 'name'])) . "\n";
             PHP
