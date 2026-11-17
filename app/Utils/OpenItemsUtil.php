@@ -185,7 +185,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         }
         $rows = \DB::table('communications')
             ->where('business_id', $business_id)
-            ->whereIn('channel', self::REPLY_CHANNELS)
+            ->whereIn('channel', array_merge(self::REPLY_CHANNELS, ['website']))
             ->where('status', 'pending')
             ->where('created_at', '>=', now()->subDays(45))
             ->orderBy('created_at')
