@@ -6,6 +6,7 @@ Route::get('/website-admin/warehouse', 'WebsiteAdmin\WarehouseController@index')
 Route::post('/website-admin/warehouse/sync', 'WebsiteAdmin\WarehouseController@sync')->name('wa.warehouse.sync');
 Route::get('/website-admin/warehouse/packer', 'WebsiteAdmin\WarehouseController@packer')->name('wa.warehouse.packer');
 Route::post('/website-admin/warehouse/pick/{orderId}/{itemId}', 'WebsiteAdmin\WarehouseController@pick')->name('wa.warehouse.pick');
+Route::post('/website-admin/warehouse/item-note/{orderId}/{itemId}', 'WebsiteAdmin\WarehouseController@itemNote')->name('wa.warehouse.itemNote');
 Route::get('/website-admin/warehouse/orders/{id}', 'WebsiteAdmin\WarehouseController@show')->name('wa.warehouse.show');
 Route::post('/website-admin/warehouse/orders/{id}/location/{itemId}', 'WebsiteAdmin\WarehouseController@updateLocation')->name('wa.warehouse.location');
 Route::post('/website-admin/warehouse/orders/{id}/notes', 'WebsiteAdmin\WarehouseController@saveNotes')->name('wa.warehouse.notes');
