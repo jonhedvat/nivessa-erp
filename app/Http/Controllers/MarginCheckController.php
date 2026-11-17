@@ -25,17 +25,19 @@ class MarginCheckController extends Controller
         @set_time_limit(300);
         $business_id = (int) request()->session()->get('user.business_id');
 
-        $rows = \Cache::remember('margin_check_v2_' . $business_id, 1800, function () use ($business_id) {
+        $rows = \Cache::remember('margin_check_v3_' . $business_id, 1800, function () use ($business_id) {
             $svc = app(\App\Services\InventoryCheckService::class);
             $q = DB::table('products as p')
                 ->leftJoin('categories as c1', 'p.category_id', '=', 'c1.id')
+                ->leftJoin('users as au', 'p.created_by', '=', 'au.id')
                 ->where('p.business_id', $business_id)
                 ->where('p.type', '!=', 'modifier')
                 ->where(function ($w) {
                     $w->where('c1.name', 'like', '%Sealed%')->orWhere('c1.name', 'like', '%New%');
                 })
                 ->select(
-                    'p.id', 'p.name as product', 'p.artist', 'p.sku', 'c1.name as category',
+                    'p.id', 'p.name as product', 'p.artist', 'p.sku', 'c1.name as category', 'p.created_at',
+                    DB::raw("TRIM(CONCAT(COALESCE(au.first_name,''), ' ', COALESCE(au.last_name,''))) as added_by"),
                     DB::raw('(select max(v.sell_price_inc_tax) from variations v where v.product_id = p.id and v.deleted_at is null) as price'),
                     DB::raw('(select coalesce(sum(vld.qty_available),0) from variations v join variation_location_details vld on vld.variation_id = v.id where v.product_id = p.id and v.deleted_at is null) as stock')
                 )
@@ -86,6 +88,8 @@ class MarginCheckController extends Controller
                     'supplier' => (string) ($best['supplier_label'] ?? $best['supplier_key']),
                     'markup' => round(($price - $cost) / $cost * 100, 1),
                     'margin' => round(($price - $cost) / $price * 100, 1),
+                    'added' => $r->created_at ? \Carbon\Carbon::parse($r->created_at)->setTimezone('America/Los_Angeles')->format('m/d/y') : '',
+                    'added_by' => (string) $r->added_by,
                 ];
             }
             return $out;
@@ -103,9 +107,9 @@ class MarginCheckController extends Controller
                 . '<style>body{font-family:Inter,Arial,sans-serif;color:#2B211E;background:#F6F4F1;margin:0;padding:20px}h1{margin:0 0 6px}table{border-collapse:collapse;width:100%;background:#fff;font-size:14px}td,th{padding:7px 9px;border-bottom:1px solid #E3DDD7;text-align:left}th{background:#3B2E2A;color:#FFEE94;position:sticky;top:0}.n{text-align:right;font-variant-numeric:tabular-nums}.bad{color:#B3261E;font-weight:700}p{max-width:900px}</style>'
                 . '<h1>Margin check: new records in stock</h1>'
                 . '<p>' . count($rows) . ' in-stock new records matched to a distributor by barcode. <b>' . $under . '</b> are priced under the distributor cost and <b>' . (count($flag) - $under) . '</b> more earn under 20% margin. Read only: no prices were changed. <a href="?format=csv">Download all as CSV</a></p>'
-                . '<table><tr><th>Artist</th><th>Title</th><th>Format</th><th class="n">Stock</th><th class="n">Our price</th><th class="n">Cost</th><th>From</th><th class="n">Margin</th><th></th></tr>';
+                . '<table><tr><th>Artist</th><th>Title</th><th>Format</th><th class="n">Stock</th><th class="n">Our price</th><th class="n">Cost</th><th>From</th><th class="n">Margin</th><th>Added</th><th>Added by</th><th></th></tr>';
             foreach ($flag as $r) {
-                $h .= '<tr><td>' . $e($r['artist']) . '</td><td>' . $e($r['title']) . '</td><td>' . $e($r['category']) . '</td><td class="n">' . (int) $r['stock'] . '</td><td class="n">$' . number_format($r['price'], 2) . '</td><td class="n">$' . number_format($r['cost'], 2) . '</td><td>' . $e($r['supplier']) . '</td><td class="n ' . ($r['margin'] < 0 ? 'bad' : '') . '">' . $r['margin'] . '%</td><td><a href="/products/' . $r['id'] . '/edit">Edit</a></td></tr>';
+                $h .= '<tr><td>' . $e($r['artist']) . '</td><td>' . $e($r['title']) . '</td><td>' . $e($r['category']) . '</td><td class="n">' . (int) $r['stock'] . '</td><td class="n">$' . number_format($r['price'], 2) . '</td><td class="n">$' . number_format($r['cost'], 2) . '</td><td>' . $e($r['supplier']) . '</td><td class="n ' . ($r['margin'] < 0 ? 'bad' : '') . '">' . $r['margin'] . '%</td><td>' . $e($r['added']) . '</td><td>' . $e($r['added_by']) . '</td><td><a href="/products/' . $r['id'] . '/edit">Edit</a></td></tr>';
             }
             return response($h . '</table>');
         }
