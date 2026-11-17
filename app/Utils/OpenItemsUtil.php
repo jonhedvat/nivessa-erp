@@ -45,7 +45,7 @@ class OpenItemsUtil
             // Only the last 2 weeks; older ones are counted, not listed.
             // Staff and event prep are about upcoming dates, so they are never cut.
             $out[$key]['older'] = 0;
-            if (!in_array($key, ['staff', 'events'], true)) {
+            if (!in_array($key, ['staff', 'events', 'unhappy'], true)) {
                 $recent = array_values(array_filter($out[$key]['rows'], fn ($r) => $r['hours'] <= self::RECENT_DAYS * 24));
                 $out[$key]['older'] = count($out[$key]['rows']) - count($recent);
                 $out[$key]['rows'] = $recent;
@@ -517,13 +517,23 @@ class OpenItemsUtil
             ->orderBy('dtstart')
             ->get(['erp_user_id', 'user_email', 'user_name', 'dtstart', 'location_name']);
         $users = \DB::table('users')->where('business_id', $business_id)->whereNull('deleted_at')
-            ->get(['id', 'email', 'first_name', 'last_name', 'allow_login']);
+            ->get(['id', 'email', 'first_name', 'last_name', 'allow_login', 'created_at']);
         $byId = [];
         $byEmail = [];
+        $byName = [];
+        $firstCount = [];
         foreach ($users as $u) {
             $byId[(int) $u->id] = $u;
             if ($u->email) {
                 $byEmail[strtolower(trim($u->email))] = $u;
+            }
+            $full = strtolower(trim($u->first_name . ' ' . $u->last_name));
+            if ($full !== '') {
+                $byName[$full] = $u;
+            }
+            $f = strtolower(trim((string) $u->first_name));
+            if ($f !== '') {
+                $firstCount[$f][] = $u;
             }
         }
         $pins = array_flip(array_map('intval', \DB::table('time_clock_pins')->where('business_id', $business_id)->pluck('user_id')->all()));
@@ -539,6 +549,18 @@ class OpenItemsUtil
             $u = $s->erp_user_id ? ($byId[(int) $s->erp_user_id] ?? null) : null;
             if (!$u && $s->user_email) {
                 $u = $byEmail[strtolower(trim($s->user_email))] ?? null;
+            }
+            $sn = strtolower(trim((string) $s->user_name));
+            if (!$u && $sn !== '') {
+                $u = $byName[$sn] ?? null;
+                // Sling often shows just a first name; match it if only one person has it.
+                if (!$u && isset($firstCount[$sn]) && count($firstCount[$sn]) === 1) {
+                    $u = $firstCount[$sn][0];
+                }
+            }
+            // This box is for new hires only. Anyone with an ERP account older than 30 days is not new.
+            if ($u && $u->created_at && Carbon::parse($u->created_at)->lt($now->copy()->subDays(30))) {
+                continue;
             }
             $start = Carbon::parse($s->dtstart)->setTimezone($tz);
             $when = 'next shift ' . $start->format('m/d/y g:i A') . ($s->location_name ? ' at ' . $s->location_name : '');
@@ -569,8 +591,13 @@ class OpenItemsUtil
             if (($run['type'] ?? '') !== 'onboarding' || ($run['date'] ?? '') < $cut || empty($run['missed'])) {
                 continue;
             }
-            $steps = array_map(fn ($k) => mb_strimwidth((string) ($labels[$k] ?? $k), 0, 50, '...'), (array) $run['missed']);
-            $r = self::row((string) ($run['employee_name'] ?? ''), 'Onboarding not finished: ' . implode(' / ', $steps), $run['date'], url('/employee-checklist?type=onboarding'), 'onboard:' . ($run['id'] ?? ''));
+            $steps = array_map(function ($k) use ($labels) {
+                $l = (string) ($labels[$k] ?? $k);
+                $l = trim(preg_split('/\s+[\x{2014}\x{2013}]\s+|\s+-\s+|\s*\(/u', $l)[0]); // short name only, before any dash or ( )
+                return rtrim($l, '.:;,');
+            }, (array) $run['missed']);
+            $n = count($steps);
+            $r = self::row((string) ($run['employee_name'] ?? ''), $n . ' onboarding ' . ($n === 1 ? 'step' : 'steps') . ' left: ' . implode('; ', $steps) . '.', $run['date'], url('/employee-checklist?type=onboarding'), 'onboard:' . ($run['id'] ?? ''));
             $out[] = $r;
         }
 

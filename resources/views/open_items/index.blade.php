@@ -19,7 +19,12 @@
 .open-shell .oi-count { display:inline-block; min-width:28px; text-align:center; font-size:13px; font-weight:800; border-radius:999px; padding:2px 9px; margin-left:8px; background:#FDE2DF; color:#9B1C12; }
 .open-shell .oi-count.zero { background:#DDF1DE; color:var(--d-good); }
 .open-shell .oi-how { font-size:13px; color:var(--d-ink-2); margin:0; padding:10px 18px; background:var(--d-surface-2); border-bottom:1px solid var(--d-line); }
-.open-shell .oi-row { display:grid; grid-template-columns:minmax(120px,200px) 1fr auto auto; gap:12px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--d-line); font-size:14px; color:var(--d-ink); }
+.open-shell { max-width:1400px; }
+.open-shell .oi-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto; grid-template-areas:"who age open" "what what what"; gap:4px 14px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--d-line); font-size:14px; color:var(--d-ink); }
+.open-shell .oi-row .oi-who { grid-area:who; white-space:normal; }
+.open-shell .oi-row .oi-what { grid-area:what; }
+.open-shell .oi-row .oi-age { grid-area:age; }
+.open-shell .oi-row .oi-open { grid-area:open; }
 .open-shell .oi-row:last-child { border-bottom:0; }
 .open-shell .oi-who { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .open-shell .oi-what { color:var(--d-ink-2); }
@@ -30,7 +35,7 @@
 .open-shell .oi-err { padding:12px 18px; font-size:14px; color:var(--d-warn); font-weight:600; }
 
 .open-shell .oi-row { grid-template-columns:minmax(120px,200px) 1fr auto auto; }
-.open-shell .oi-row .oi-acts { grid-column:1 / -1; justify-content:flex-end; flex-wrap:wrap; }
+.open-shell .oi-row .oi-acts { grid-column:1 / -1; justify-content:flex-start; flex-wrap:wrap; margin-top:6px; }
 .open-shell .oi-reopen { grid-column:1 / -1; font-size:13px; font-weight:600; color:#B3261E; }
 .open-shell .oi-acts { display:flex; gap:6px; }
 .open-shell .oi-acts details { position:relative; }
@@ -79,8 +84,7 @@
 }
 @media (max-width: 700px) {
   .open-shell .oi-acts form { right:auto; left:0; width:260px; }
-  .open-shell .oi-row { grid-template-columns:1fr auto; }
-  .open-shell .oi-what { grid-column:1 / -1; }
+  .open-shell .oi-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"who open" "age age" "what what"; }
 }
 </style>
 
@@ -132,7 +136,7 @@
             @if($s['error'])
                 <div class="oi-err">{{ $s['error'] }}</div>
             @elseif(count($s['rows']) === 0)
-                <div class="oi-empty">All clear.</div>
+                <div class="oi-empty">{{ empty($s['older']) ? 'All clear.' : 'Nothing new in the last 2 weeks.' }}</div>
             @else
                 @foreach($s['rows'] as $r)
                     <div class="oi-row">
