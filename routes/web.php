@@ -1683,6 +1683,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/bug-fixes/{id}/reopen', 'BugQueueController@reopen')->where('id', '[0-9]+');
     Route::post('/bug-fixes/{id}/fix-now', 'BugQueueController@fixNow')->where('id', '[0-9]+');
 
+    Route::get('/reports/margin-check', 'MarginCheckController@index');
     Route::get('/register-recon', 'RegisterReconController@index');
     Route::post('/register-recon/settings', 'RegisterReconController@saveSettings');
     Route::post('/register-recon/post', 'RegisterReconController@postNow');
