@@ -19,6 +19,18 @@ body.pos-v2 .stat-card .l { font-size: 12.5px; color: #6b6253; text-transform: u
 body.pos-v2 .stat-card.stat-pending .n { color: #b98f00; }
 body.pos-v2 .stat-card.stat-resolved .n { color: #3d8b4c; }
 body.pos-v2 .topic-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+body.pos-v2 .ch-tags { margin-bottom: 10px; }
+body.pos-v2 .ch-chip { cursor: pointer; }
+body.pos-v2 .ch-chip.is-on { background: #3B2E2A; color: #FFEE94; border-color: #3B2E2A; }
+.ch-ico { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: #fff; font-size: 12px; vertical-align: -5px; background: #6b6253; }
+.ch-ico.ch-phone_1, .ch-ico.ch-phone_2 { background: #2F6B3E; }
+.ch-ico.ch-instagram { background: linear-gradient(45deg,#F58529,#DD2A7B,#8134AF); }
+.ch-ico.ch-facebook { background: #1877F2; }
+.ch-ico.ch-whatsapp { background: #25D366; }
+.ch-ico.ch-tiktok { background: #111; }
+.ch-ico.ch-email { background: #B4432F; }
+.ch-ico.ch-discogs { background: #333; }
+.ch-ico.ch-website { background: #174E7C; }
 body.pos-v2 .topic-tag {
   display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
   background: var(--pos-surface); border: 1px solid var(--pos-line); border-radius: 999px;
@@ -108,6 +120,15 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
         <div class="stat-card stat-pending" id="answer_stat" style="cursor:pointer;"><div class="n" data-stat="pending">{{ $counts['pending'] }}</div><div class="l">Ready to answer</div></div>
         <div class="stat-card stat-overdue" id="overdue_stat" style="cursor:pointer;border-color:#e3b3a8;"><div class="n" data-stat="overdue" style="color:#b4432f;">{{ $counts['overdue'] }}</div><div class="l">Make them happy</div></div>
         <div class="stat-card stat-resolved"><div class="n" data-stat="resolved">{{ $counts['resolved'] }}</div><div class="l">Finished</div></div>
+    </div>
+
+    <div class="topic-tags ch-tags">
+        <span class="topic-tag ch-chip is-on" data-ch=""><i class="fa fa-th-large"></i> All channels <span class="count">{{ array_sum($channel_counts->all()) }}</span></span>
+        @foreach($channels as $key => $label)
+            @if(isset($channel_counts[$key]) || in_array($key, ['phone_1', 'phone_2', 'instagram', 'email', 'discogs', 'website'], true))
+            <span class="topic-tag ch-chip" data-ch="{{ $key }}"><span class="ch-ico ch-{{ $key }}"><i class="fa {{ \App\Communication::channelIcon($key) }}"></i></span> {{ $label }} <span class="count">{{ $channel_counts[$key] ?? 0 }}</span></span>
+            @endif
+        @endforeach
     </div>
 
     <div class="topic-tags">
@@ -340,7 +361,17 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
             refreshStats();
         }, 20000);
 
-        $('#status_filter, #topic_filter, #channel_filter').on('change', reload);
+        $('#status_filter, #topic_filter, #channel_filter').on('change', function () {
+            $('.ch-chip').removeClass('is-on');
+            $('.ch-chip[data-ch="' + ($('#channel_filter').val() || '') + '"]').addClass('is-on');
+            reload();
+        });
+        $('.ch-chip').on('click', function () {
+            $('#channel_filter').val($(this).data('ch') || '');
+            $('.ch-chip').removeClass('is-on');
+            $(this).addClass('is-on');
+            reload();
+        });
 
         $('.topic-tag').on('click', function() {
             $('#topic_filter').val($(this).data('topic'));

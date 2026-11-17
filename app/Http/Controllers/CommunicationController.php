@@ -133,7 +133,7 @@ class CommunicationController extends Controller
             return ($prioSql ? DataTables::of($rows)->order(function ($q) use ($prioSql) { $q->orderByRaw($prioSql); }) : DataTables::of($rows))
                 ->editColumn('channel', function ($row) {
                     $text = Communication::CHANNELS[$row->channel] ?? $row->channel;
-                    return e($text);
+                    return '<span class="ch-ico ch-' . e($row->channel) . '"><i class="fa ' . Communication::channelIcon($row->channel) . '"></i></span> ' . e($text);
                 })
                 ->editColumn('topic', function ($row) {
                     $class = $row->topic === 'unhappy_customer' ? 'label-danger' : 'label-default';
@@ -253,7 +253,12 @@ class CommunicationController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('communications.index', compact('channels', 'topics', 'statuses', 'counts', 'topic_counts', 'users'));
+        // How many conversations still need us, per channel, for the channel chips.
+        $needIds = array_keys(array_filter(\App\Utils\OpenItemsUtil::triage((int) $business_id), fn ($l) => $l !== 'done'));
+        $channel_counts = Communication::where('business_id', $business_id)->whereIn('id', $needIds ?: [0])
+            ->select('channel', DB::raw('count(*) as c'))->groupBy('channel')->pluck('c', 'channel');
+
+        return view('communications.index', compact('channels', 'topics', 'statuses', 'counts', 'topic_counts', 'users', 'channel_counts'));
     }
 
     /**

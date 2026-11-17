@@ -35,6 +35,16 @@ class Communication extends Model
         '+12136762645' => 'phone_2', // Nivessa Hollywood
     ];
 
+    /** Font Awesome icon per channel, shown in the Hub. */
+    public static function channelIcon(?string $channel): string
+    {
+        return [
+            'phone_1' => 'fa-commenting', 'phone_2' => 'fa-commenting', 'instagram' => 'fa-instagram',
+            'whatsapp' => 'fa-whatsapp', 'facebook' => 'fa-facebook', 'tiktok' => 'fa-music',
+            'email' => 'fa-envelope', 'discogs' => 'fa-dot-circle-o', 'website' => 'fa-globe',
+        ][(string) $channel] ?? 'fa-comment';
+    }
+
     const TOPICS = [
         'unhappy_customer' => 'Make Them Happy',
         'shipping' => 'Shipping',
