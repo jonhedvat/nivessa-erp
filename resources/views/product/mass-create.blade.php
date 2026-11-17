@@ -1446,6 +1446,15 @@
                 return false;
             }
 
+            // Underpricing guard (Sarah 2026-11-17): check every row against
+            // Discogs / our sales / eBay before saving. Re-enters this handler
+            // with __priceGuardOk set once staff fix prices or give a reason.
+            if (!window.__priceGuardOk) {
+                window.massAddPriceGuardThenSave();
+                return false;
+            }
+            window.__priceGuardOk = false;
+
             // Clear previous error messages
             $('.error-message').remove();
             $('.is-invalid').removeClass('is-invalid');
@@ -2156,6 +2165,178 @@
         return products;
     }
     
+    // ---- Underpricing guard (Sarah 2026-11-17) ----------------------------
+    // Server compares each row's price to Discogs (sales-based value for its
+    // grade + cheapest copy listed), our own sales, and eBay asking prices.
+    function priceGuardItem($row) {
+        const price = $.trim($row.find('input[name*="[single_dsp_inc_tax]"]').val() || '');
+        if (!(parseFloat(price) > 0)) return null;
+        return {
+            idx: $row.attr('data-row-index'),
+            price: price,
+            name: $.trim($row.find('.product-name-autocomplete').val() || ''),
+            artist: $.trim($row.find('input[name*="[artist]"]').val() || ''),
+            sku: $.trim($row.find('input[name*="[sku]"]').val() || ''),
+            discogs_release_id: $.trim($row.find('input[name*="[discogs_release_id]"]').val() || ''),
+            condition: $row.find('.massadd_condition').val() || '',
+            category_id: $row.find('.category-select').val() || '',
+            category: $.trim($row.find('.category-combo-select option:selected').text() || ''),
+        };
+    }
+
+    function runPriceGuard(items) {
+        return new Promise(function (resolve) {
+            if (!items.length) return resolve({});
+            $.ajax({
+                url: "{{ route('product.massCreate.priceGuard') }}",
+                type: 'POST',
+                data: JSON.stringify({ items: items }),
+                contentType: 'application/json',
+                headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
+                timeout: 240000,
+                success: function (resp) { resolve((resp && resp.results) || {}); },
+                error: function () { resolve(null); },
+            });
+        });
+    }
+
+    function priceGuardSources(r) {
+        const bits = [];
+        if (r.discogs) {
+            const d = r.discogs;
+            let t = '<a href="https://www.discogs.com/sell/release/' + d.release_id + '" target="_blank">Discogs</a>';
+            if (d.value) t += ' ' + $('<div>').text(d.grade).html() + ' $' + Number(d.value).toFixed(2);
+            if (d.lowest) t += ', cheapest $' + Number(d.lowest).toFixed(2);
+            bits.push(t);
+        }
+        if (r.store) bits.push('our sales $' + Number(r.store.median).toFixed(2) + ' (' + r.store.sales + ')');
+        if (r.ebay && r.ebay.median) bits.push('<a href="' + r.ebay.uri + '" target="_blank">eBay</a> asking $' + Number(r.ebay.median).toFixed(2));
+        return bits.join(' &middot; ');
+    }
+
+    function markPriceGuard($row, r) {
+        const $price = $row.find('input[name*="[single_dsp_inc_tax]"]');
+        $price.siblings('.price-guard-note').remove();
+        if (!r || !r.flag) {
+            if ($price.data('priceGuardRed')) $price.css({ 'border-color': '', 'background': '' }).data('priceGuardRed', false);
+            return;
+        }
+        $price.css({ 'border-color': '#dc2626', 'background': '#fef2f2' }).data('priceGuardRed', true);
+        $('<div class="price-guard-note" style="font-size:11px;color:#b91c1c;line-height:1.2;margin-top:2px;"></div>')
+            .html('Too low? ' + priceGuardSources(r) + ' &rarr; <a href="#" class="price-guard-use" data-price="' + r.suggested + '">use $' + Number(r.suggested).toFixed(2) + '</a>')
+            .insertAfter($price);
+    }
+    window.markPriceGuard = markPriceGuard;
+
+    $(document).on('click', '.price-guard-use', function (e) {
+        e.preventDefault();
+        const $price = $(this).closest('td').find('input[name*="[single_dsp_inc_tax]"]');
+        $price.val(Number($(this).data('price')).toFixed(2)).trigger('change');
+    });
+
+    // Inline check when a price is typed/changed (debounced per row).
+    const priceGuardTimers = {};
+    $(document).on('change', '#product_rows_container input[name*="[single_dsp_inc_tax]"]', function () {
+        const $row = $(this).closest('.product-row');
+        const idx = $row.attr('data-row-index');
+        clearTimeout(priceGuardTimers[idx]);
+        priceGuardTimers[idx] = setTimeout(function () {
+            const item = priceGuardItem($row);
+            if (!item) { markPriceGuard($row, null); return; }
+            runPriceGuard([item]).then(function (res) {
+                if (!res) return;
+                const cur = priceGuardItem($row);
+                if (cur && cur.price === item.price) markPriceGuard($row, res[item.idx]);
+            });
+        }, 700);
+    });
+
+    // Runs before every save. Flagged rows → modal: take the suggested price
+    // or keep yours with a reason. Then re-triggers the save.
+    window.massAddPriceGuardThenSave = function () {
+        const items = [];
+        const rowsByIdx = {};
+        $('#product_rows_container .product-row').each(function () {
+            const it = priceGuardItem($(this));
+            if (it) { items.push(it); rowsByIdx[it.idx] = $(this); }
+        });
+        const proceed = function () { window.__priceGuardOk = true; $('#save_all_products').trigger('click'); };
+        if (!items.length) return proceed();
+
+        const $btns = $('#save_all_products, #save_and_send_to_purchase');
+        const oldHtml = $('#save_all_products').html();
+        $btns.prop('disabled', true);
+        $('#save_all_products').html('<i class="fa fa-spinner fa-spin"></i> Checking prices vs Discogs/eBay&hellip;');
+        runPriceGuard(items).then(function (res) {
+            $btns.prop('disabled', false);
+            $('#save_all_products').html(oldHtml);
+            if (!res) {
+                if (confirm('Could not check prices against Discogs/eBay right now. Save anyway?')) proceed();
+                return;
+            }
+            const flagged = items.filter(function (it) { return res[it.idx] && res[it.idx].flag; });
+            items.forEach(function (it) { markPriceGuard(rowsByIdx[it.idx], res[it.idx]); });
+            if (!flagged.length) return proceed();
+
+            const esc = function (v) { return $('<div>').text(v == null ? '' : String(v)).html(); };
+            let rowsHtml = '';
+            flagged.forEach(function (it) {
+                const r = res[it.idx];
+                rowsHtml += '<tr data-idx="' + esc(it.idx) + '">'
+                    + '<td><input type="checkbox" class="pg-use" checked></td>'
+                    + '<td><strong>' + esc(it.artist ? it.artist + ' - ' : '') + esc(it.name) + '</strong>'
+                    + (it.condition ? ' <span class="text-muted">' + esc(it.condition) + '</span>' : '')
+                    + '<div style="font-size:11px;">' + priceGuardSources(r) + '</div></td>'
+                    + '<td style="color:#b91c1c;font-weight:700;">$' + Number(it.price).toFixed(2) + '</td>'
+                    + '<td><input type="number" step="0.01" min="0" class="form-control input-sm pg-new" style="width:90px;" value="' + Number(r.suggested).toFixed(2) + '"></td>'
+                    + '</tr>';
+            });
+            $('#price_guard_modal').remove();
+            const $m = $('<div class="modal fade" id="price_guard_modal" tabindex="-1" role="dialog"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">'
+                + '<div class="modal-header"><h4 class="modal-title"><i class="fa fa-exclamation-triangle" style="color:#dc2626;"></i> ' + flagged.length + ' item' + (flagged.length > 1 ? 's are' : ' is') + ' priced well under market</h4></div>'
+                + '<div class="modal-body"><p>These prices are much lower than what they sell for on Discogs, eBay, or in our store. Ticked rows switch to the suggested price.</p>'
+                + '<table class="table table-condensed"><thead><tr><th></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>'
+                + '<div id="pg_reason_wrap" style="display:none;"><label>Why keep the low price on the unticked rows? (required)</label>'
+                + '<input type="text" class="form-control" id="pg_reason" placeholder="e.g. damaged cover, bargain bin, matching another copy"></div></div>'
+                + '<div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">Go back</button>'
+                + '<button type="button" class="btn btn-success" id="pg_apply">Use these prices &amp; save</button></div>'
+                + '</div></div></div>');
+            $('body').append($m);
+            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('.pg-use:not(:checked)').length > 0); };
+            $m.on('change', '.pg-use', syncReason);
+            $m.on('click', '#pg_apply', function () {
+                const kept = [];
+                $m.find('tbody tr').each(function () {
+                    const $tr = $(this);
+                    const idx = $tr.data('idx');
+                    const $row = rowsByIdx[idx];
+                    if ($tr.find('.pg-use').is(':checked')) {
+                        const v = parseFloat($tr.find('.pg-new').val());
+                        if (v > 0) {
+                            $row.find('input[name*="[single_dsp_inc_tax]"]').val(v.toFixed(2));
+                            markPriceGuard($row, null);
+                        }
+                    } else {
+                        kept.push($.trim($tr.find('td').eq(1).find('strong').text()));
+                    }
+                });
+                const reason = $.trim($('#pg_reason').val() || '');
+                if (kept.length && reason.length < 3) {
+                    $('#pg_reason').focus().css('border-color', '#dc2626');
+                    return;
+                }
+                $('#mass_create_form input[name="price_guard_reason"]').remove();
+                if (kept.length) {
+                    $('<input type="hidden" name="price_guard_reason">').val(reason + ' | kept: ' + kept.join('; ')).appendTo('#mass_create_form');
+                }
+                $m.modal('hide');
+                proceed();
+            });
+            $m.on('hidden.bs.modal', function () { $m.remove(); });
+            $m.modal('show');
+        });
+    };
+
     // Past-sales lookup for parsed rows. Also returns store_price: when our
     // store has consistently sold the same item for more than the pasted (AI)
     // price, store_price.suggested is the price we actually get (Sarah 2026-11-15).
@@ -2940,6 +3121,14 @@
                     // Guarded so a render failure never breaks the bulk queue.
                     try { renderSalesHistoryBadge($row, discogsData); }
                     catch (e) { console.warn('sales-history badge render failed', e); }
+
+                    // Underpricing check vs Discogs for this grade (warms the cache for save).
+                    if (price) {
+                        setTimeout(function () {
+                            const it = priceGuardItem($row);
+                            if (it) runPriceGuard([it]).then(function (res) { if (res) markPriceGuard($row, res[it.idx]); });
+                        }, 1500);
+                    }
 
                     // Raise the typed price if our store consistently sells this
                     // release/title higher (same check as Bulk Product Entry).

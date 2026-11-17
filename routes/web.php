@@ -438,6 +438,8 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
         ->name('product.massCreate.fetchDiscogsRelease');
     Route::post('/product/mass-create/past-sales-lookup', [ProductController::class, 'lookupPastSalesBulk'])
         ->name('product.massCreate.pastSalesLookup');
+    Route::post('/product/mass-create/price-guard', [ProductController::class, 'massCreatePriceGuard'])
+        ->name('product.massCreate.priceGuard');
     Route::get('/product/mass-create/resolve-artist-category', [ProductController::class, 'resolveArtistCategoryForMassCreate'])
         ->name('product.massCreate.resolveArtistCategory');
     Route::post('/product/mass-store', [ProductController::class, 'massStore'])->name('product.massStore');

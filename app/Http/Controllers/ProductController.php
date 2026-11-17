@@ -4231,6 +4231,9 @@ class ProductController extends Controller
 
     public function massStore(Request $request)
     {
+        if ($request->filled('price_guard_reason')) {
+            \Log::info('mass-add price guard override by user ' . auth()->id() . ': ' . mb_substr((string) $request->input('price_guard_reason'), 0, 1000));
+        }
         // Валидация входящих данных
         $validator = Validator::make($request->all(), [
             'products' => 'required|array|min:1',
@@ -5267,6 +5270,169 @@ class ProductController extends Controller
         return $out;
     }
 
+
+    /**
+     * Sarah 2026-11-17: underpricing guard for every Mass Add save.
+     * For each row, compare the typed price to what the item is worth:
+     *   - Discogs (rows with a release id): the sales-based price suggestion
+     *     for that row's media grade (Sealed = Mint), capped at 3x the
+     *     cheapest copy listed (the suggestion runs high on common titles),
+     *     plus the cheapest copy listed right now.
+     *   - Our own sales: median of 3+ strict-match sales in 2 years.
+     *   - eBay (rows with no Discogs id): median asking price x 0.8.
+     * A row is flagged when the price is under 70% of the best of those
+     * (and at least $3 under), or under 85% of the cheapest Discogs copy.
+     * The page makes staff fix it or type a reason before saving.
+     */
+    public function massCreatePriceGuard(Request $request)
+    {
+        $business_id = $request->session()->get('user.business_id');
+        $items = (array) $request->input('items', []);
+        $out = [];
+        $ebayBudget = 30; // uncached eBay calls per request
+        $discogs = null;
+        $token = null;
+        $ebay = null;
+
+        foreach (array_slice($items, 0, 300) as $item) {
+            $idx = (string) ($item['idx'] ?? '');
+            $price = (float) preg_replace('/[^0-9.]/', '', (string) ($item['price'] ?? ''));
+            if ($idx === '' || $price <= 0) {
+                continue;
+            }
+            $releaseId = (int) ($item['discogs_release_id'] ?? 0);
+            $cond = trim((string) ($item['condition'] ?? ''));
+            $hint = strtolower(($item['category'] ?? '') . ' ' . $cond . ' ' . ($item['name'] ?? ''));
+            $sealed = strpos($hint, 'seal') !== false;
+            $refs = [];
+
+            // Discogs
+            $dg = null;
+            if ($releaseId > 0) {
+                $key = 'massadd-guard-dg2:' . $releaseId;
+                $dg = \Cache::get($key);
+                if ($dg === null) {
+                    try {
+                        $discogs = $discogs ?: new \App\Services\DiscogsService($business_id);
+                        if ($token === null) {
+                            $d = (new \App\Utils\BusinessUtil())->getApiSettings($business_id)['discogs'] ?? [];
+                            $token = trim((string) ($d['token'] ?? '')) ?: trim((string) ($d['user_token'] ?? ''));
+                        }
+                        $t = urlencode($token);
+                        $st = $discogs->callApi('https://api.discogs.com/marketplace/stats/' . $releaseId . '?curr_abbr=USD&token=' . $t);
+                        $sg = $discogs->callApi('https://api.discogs.com/marketplace/price_suggestions/' . $releaseId . '?token=' . $t);
+                        $grades = [];
+                        foreach ((array) ($sg['data'] ?? []) as $label => $v) {
+                            if (is_object($v) && isset($v->value) && $v->value > 0) {
+                                $grades[$label] = round((float) $v->value, 2);
+                            }
+                        }
+                        $stData = $st['data'] ?? null;
+                        $dg = [
+                            'lowest' => isset($stData->lowest_price->value) ? round((float) $stData->lowest_price->value, 2) : null,
+                            'for_sale' => isset($stData->num_for_sale) ? (int) $stData->num_for_sale : null,
+                            'grades' => $grades,
+                        ];
+                        if (empty($st['error']) && empty($sg['error'])) {
+                            \Cache::put($key, $dg, now()->addDays(3));
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::warning('mass-add price guard Discogs ' . $releaseId . ': ' . $e->getMessage());
+                        $dg = null;
+                    }
+                }
+            }
+            $discogsOut = null;
+            if ($dg) {
+                $label = $sealed ? 'Mint (M)' : ($cond !== '' && $cond !== 'Sealed' ? $cond : 'Very Good Plus (VG+)');
+                $val = $dg['grades'][$label] ?? null;
+                if ($val !== null && !empty($dg['lowest'])) {
+                    $val = min($val, round($dg['lowest'] * 3, 2));
+                }
+                $discogsOut = [
+                    'release_id' => $releaseId,
+                    'grade' => $label,
+                    'value' => $val,
+                    'lowest' => $dg['lowest'],
+                    'for_sale' => $dg['for_sale'],
+                ];
+                if ($val) {
+                    $refs['Discogs ' . $label] = $val;
+                }
+            }
+
+            // Our own sales
+            $store = null;
+            try {
+                $store = $this->bulkEntryStorePriceCheck($business_id, $item);
+            } catch (\Throwable $e) {
+                $store = null;
+            }
+            if ($store && !empty($store['median'])) {
+                $refs['Our sales'] = (float) $store['median'];
+            }
+
+            // eBay, only when there's no Discogs release to go on
+            $ebayOut = null;
+            $name = trim((string) ($item['name'] ?? ''));
+            if ($releaseId <= 0 && mb_strlen($name) >= 3) {
+                $q = trim(($item['artist'] ?? '') . ' ' . $name);
+                $catId = (int) ($item['category_id'] ?? 0);
+                $key = 'massadd-guard-eb:' . $catId . ':' . md5(strtolower($q));
+                $ebayOut = \Cache::get($key);
+                if ($ebayOut === null && $ebayBudget > 0) {
+                    $ebayBudget--;
+                    try {
+                        $ebay = $ebay ?: new \App\Services\EbayService($business_id);
+                        if ($ebay->isConfigured()) {
+                            $cat = $catId ? Category::find($catId) : null;
+                            $ebayCat = trim(explode(',', (string) ($cat->ebay_category_ids ?? ''))[0]);
+                            $found = $ebay->getProductPrice($q, null, $ebayCat !== '' ? $ebayCat : null);
+                            if (!$found && $ebayCat !== '') {
+                                $found = $ebay->getProductPrice($q);
+                            }
+                            $prices = array_values(array_filter(array_map(function ($i) { return (float) ($i['value'] ?? 0); }, (array) $found)));
+                            sort($prices);
+                            $n = count($prices);
+                            $ebayOut = ['n' => $n, 'uri' => 'https://www.ebay.com/sch/i.html?_nkw=' . urlencode($q)];
+                            if ($n >= 3) {
+                                $ebayOut['median'] = round($n % 2 ? $prices[intdiv($n, 2)] : ($prices[$n / 2 - 1] + $prices[$n / 2]) / 2, 2);
+                            }
+                            \Cache::put($key, $ebayOut, now()->addDays(7));
+                        }
+                    } catch (\Throwable $e) {
+                        \Log::warning('mass-add price guard eBay "' . $q . '": ' . $e->getMessage());
+                    }
+                }
+                if (!empty($ebayOut['median'])) {
+                    $refs['eBay asking x0.8'] = round($ebayOut['median'] * 0.8, 2);
+                }
+            }
+
+            $reasons = [];
+            $best = $refs ? max($refs) : 0;
+            $bestSrc = $refs ? array_search($best, $refs) : null;
+            if ($best > 0 && $price < $best * 0.70 && $best - $price >= 3) {
+                $reasons[] = $bestSrc . ' ~$' . number_format($best, 2);
+            }
+            $lowest = $discogsOut['lowest'] ?? null;
+            if ($lowest && $price < $lowest * 0.85 && $lowest - $price >= 3) {
+                $reasons[] = 'cheapest copy on Discogs is $' . number_format($lowest, 2);
+                $best = max($best, $lowest);
+            }
+
+            $out[$idx] = [
+                'flag' => !empty($reasons),
+                'reasons' => $reasons,
+                'suggested' => $reasons ? max(0.99, ceil($best) - 0.01) : null,
+                'discogs' => $discogsOut,
+                'store' => $store ? ['median' => $store['median'], 'sales' => $store['sales']] : null,
+                'ebay' => $ebayOut,
+            ];
+        }
+
+        return response()->json(['success' => true, 'results' => $out]);
+    }
 
     /**
      * Get Product on auto complete
