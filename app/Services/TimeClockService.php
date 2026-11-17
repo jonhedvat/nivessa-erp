@@ -307,6 +307,30 @@ class TimeClockService
     }
 
     /**
+     * True when the ERP's copy of Sling hasn't synced for 8+ hours (the sync
+     * runs every 15 min 6am-10pm plus 03:30). Then the copy can't be trusted,
+     * so the schedule check lets people clock in instead of refusing them off
+     * old shift times. Sling's login token expired ~11/5 and Quenton + Nick
+     * were refused "too early" on 11/17 off two-week-old shifts.
+     */
+    public static function scheduleIsStale(): bool
+    {
+        try {
+            $last = DB::table('sling_shifts')->max('last_synced_at');
+            if (!$last) {
+                return true;
+            }
+            $stale = \Carbon::parse($last, self::TZ)->lt(self::now()->copy()->subHours(8));
+            if ($stale && \Cache::add('time_clock_sling_stale_logged', 1, 3600)) {
+                \Log::warning('time clock: Sling schedule last synced ' . $last . ' - schedule check off until Sling is reconnected at /admin/sling/login');
+            }
+            return $stale;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * Pull today's and tomorrow's Sling shifts right now, for a clock-in the
      * schedule check refused. At most once a minute across everyone so a
      * person tapping again and again doesn't hammer Sling. True if it ran.
@@ -339,7 +363,7 @@ class TimeClockService
     {
         $now = self::now();
         $today = $now->toDateString();
-        if (!self::hasScheduleData($today)) {
+        if (!self::hasScheduleData($today) || self::scheduleIsStale()) {
             return ['ok' => true, 'no_data' => true, 'late_min' => null, 'sched_start' => null];
         }
         $win = self::scheduleWindow() * 60;
