@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class BugQueueController extends Controller
 {
-    const REPO = 'sohaib11222/playlisr_erp';
+    const REPO = 'jonhedvat/nivessa-erp';
     const SETTINGS = 'bug-queue/settings.json';
 
     const STATUS_LABELS = [
