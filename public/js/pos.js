@@ -5401,15 +5401,18 @@ function submitQuickContactForm(form) {
                 $('div.contact_modal').modal('hide');
                 update_shipping_address(result.data)
                 toastr.success(result.msg);
-                
-                // Fix column alignment after customer creation
-                setTimeout(function() {
-                    $('#customer_account_info').css('display', 'none').show();
-                    // Force layout recalculation
-                    if (typeof $('#customer_account_info')[0] !== 'undefined') {
-                        $('#customer_account_info')[0].offsetHeight;
-                    }
-                }, 100);
+
+                // Jon 11/16: a new account often showed the LAST customer who
+                // bought. The old code re-showed #customer_account_info without
+                // reloading it, so it still held the previous sale's customer.
+                // Run the same handler as picking from the search instead, which
+                // loads the new account's own panel, balance and employee flag.
+                $('#customer_account_name').html('');
+                $('#customer_account_info').hide();
+                $('select#customer_id').trigger({
+                    type: 'select2:select',
+                    params: { data: $.extend({ balance: 0 }, result.data) }
+                });
             } else {
                 toastr.error(result.msg);
             }
