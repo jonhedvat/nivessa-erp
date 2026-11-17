@@ -106,7 +106,7 @@
     {{-- Team, in the picked window --}}
     <div class="md-box">
         <div class="md-h">Your team, last {{ $days }} days</div>
-        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Value listed = what the items they priced here in this window sell for. Median price / item = the middle sale price of what they priced in this window, per category. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
+        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Value listed = what the items they priced here in this window sell for. Sold so far = what the items they priced here in this window have actually sold for (final sales, returns taken off). Median price / item = the middle sale price of what they priced in this window, per category. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
         <div class="md-scroll">
         <table class="md-t">
             <thead><tr>
@@ -116,6 +116,7 @@
                 <th class="r">Priced</th>
                 <th class="r">Priced / shift</th>
                 <th class="r">Value listed</th>
+                <th class="r">Sold so far</th>
                 <th>Median price / item</th>
                 <th class="r">Signups</th>
                 <th class="r">Signups / shift</th>
@@ -137,6 +138,15 @@
                     <td class="r">{{ $num($p['priced']) }}</td>
                     <td class="r">{{ $p['shifts'] ? number_format($p['priced'] / $p['shifts'], 1) : '-' }}</td>
                     <td class="r">{{ $p['value'] > 0 ? '$' . number_format($p['value']) : '-' }}</td>
+                    <td class="r">
+                        @if($p['revenue'] === null)
+                            <span class="md-dim">-</span>
+                        @elseif($p['sold'] > 0)
+                            ${{ number_format($p['revenue']) }} <span class="md-dim">({{ $num($p['sold']) }} items)</span>
+                        @else
+                            <span class="md-dim">$0</span>
+                        @endif
+                    </td>
                     <td>
                         @forelse($medSort($mediansWindow['people'][$uid] ?? []) as $fmt => $med)
                             <span class="md-chip">{{ $fmt }} {{ $medMoney($med) }}</span>
@@ -164,12 +174,13 @@
                     <td class="r">@if($p['said_not_done'] > 0)<span class="md-bad">{{ $p['said_not_done'] }}</span>@else 0 @endif</td>
                 </tr>
             @empty
-                <tr><td colspan="17" class="md-dim">No one is set up at {{ $storeLabel }} yet.</td></tr>
+                <tr><td colspan="18" class="md-dim">No one is set up at {{ $storeLabel }} yet.</td></tr>
             @endforelse
             @if(!empty($mediansWindow['team']))
                 <tr>
                     <td class="nm">Whole team</td>
                     <td colspan="5"></td>
+                    <td class="r"><strong>${{ number_format(array_sum(array_map(function ($x) { return (float) $x['revenue']; }, $people))) }}</strong></td>
                     <td>
                         @foreach($medSort($mediansWindow['team']) as $fmt => $med)
                             <span class="md-chip">{{ $fmt }} {{ $medMoney($med) }}</span>
