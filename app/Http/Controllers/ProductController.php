@@ -42,8 +42,8 @@ use App\Services\EbayService;
 
 class ProductController extends Controller
 {
-    /** 7" / 45s minimum shelf price (Sarah 2026-11-17). */
-    const SEVEN_INCH_MIN_PRICE = 3.00;
+    /** 7" / 45s minimum shelf price (Sarah 2026-11-17; $3 -> $5: under $5 sold ~10% vs ~17% at $5-6). */
+    const SEVEN_INCH_MIN_PRICE = 5.00;
     const SEVEN_INCH_CATEGORY = '/7"|7 inch|45 ?rpm|\\b45s\\b/i';
 
     // Sarah 2026-11-17: minimum price per "Category > Subcategory" for Mass
