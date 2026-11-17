@@ -705,8 +705,15 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         $total = 0;
         $feed = [];
         $seen = [];
+        // Fatteen's ERP login is under his company name (Nerdy Solutions).
+        $alias = strtolower($who) === 'fatteen' ? ['fatteen', 'nerdy'] : [strtolower($who)];
+        $isMe = function ($name) use ($alias) {
+            $n = strtolower(trim((string) $name));
+            foreach ($alias as $a) { if ($n !== '' && strpos($n, $a) === 0) { return true; } }
+            return false;
+        };
         foreach (self::readScore() as $e) {
-            if (($e['who'] ?? '') !== $who) {
+            if (!$isMe($e['who'] ?? '')) {
                 continue;
             }
             if (!empty($e['once'])) {
@@ -722,7 +729,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         // his "Fixed it" history and messages he resolved in the Communications Hub.
         $recent = [];
         foreach (self::readActions() as $k => $a) {
-            if (($a['action'] ?? '') !== 'fixed' || ($a['by'] ?? '') !== $who || empty($a['at'])) {
+            if (($a['action'] ?? '') !== 'fixed' || !$isMe($a['by'] ?? '') || empty($a['at'])) {
                 continue;
             }
             $at = Carbon::parse($a['at'])->setTimezone(self::TZ);
@@ -734,9 +741,9 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             $seen['comm-key:' . $k] = true;
         }
         try {
-            $uid = \DB::table('users')->where('first_name', $who)->whereNull('deleted_at')->value('id');
-            if ($uid) {
-                $res = \DB::table('communications')->where('resolved_by', $uid)->whereNotNull('resolved_at')
+            $uids = \DB::table('users')->whereNull('deleted_at')->where(function ($q) use ($alias) { foreach ($alias as $a) { $q->orWhere('first_name', 'like', $a . '%'); } })->pluck('id')->all();
+            if ($uids) {
+                $res = \DB::table('communications')->whereIn('resolved_by', $uids)->whereNotNull('resolved_at')
                     ->where('resolved_at', '>=', $now->copy()->subDays(60)->format('Y-m-d H:i:s'))
                     ->orderByDesc('resolved_at')->limit(500)->get(['id', 'customer_name', 'contact_info', 'resolution_notes', 'resolved_at']);
                 foreach ($res as $c) {
@@ -757,7 +764,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         try {
             $cut = $now->copy()->subDays(60)->format('Y-m-d');
             foreach (\App\Http\Controllers\DailyChecklistController::readAll() as $day) {
-                if (stripos((string) ($day['user_name'] ?? ''), $who) !== 0 || ($day['date'] ?? '') < $cut) {
+                if (!$isMe($day['user_name'] ?? '') || ($day['date'] ?? '') < $cut) {
                     continue;
                 }
                 $n = count((array) ($day['checked'] ?? []));
