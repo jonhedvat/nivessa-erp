@@ -23,7 +23,7 @@
     }
     $jobs = [
         ['Turn seller leads into buys', 'Answer every seller the same day by text or email (use the seller prompt below) and stay on them until they book a time to bring the collection in. Collection buys are where the biggest margin is.'],
-        ['Fix "can\'t find" orders before they become cancels', 'Get the cashier to recheck the bins the same day, offer a swap, and only refund as a last step.'],
+        ['Save every sale on "can\'t find" orders', 'Get the cashier to recheck the bins the same day, and if it is gone, offer the customer a swap.'],
         ['Own venue bookings and event partners end to end', 'Reply by email, quote, book and collect payment yourself instead of forwarding leads. Run every reply through Claude first.'],
         ['Post on social every day', 'One post a day on Instagram and TikTok, never several at once. Use the famous-musician plan below, plus rare finds, new arrivals (ask the cashier on shift for photos), big buys coming in, and every event before its day.'],
         ['Run listening party prep', 'Giveaway box, photo, staffing and playback link for every party. It shows up above when a step is due.'],
@@ -31,7 +31,7 @@
         ['Answer replies to the saved cart email', 'The website now emails people automatically when they leave items in their cart. Replies come to hello@nivessa.com: answer each one the same day and help them finish the order.'],
         ['Turn record requests into special orders', 'When someone asks for a record we don\'t have, check AMS and Alliance. If it\'s in print, quote the price, take a deposit and order it. Reply within a day either way.'],
         ['Find sellers every week', 'Once a week post a "We buy records and CDs, cash on the spot, Pico and Hollywood" ad on Craigslist LA, Nextdoor and local Facebook groups.'],
-        ['Get and answer Google reviews', 'Text the review link to every happy customer. Thank every review by name within a day, and answer bad ones with how we fixed it. Post one update a week on each store\'s Google profile.'],
+        ['Get and answer Google reviews', 'Text the review link to every happy customer. Thank every review by name within a day, and if someone had a rough time, tell them how we made it right. Post one update a week on each store\'s Google profile.'],
         ['Categorize QuickBooks weekly', 'Use the bank rules and past categories. Only leave what is truly new.'],
         ['Draft the weekly reorder', 'Build the order from the Weekly Reorder page for Jon to approve.'],
     ];
@@ -42,7 +42,7 @@
         ['Social captions', 'Write a 2-sentence Instagram caption for [Artist]\'s birthday. Mention one well-known album and that we have [album] on vinyl at Nivessa [store]. Add 4 hashtags.'],
         ['Event partners', 'This person wants to do an event at our Hollywood store: [paste]. Write a warm reply with our stage options, ask for their date and expected crowd, and suggest a call this week.'],
         ['Review replies', 'Here is a Google review: [paste]. Write a short, warm reply that thanks them by name. If it is negative, say what we fixed.'],
-        ['When stuck', 'I need to [task]. Here is what I know: [details]. Give me the steps.'],
+        ['Need a hand', 'I need to [task]. Here is what I know: [details]. Give me the steps.'],
     ];
 @endphp
 

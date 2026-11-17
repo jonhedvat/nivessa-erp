@@ -88,8 +88,8 @@
     <div class="oi-top">
         <div>
             <h1>Open Items</h1>
-            <p>Everything from the last 2 weeks still waiting on someone. Updated {{ $asOf }}.</p>
-            <div class="oi-total {{ $total === 0 ? 'zero' : '' }}">{{ $total === 0 ? 'Nothing open. Nice work.' : $total . ' open' }}</div>
+            <p>Everything from the last 2 weeks that is ready for you to finish. Updated {{ $asOf }}.</p>
+            <div class="oi-total {{ $total === 0 ? 'zero' : '' }}">{{ $total === 0 ? 'All done. Amazing work!' : $total . ' to do' }}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
             <a class="oi-btn" href="{{ url('/open-items?refresh=1') }}">Refresh</a>
@@ -117,7 +117,7 @@
         <div class="oi-done"><strong>3.</strong> When the problem is gone, click <strong>Fixed it</strong> and write one line about what you did, e.g. "Called her, sent a swap, she is happy". It disappears.</div>
         <div class="oi-done"><strong>4.</strong> If the ERP is broken or missing something you need, click <strong>ERP bug</strong> and write what happened. Do not leave it sitting.</div>
         <div class="oi-done"><strong>5.</strong> When every box says All clear, do today's social post, then the bigger jobs below.</div>
-        <p class="oi-how">"Fixed it" only counts if the problem is really gone. Anything still open 48 hours later comes back here with your note.</p>
+        <p class="oi-how">"Fixed it" means it is really finished. If something comes back within 48 hours, it shows up here again with your note so you can finish it.</p>
     </div>
 
     <div class="oi-layout"><div class="oi-main">
