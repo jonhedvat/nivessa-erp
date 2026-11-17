@@ -235,6 +235,11 @@
                 @php $tot = $open[$bk] + $doneB[$bk]; @endphp
                 <section class="oi-panel" data-b="{{ $bk }}" style="display:none">
                     <div class="oi-panel-head"><h2>{{ $nm }}</h2><span>{{ $doneB[$bk] }} of {{ $tot }} done</span></div>
+                    @if($bk === 'store')
+                        @php $yday = now('America/Los_Angeles')->subDay()->format('Y-m-d'); $rn = ((array) (\App\Utils\RegisterReconUtil::settings()['day_notes'] ?? []))[$yday] ?? null; @endphp
+                        <div class="oi-group"><h3>Register recon for yesterday</h3><p>{{ $rn ? 'Done. Your summary is saved.' : 'Read the flags, find out why, and write your summary.' }}</p></div>
+                        <div class="oi-row"><div class="oi-who">{{ now('America/Los_Angeles')->subDay()->format('l m/d/y') }}</div><div class="oi-age" style="{{ $rn ? 'color:#1B5E20' : '' }}">{{ $rn ? 'Done' : 'To do' }}</div><div class="oi-acts"><a class="oi-act" href="{{ url('/register-recon?date=' . $yday) }}">Open</a></div></div>
+                    @endif
                     @if($open[$bk] === 0)
                         <div class="oi-empty">All done! Click the next box on the left.</div>
                     @endif

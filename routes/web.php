@@ -1688,6 +1688,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/register-recon/post', 'RegisterReconController@postNow');
     Route::post('/register-recon/missed-drop', 'RegisterReconController@logMissedDrop');
     Route::post('/register-recon/explain-drawer', 'RegisterReconController@explainDrawer');
+    Route::post('/register-recon/day-note', 'RegisterReconController@saveDayNote');
     // Staff-facing "End Shift" for non-cashier roles (pricing/listing like
     // Zella, fulfillment like Nick) who don't close a register. Standalone
     // page — never touches the POS close flow.

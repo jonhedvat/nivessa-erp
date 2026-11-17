@@ -19,6 +19,13 @@
 	.rr-ok { color: #2F6B3E; font-weight: 600; font-size: 14px; }
 	.rr-input { width: 100%; padding: 10px 12px; font-family: inherit; font-size: 14px; border: 1px solid #DFD2B3; border-radius: 9px; background: #fff; }
 	.rr-msg { padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 13px; }
+	.rr-flow { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+	.rr-flow div { background:#fff; border:1px solid #ECE3CF; border-radius:10px; padding:12px; }
+	.rr-flow b { display:block; font-size:15px; margin-bottom:4px; }
+	.rr-g { background:#fff; border:1px solid #ECE3CF; border-radius:10px; padding:10px 12px; margin-bottom:6px; font-size:14px; }
+	.rr-g summary { cursor:pointer; }
+	.rr-g div { margin-top:6px; }
+	@media (max-width: 640px) { .rr-flow { grid-template-columns:1fr; } }
 	.rr-pre { white-space: pre-wrap; font-size: 12px; background: #fff; border: 1px solid #ECE3CF; border-radius: 10px; padding: 12px; }
 </style>
 
@@ -28,6 +35,18 @@
 			{{ session('status')['msg'] }}
 		</div>
 	@endif
+
+	<details class="rr-card" {{ empty($day_note) ? 'open' : '' }}>
+		<summary style="cursor:pointer;font-size:18px;font-weight:800;">How register recon works</summary>
+		<div style="display:grid;gap:12px;margin-top:12px;font-size:14px;">
+			<div>Every sale happens in <strong>two places</strong>: the customer pays on <strong>Clover</strong> (the card machine), and the cashier rings the records in the <strong>ERP</strong> (so our stock goes down). Recon is checking that both sides tell the same story.</div>
+			<div class="rr-flow">
+				<div><b>Check 1: Sales</b>Every ERP sale should have a Clover payment for the same amount, and every Clover payment should have an ERP sale.</div>
+				<div><b>Check 2: Cash drawer</b>At close, the cash counted should equal: starting cash + cash sales &minus; cash paid for buys &minus; safe drops.</div>
+			</div>
+			<div>When something doesn't match, it shows up below as a flag. Your job is to find out <strong>why</strong>, get it fixed, and write what happened in your own words.</div>
+		</div>
+	</details>
 
 	<div class="rr-card">
 		<h2>Register reconciliation</h2>
@@ -66,6 +85,52 @@
 					@endforeach
 				</div>
 			@endforeach
+
+			@php
+				$guide = [
+					'no_clover' => ['ERP sale with no Clover charge', 'The cashier rang the sale in the ERP, but no payment shows on Clover.', 'Usually a cash sale that was not also rung on Clover, or the card was charged on the other store\'s machine.', 'Ask the cashier: did the customer pay? If yes and it was cash, ring it on Clover too. If the sale never happened, void it in the ERP.'],
+					'no_erp' => ['Clover charge with no ERP sale', 'Money came in on Clover, but no sale was rung in the ERP.', 'The cashier charged the card but skipped ringing the records, so our stock still shows them on the shelf.', 'Ask the cashier which records they sold, then ring them in the ERP so the stock is right.'],
+					'mismatch' => ['Different amount', 'The ERP sale and the Clover payment are both there, but the amounts are different.', 'A price was changed on one side only, or a discount was given on Clover but not in the ERP (or the other way).', 'Find which amount the customer really paid. Fix the ERP sale to match.'],
+					'match' => ['Needs matching', 'An ERP sale and a Clover payment look like the same sale, but the system could not link them by itself.', 'Times or amounts are slightly off.', 'Open the recent feed and match them if they are the same sale.'],
+					'drawer' => ['Drawer count is off', 'The cash counted at close is different from what should be in the drawer.', 'A safe drop or cash buy was not logged, change was given wrong, or a cash sale was not rung.', 'First check the safe drops and cash buys for that shift. If they explain it, mark it explained. If not, ask the cashier.'],
+					'smallshort' => ['Drawer count is a little off', 'The drawer count is off by a small amount.', 'Usually a counting mistake or change given wrong.', 'Note it. Only ask the cashier if it happens again.'],
+					'handover' => ['Handover gap', 'The next shift\'s opening count does not match what the last shift counted at close.', 'Cash moved between shifts (to the safe overnight), or one of the counts was wrong.', 'Check if the cash went to the safe and came back. If yes, mark it explained.'],
+					'uncounted' => ['Closed without counting', 'The register was closed without a cash count.', 'The cashier skipped the count or the register closed by itself.', 'Remind the cashier to count the drawer at every close.'],
+					'samecount' => ['Same count as opening', 'The close count is exactly the same as the opening count.', 'The cashier probably did not really count.', 'Ask them to count the drawer for real at close.'],
+					'changerun' => ['Change run', 'Cash was moved between stores for change.', 'Normal, as long as both stores logged it.', 'Make sure both sides were logged.'],
+					'draftbuy' => ['Buy left as a draft', 'A record buy was started but never finished.', 'If we paid cash for it, the drawer looks short because the system does not know cash went out.', 'Ask the cashier if we bought it. Then Accept or Reject the buy.'],
+				];
+				$kindsToday = [];
+				foreach ($report['stores'] as $s) { foreach ($s['items'] as $it) { if (!\App\Utils\RegisterReconUtil::isExplained($it) && isset($guide[$it['kind']])) { $kindsToday[$it['kind']] = ($kindsToday[$it['kind']] ?? 0) + 1; } } }
+			@endphp
+			@if($kindsToday)
+				<div class="rr-guide">
+					<h3 style="margin:18px 0 8px;font-size:16px;font-weight:800;">What today's flags mean</h3>
+					@foreach($kindsToday as $k => $n)
+						@php $g = $guide[$k]; @endphp
+						<details class="rr-g">
+							<summary><strong>{{ $g[0] }}</strong> <span>({{ $n }})</span></summary>
+							<div><b>What it means:</b> {{ $g[1] }}</div>
+							<div><b>Why it happens:</b> {{ $g[2] }}</div>
+							<div><b>How to fix it:</b> {{ $g[3] }}</div>
+						</details>
+					@endforeach
+				</div>
+			@endif
+
+			<div class="rr-summary">
+				<h3 style="margin:18px 0 4px;font-size:16px;font-weight:800;">Your summary for this day</h3>
+				<div class="rr-sub" style="margin-bottom:8px">In your own words: what was off, why, and what you did about it. Typing only, no pasting.</div>
+				@if(!empty($day_note))
+					<div class="rr-item" style="background:#E6F4EA"><strong>{{ $day_note['by'] ?? '' }}, {{ $day_note['at'] ?? '' }}:</strong> {{ $day_note['text'] ?? '' }}</div>
+				@endif
+				<form method="post" action="/register-recon/day-note">
+					{!! csrf_field() !!}
+					<input type="hidden" name="date" value="{{ $date }}">
+					<textarea name="text" class="rr-input rr-nopaste" rows="3" minlength="30" required placeholder="Example: Hollywood was $40 off because Andy paid a seller cash but left the buy as a draft. I asked him, he accepted it, and the drawer now matches.">{{ $day_note['text'] ?? '' }}</textarea>
+					<div style="display:flex;gap:10px;align-items:center;margin-top:8px;"><button type="submit" class="rr-btn rr-btn-dark">Save my summary</button><span id="rr-paste-msg" style="font-size:13px;font-weight:700;color:#8A3A2E;"></span></div>
+				</form>
+			</div>
 
 			@php
 				$drawerItems = [];
@@ -136,4 +201,13 @@
 	</div>
 	@endif
 </div>
+<script>
+document.querySelectorAll('.rr-nopaste').forEach(function (el) {
+	el.addEventListener('paste', function (e) {
+		e.preventDefault();
+		var m = document.getElementById('rr-paste-msg');
+		if (m) m.textContent = 'Type it in your own words, no pasting.';
+	});
+});
+</script>
 @endsection

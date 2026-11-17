@@ -70,8 +70,9 @@ class RegisterReconController extends Controller
             ->orderByDesc('cr.created_at')
             ->get(['cr.id', 'cr.created_at', 'cr.status', 'u.first_name', 'bl.name as loc']);
 
+        $day_note = ((array) (RegisterReconUtil::settings()['day_notes'] ?? []))[$date] ?? null;
         return view('register_recon.index', compact(
-            'date', 'report', 'slack_text', 'error', 'masked', 'posted', 'prev_date', 'next_date', 'allow_next', 'recent_registers'
+            'date', 'report', 'slack_text', 'error', 'masked', 'posted', 'prev_date', 'next_date', 'allow_next', 'recent_registers', 'day_note'
         ));
     }
 
@@ -174,6 +175,21 @@ class RegisterReconController extends Controller
     }
 
     /** Mark a drawer/handover flag answered, or clear the note (blank reason). */
+    /** His own-words summary for a day (Sarah 2026-11-16: he should understand it, not copy and paste). */
+    public function saveDayNote(Request $request)
+    {
+        $this->requireAdmin();
+        $date = (string) $request->input('date');
+        $text = trim((string) $request->input('text'));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || mb_strlen($text) < 30) {
+            return redirect()->back()->with('status', ['success' => 0, 'msg' => 'Write at least a couple of sentences: what was off, why, and what you did.']);
+        }
+        $notes = (array) (RegisterReconUtil::settings()['day_notes'] ?? []);
+        $notes[$date] = ['text' => mb_substr($text, 0, 2000), 'by' => trim((string) auth()->user()->first_name), 'at' => now('America/Los_Angeles')->format('m/d/y g:i A')];
+        RegisterReconUtil::saveSettings(['day_notes' => $notes]);
+        return redirect()->back()->with('status', ['success' => 1, 'msg' => 'Summary saved. Nice work.']);
+    }
+
     public function explainDrawer(Request $request)
     {
         $this->requireAdmin();
