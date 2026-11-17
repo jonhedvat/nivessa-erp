@@ -21,7 +21,7 @@
         });
         return $m;
     };
-    $medMoney = function ($v) { return '$' . (floor($v) == $v ? number_format($v) : number_format($v, 2)); };
+    $medMoney = function ($v) { $v = round((float) $v, 2); return '$' . (floor($v) == $v ? number_format($v) : number_format($v, 2)); };
     $lowWhole = array_filter($low, function ($l) { return $l['whole']; });
     $lowGenres = array_filter($low, function ($l) { return !$l['whole']; });
     $fail = '<div class="md-empty">Couldn\'t load this part right now. Refresh in a minute.</div>';
