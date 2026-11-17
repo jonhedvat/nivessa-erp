@@ -563,6 +563,11 @@ class AdminSidebarMenu
                                 ['icon' => 'fa fas fa-file-pdf-o', 'active' => request()->segment(2) == 'vinylfuture-invoice-import']
                             );
                             $sub->url(
+                                action('AmsInvoiceImportController@matadorIndex'),
+                                'Import Matador Invoice',
+                                ['icon' => 'fa fas fa-file-pdf-o', 'active' => request()->segment(2) == 'matador-invoice-import']
+                            );
+                            $sub->url(
                                 action('DistributorInvoiceAuditController@index'),
                                 'Distributor Invoice Audit',
                                 ['icon' => 'fa fas fa-check-square-o', 'active' => request()->segment(2) == 'distributor-invoice-audit']

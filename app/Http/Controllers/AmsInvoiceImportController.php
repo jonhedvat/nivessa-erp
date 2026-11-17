@@ -78,6 +78,82 @@ class AmsInvoiceImportController extends Controller
         return $this->runApply($request, 'vinylfuture');
     }
 
+    public function matadorIndex()
+    {
+        return $this->showPage('matador');
+    }
+
+    public function matadorPreview(Request $request)
+    {
+        return $this->runPreview($request, 'matador');
+    }
+
+    public function matadorApply(Request $request)
+    {
+        return $this->runApply($request, 'matador');
+    }
+
+    // Matador catalog # => feed row (upc, artist, title, cost), from the
+    // Matador price feed the nightly supplier fetch saves. Feeds saved before
+    // the catalog # was recorded have no 'cat': then the price sheet is read
+    // live from Matador's Box folder (cached 12h).
+    private function matadorCatalog($business_id)
+    {
+        $feed = app(\App\Services\InventoryCheckService::class)->loadSupplierFeed((int) $business_id, 'matador');
+        $rows = is_array($feed['rows'] ?? null) ? $feed['rows'] : [];
+        $hasCat = false;
+        foreach ($rows as $r) { if (!empty($r['cat'])) { $hasCat = true; break; } }
+        if (!$hasCat) {
+            try {
+                $rows = \Cache::remember('matador_catalog_rows', 60 * 60 * 12, function () {
+                    return app(\App\Services\SupplierFetchers\MatadorFetcher::class)->fetch();
+                });
+            } catch (\Throwable $e) {
+                \Log::warning('Matador catalog lookup failed: ' . $e->getMessage());
+            }
+        }
+        $byCat = [];
+        foreach ($rows as $r) {
+            $c = preg_replace('/[^A-Z0-9]/', '', strtoupper((string) ($r['cat'] ?? '')));
+            if ($c !== '' && !empty($r['upc'])) $byCat[$c] = $r;
+        }
+        return ['by_cat' => $byCat, 'rows' => $rows];
+    }
+
+    // Fill in the UPC for each Matador line: catalog # first, then artist +
+    // title + format against the price sheet. Lines with a UPC go the barcode
+    // route (catalog # cleared); the rest keep the catalog # for name matching.
+    private function resolveMatadorUpcs($business_id, array $items)
+    {
+        $cat = $this->matadorCatalog($business_id);
+        $key = function ($s) { return \App\Services\DistributorInvoiceImport::titleKey($s); };
+        $byName = null;
+        foreach ($items as &$it) {
+            if (!empty($it['upc'])) continue;
+            $c = preg_replace('/[^A-Z0-9]/', '', strtoupper((string) ($it['catno'] ?? '')));
+            $hit = $c !== '' ? ($cat['by_cat'][$c] ?? null) : null;
+            if (!$hit) {
+                if ($byName === null) {
+                    $byName = [];
+                    foreach ($cat['rows'] as $r) {
+                        if (empty($r['upc'])) continue;
+                        $byName[$key($r['artist'] ?? '') . '|' . $key($r['title'] ?? '') . '|' . (($r['format'] ?? '') === 'CD' ? 'CD' : (($r['format'] ?? '') === 'Cassette' ? 'MC' : 'LP'))][] = $r;
+                    }
+                }
+                $fmt = strtoupper((string) ($it['prodType'] ?? ''));
+                $fmt = strpos($fmt, 'CD') !== false ? 'CD' : ((strpos($fmt, 'MC') !== false || strpos($fmt, 'CASS') !== false) ? 'MC' : 'LP');
+                $cands = $byName[$key($it['artist'] ?? '') . '|' . $key($it['title'] ?? '') . '|' . $fmt] ?? [];
+                if (count($cands) === 1) $hit = $cands[0]; // ambiguous (colour variants): leave for review
+            }
+            if ($hit) {
+                $it['upc'] = preg_replace('/\D/', '', (string) $hit['upc']);
+                $it['catno'] = '';
+            }
+        }
+        unset($it);
+        return $items;
+    }
+
     // EUR -> USD for the invoice date (ECB reference rate via frankfurter.app),
     // falling back to the latest rate. Null when neither answers.
     private function eurUsdRate($date)
@@ -172,6 +248,10 @@ class AmsInvoiceImportController extends Controller
                 'success' => false,
                 'msg' => 'No line items were parsed from the PDF. Is this an ' . $cfg['label'] . ' invoice?',
             ], 422);
+        }
+
+        if ($distributor === 'matador') {
+            $items = $this->resolveMatadorUpcs($business_id, $items);
         }
 
         // Euro invoices (Vinyl Future): convert to dollars and, unless turned

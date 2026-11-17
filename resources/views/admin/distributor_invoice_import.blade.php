@@ -10,6 +10,10 @@
         catalog number or artist + title (these invoices have no barcodes), and titles we don't carry yet get a new
         product (name, category, cost and price filled in for you to check). Euro prices are converted to dollars at the
         invoice date's rate, with postage and fees spread into each record's cost.
+        @elseif ($distributor === 'matador')
+        Drop a {{ $cfg['long'] }} sales order or invoice PDF below. It's read in your browser. Matador prints catalog
+        numbers (XL-529-1), not barcodes, so each one is looked up in Matador's price sheet to get the UPC, then matched
+        to a product. Titles we don't carry yet get a new product (name, barcode, category, cost and price filled in for you to check).
         @else
         Drop an {{ $cfg['long'] }} invoice PDF below. It's read in your browser, each UPC is matched to a product,
         and titles we don't carry yet get a new product (name, barcode, category, cost and price filled in for you to check).
@@ -19,7 +23,7 @@
         Every import is undoable at <a href="/admin/admin-action-history">admin-action-history</a>.
         @if ($distributor === 'ams')
             Alliance invoices go in at <a href="/admin/alliance-invoice-import">Import Alliance Invoice</a>.
-        @elseif ($distributor === 'vinylfuture')
+        @elseif ($distributor === 'vinylfuture' || $distributor === 'matador')
             AMS and Alliance invoices go in at <a href="/admin/ams-invoice-import">Import AMS Invoice</a> and <a href="/admin/alliance-invoice-import">Import Alliance Invoice</a>.
         @else
             AMS invoices go in at <a href="/admin/ams-invoice-import">Import AMS Invoice</a>.
@@ -93,7 +97,7 @@
             <table class="table table-condensed table-bordered" style="font-size:12px;">
                 <thead>
                     <tr>
-                        <th></th><th>{{ $distributor === 'vinylfuture' ? 'Cat #' : 'UPC' }}</th><th>Invoice line</th><th>Product</th><th>Category</th>
+                        <th></th><th>{{ $distributor === 'vinylfuture' ? 'Cat #' : ($distributor === 'matador' ? 'UPC / Cat #' : 'UPC') }}</th><th>Invoice line</th><th>Product</th><th>Category</th>
                         <th style="text-align:right;">Qty</th><th style="text-align:right;">Unit cost</th>
                         <th style="text-align:right;">Sell price</th><th style="text-align:right;">Line total</th><th>Note</th>
                     </tr>
@@ -296,6 +300,47 @@ function parseVinylFuture(rows) {
     return {header, items: merged, totals};
 }
 
+// ---- Matador Direct parser ----
+// NetSuite sales order / invoice: "Quantity Item Description Format NR? Rate
+// Amount", e.g. "1 XL-529-1 Tyler, The Creator : Goblin 2X LP No $18.70 $18.70".
+// Description is "Artist : Title". The sales order number (SO-474894) is the
+// key when printed, so the order and its later invoice aren't imported twice.
+function parseMatador(rows) {
+    const header = {}, items = [], totals = {};
+    const lines = rows.map(rowText);
+    const text = lines.join('\n');
+    let m;
+    const so = text.match(/\bSO-?\d{4,}\b/);
+    const inv = text.match(/\b(?:INV|IN)-?\d{4,}\b/) || text.match(/Invoice\s*(?:#|No\.?|Number)?\s*:?\s*([A-Z]*-?\d{4,})/i);
+    header.invoice = so ? so[0] : (inv ? (inv[1] || inv[0]) : '');
+    if (so && inv) header.amsRef = inv[1] || inv[0];
+    if ((m = text.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/))) header.date = `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+    const ship = (text.match(/Ship To:([\s\S]{0,200})/) || [])[1] || '';
+    if (/\bPico\b/i.test(ship)) header.store = 'pico';
+    else if (/Hollywood|Sunset|Cahuenga/i.test(ship)) header.store = 'hollywood';
+    if ((m = text.match(/Subtotal\s*\$?\s*([\d,]+\.\d{2})/))) totals.goods = num(m[1]);
+    if ((m = text.match(/(?:Shipping|Freight)[^\n$]*\$\s*([\d,]+\.\d{2})/i))) header.freight = num(m[1]);
+    if ((m = text.match(/\bTotal\s*\$\s*([\d,]+\.\d{2})/))) totals.amount = num(m[1]);
+
+    const FMT = '(?:\\d+X\\s*)?(?:\\d+G\\s+)?(?:LP|CD|MC|CASSETTE|CASS|7"|10"|12"|7IN|10IN|12IN|EP|BOX|BOXSET|DVD|BLU-?RAY|BOOK|T-?SHIRT|MERCH|POSTER|SACD)';
+    const LINE = new RegExp('^(\\d{1,4})\\s+([A-Z0-9][A-Z0-9./]*(?:-[A-Z0-9.]+)+)\\s+(.+?)\\s+(' + FMT + '(?:\\s+' + FMT + ')?)\\s+(Yes|No)\\s+\\$?([\\d,]+\\.\\d{2})\\s+\\$?([\\d,]+\\.\\d{2})$', 'i');
+    // Unknown format word: take the last word before NR? as the format.
+    const LOOSE = /^(\d{1,4})\s+([A-Z0-9][A-Z0-9.\/]*(?:-[A-Z0-9.]+)+)\s+(.+)\s+(\S+)\s+(Yes|No)\s+\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})$/i;
+    for (const line of lines) {
+        const lm = line.match(LINE) || line.match(LOOSE);
+        if (!lm) continue;
+        const desc = lm[3].trim();
+        const parts = desc.split(/\s+:\s+/);
+        const artist = parts.length > 1 ? parts[0].trim() : '';
+        const title = parts.length > 1 ? parts.slice(1).join(' : ').trim() : desc;
+        const fmt = lm[4].toUpperCase();
+        const prodType = /CD/.test(fmt) ? 'CD' : (/MC|CASS/.test(fmt) ? 'MC' : (/LP|7|10|12|EP/.test(fmt) ? 'LP' : fmt));
+        items.push({upc: '', catno: lm[2], artist, title, description: artist ? `${artist} / ${title}` : title,
+            prodType, qty: +lm[1], unitPrice: num(lm[6]), lineTotal: num(lm[7])});
+    }
+    return {header, items, totals};
+}
+
 // ---- UI wiring ----
 const $ = id => document.getElementById(id);
 const csrf = $('inv_csrf').value;
@@ -322,7 +367,7 @@ async function handleFile(file) {
                 allItems.push({str: it.str, x: it.transform[4], width: it.width, y: (p * 100000) - it.transform[5]});
         }
         const rows = rowsFromItems(allItems);
-        parsed = DISTRIBUTOR === 'alliance' ? parseAlliance(rows) : (DISTRIBUTOR === 'vinylfuture' ? parseVinylFuture(rows) : parseAms(rows));
+        parsed = DISTRIBUTOR === 'alliance' ? parseAlliance(rows) : (DISTRIBUTOR === 'vinylfuture' ? parseVinylFuture(rows) : (DISTRIBUTOR === 'matador' ? parseMatador(rows) : parseAms(rows)));
         if (!parsed.items.length) { status('No invoice line items found. Is this a ' + esc(LABEL) + ' invoice PDF?', 'danger'); return; }
         parsed.sum = Math.round(parsed.items.reduce((a, b) => a + b.lineTotal, 0) * 100) / 100;
         const goods = parsed.totals.goods;

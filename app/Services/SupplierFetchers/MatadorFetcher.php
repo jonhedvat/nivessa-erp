@@ -62,13 +62,13 @@ class MatadorFetcher extends AbstractHttpFetcher
             @unlink($tmp);
         }
         // Default layout: ARTIST, TITLE, FORMAT, TYPE, COST, LIST, CAT #, UPC, LABEL.
-        $iA = 0; $iT = 1; $iF = 2; $iTy = 3; $iC = 4; $iU = 7;
+        $iA = 0; $iT = 1; $iF = 2; $iTy = 3; $iC = 4; $iCat = 6; $iU = 7;
         $first = array_map(function ($h) { return strtoupper(trim((string) $h)); }, (array) ($sheet[0] ?? []));
         if (in_array('UPC', $first, true)) {
             array_shift($sheet);
             foreach ($first as $i => $h) {
                 if ($h === 'ARTIST') $iA = $i; elseif ($h === 'TITLE') $iT = $i; elseif ($h === 'FORMAT') $iF = $i;
-                elseif ($h === 'TYPE') $iTy = $i; elseif (strpos($h, 'NEW COST') === 0 || $h === 'COST') $iC = $i; elseif ($h === 'UPC') $iU = $i;
+                elseif ($h === 'TYPE') $iTy = $i; elseif (strpos($h, 'NEW COST') === 0 || $h === 'COST') $iC = $i; elseif ($h === 'UPC') $iU = $i; elseif ($h === 'CAT #' || $h === 'CAT#') $iCat = $i;
             }
         }
         $now = date('c');
@@ -86,6 +86,9 @@ class MatadorFetcher extends AbstractHttpFetcher
                 'format' => $format,
                 'cost' => round($cost, 2),
                 'upc' => $upc,
+                // Catalog # ("XL-529-1"): Matador sales orders/invoices print
+                // this instead of a barcode, the invoice importer maps it to the UPC.
+                'cat' => strtoupper(trim((string) ($r[$iCat] ?? ''))) ?: null,
                 'url' => null,
                 'checked_at' => $now,
             ];
