@@ -1197,7 +1197,7 @@ class SellQuoteController extends StoreOrDiscogsController
                     $parts[] = $o['store'] . ' ' . ($large ? $m($o['estimate_low_cash']) . '-' . $m($o['cash']) : $m($o['cash'])) . ' cash';
                 }
                 $sms = $hi . ($large ? 'Estimate ' : 'Quote ') . $number . ' for ' . $items . $inStoreText . ': ' . implode(', ', $parts)
-                    . ' (1.5x that in store credit). Valid through ' . $goodThroughShort . ', final price confirmed on appraisal. Pick your store here: ' . $link;
+                    . ' (1.5x that in store credit). Each store pays based on what it needs right now. Valid through ' . $goodThroughShort . ', final price confirmed on appraisal. Pick your store here: ' . $link;
             }
             try {
                 $res = app(\App\Services\OpenPhoneService::class)->sendFromStore($storeName ?: $store['name'], (string) $q->phone, $sms);
@@ -1427,8 +1427,11 @@ class SellQuoteController extends StoreOrDiscogsController
             'number' => self::number($quote->id),
             'display' => $calc['display'] ?? [],
             'calcLines' => $calc['lines'] ?? [],
-            'store' => $stores[$quote->location_id] ?? '—',
+            'store' => self::storeChosen($calc) ? ($stores[$quote->location_id] ?? '—') : 'no store picked yet',
             'labels' => $labels,
+            // Sarah 11/16: seller didn't pick a store, so the cashier starts the
+            // buy at the store the seller actually walked into, at that store's price.
+            'storeOffers' => self::storeChosen($calc) ? [] : $this->offers($quote, $calc),
         ]);
     }
 
@@ -1446,7 +1449,27 @@ class SellQuoteController extends StoreOrDiscogsController
         if ($quote->buy_offer_id && BuyCustomerOffer::where('business_id', $business_id)->where('id', $quote->buy_offer_id)->exists()) {
             return redirect()->route('buy-from-customer.edit', [$quote->buy_offer_id, 'beta' => 1]);
         }
-        $calcLines = (json_decode((string) $quote->calculation_json, true) ?: [])['lines'] ?? [];
+        $calcAll = json_decode((string) $quote->calculation_json, true) ?: [];
+        $calcLines = $calcAll['lines'] ?? [];
+        // Seller never picked a store: use the offer for the store the buy is
+        // happening at (button on the staff page), not the best-paying one.
+        $atStore = (int) $request->input('location_id');
+        if (!self::storeChosen($calcAll) && $atStore && isset($calcAll['by_store'][$atStore])) {
+            $o = $calcAll['by_store'][$atStore];
+            $calcLines = $o['lines'] ?? $calcLines;
+            $calcAll['lines'] = $calcLines;
+            $calcAll['display'] = $o['display'] ?? ($calcAll['display'] ?? []);
+            $calcAll['store_chosen'] = true;
+            DB::table('sell_quotes')->where('id', $quote->id)->update([
+                'location_id' => $atStore,
+                'cash_total' => $o['cash'],
+                'credit_total' => $o['credit'],
+                'estimate_low_cash' => $o['estimate_low_cash'],
+                'calculation_json' => json_encode($calcAll),
+                'updated_at' => now(),
+            ]);
+            $quote = DB::table('sell_quotes')->find($quote->id);
+        }
         // Re-run the calculator so the draft gets the full offer ladder (the
         // quote only kept the lines), pinned to the quoted demand levels.
         $lines = array_map(function ($l) {

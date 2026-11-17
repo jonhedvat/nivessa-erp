@@ -48,10 +48,21 @@
         @if($quote->status === 'in_buy' && $quote->buy_offer_id)
             <a class="sq-btn" href="{{ route('buy-from-customer.edit', [$quote->buy_offer_id, 'beta' => 1]) }}">Open the buy (BFC-{{ str_pad($quote->buy_offer_id, 6, '0', STR_PAD_LEFT) }})</a>
         @else
+            @if(!empty($storeOffers) && count($storeOffers) > 1)
+                <p style="margin:0 0 10px"><strong>The seller didn't pick a store.</strong> Start the buy at the store they're at; it uses that store's price.</p>
+                @foreach($storeOffers as $o)
+                    <form method="POST" action="{{ url('/sell-quotes/' . $quote->id . '/start-buy') }}" style="display:inline;margin-right:8px">
+                        {{ csrf_field() }}
+                        <input type="hidden" name="location_id" value="{{ $o['location_id'] }}">
+                        <button class="sq-btn" type="submit">Start buy at {{ $o['store'] }} (${{ number_format($o['cash'], 2) }} cash)</button>
+                    </form>
+                @endforeach
+            @else
             <form method="POST" action="{{ url('/sell-quotes/' . $quote->id . '/start-buy') }}" style="display:inline">
                 {{ csrf_field() }}
                 <button class="sq-btn" type="submit">Start buy from this quote</button>
             </form>
+            @endif
         @endif
     </div>
 
