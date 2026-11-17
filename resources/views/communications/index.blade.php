@@ -78,7 +78,11 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
     <div class="comm-head">
         <div>
             <h1>Communications Hub</h1>
-            <p class="sub">Every inbound customer message in one place &mdash; both Quo phone lines, Instagram, WhatsApp, Facebook, TikTok. Log it, tag the topic, mark it resolved. Unhappy customers always sort to the top.</p>
+            <p class="sub">Every customer message in one place: both store phone lines, Instagram, WhatsApp, Facebook, TikTok and email. Answer it, then click Resolve. Customers to make happy are always at the top.</p>
+            <details style="margin:10px 0 0;background:#FFF4C2;border:1px solid #E8D27A;border-radius:10px;padding:10px 14px;color:#2B211E;max-width:760px">
+                <summary style="cursor:pointer;font-weight:700">How to write great replies</summary>
+                <div style="margin-top:8px">@include('open_items.partials.text_tips')</div>
+            </details>
         </div>
         <div style="display:flex;gap:10px;align-items:flex-start;">
             <a href="{{ action('QuoWebhookController@settings') }}" class="btn-accent" style="background:var(--pos-surface);">
@@ -101,9 +105,9 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
     </div>
 
     <div class="comm-stats">
-        <div class="stat-card stat-pending"><div class="n" data-stat="pending">{{ $counts['pending'] }}</div><div class="l">Pending</div></div>
-        <div class="stat-card stat-overdue" id="overdue_stat" style="cursor:pointer;border-color:#e3b3a8;"><div class="n" data-stat="overdue" style="color:#b4432f;">{{ $counts['overdue'] }}</div><div class="l">Unresolved 1hr+</div></div>
-        <div class="stat-card stat-resolved"><div class="n" data-stat="resolved">{{ $counts['resolved'] }}</div><div class="l">Resolved</div></div>
+        <div class="stat-card stat-pending" id="answer_stat" style="cursor:pointer;"><div class="n" data-stat="pending">{{ $counts['pending'] }}</div><div class="l">Ready to answer</div></div>
+        <div class="stat-card stat-overdue" id="overdue_stat" style="cursor:pointer;border-color:#e3b3a8;"><div class="n" data-stat="overdue" style="color:#b4432f;">{{ $counts['overdue'] }}</div><div class="l">Make them happy</div></div>
+        <div class="stat-card stat-resolved"><div class="n" data-stat="resolved">{{ $counts['resolved'] }}</div><div class="l">Finished</div></div>
     </div>
 
     <div class="topic-tags">
@@ -119,7 +123,7 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
             <span class="filter-label">Status:</span>
             <select id="status_filter">
                 @foreach($statuses as $key => $label)
-                    <option value="{{ $key }}" {{ $key == 'pending' ? 'selected' : '' }}>{{ $label }}</option>
+                    <option value="{{ $key }}" {{ $key == 'answer' ? 'selected' : '' }}>{{ $label }}</option>
                 @endforeach
                 <option value="">All</option>
             </select>
@@ -344,8 +348,13 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
             reload();
         });
 
+        $('#answer_stat').on('click', function() {
+            $('#status_filter').val('answer');
+            $('#topic_filter').val('');
+            reload();
+        });
         $('#overdue_stat').on('click', function() {
-            $('#status_filter').val('overdue');
+            $('#status_filter').val('happy');
             $('#topic_filter').val('');
             reload();
         });

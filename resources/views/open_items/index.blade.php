@@ -189,6 +189,7 @@
         <div class="oi-head"><h2>Reply with Claude</h2><button type="button" class="oi-pill" id="oi-side-close" style="display:none">Close</button></div>
         <div class="oi-side-body" id="oi-side-body">
             <div id="oi-side-empty">Click <strong>Reply with Claude</strong> on any customer row. Claude writes a reply here, you check it, fix anything in [brackets], then send it.</div>
+            @include('open_items.partials.text_tips')
             <div id="oi-side-work" style="display:none;gap:10px">
                 <div><strong id="oi-side-who"></strong> wrote:</div>
                 <div class="oi-quote" id="oi-side-msg"></div>

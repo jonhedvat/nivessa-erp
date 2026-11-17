@@ -13,17 +13,24 @@ class CommunicationController extends Controller
      * live updates) so the two never drift out of sync. */
     private function computeCounts(int $business_id): array
     {
+        // Claude reads each open thread (with our replies) and says whether
+        // it still needs us. "Pending" alone counted every thank-you, spam
+        // text and staff chat nobody clicked Resolve on.
+        $tri = \App\Utils\OpenItemsUtil::triage((int) $business_id);
+        $vals = array_count_values($tri);
         $counts = [
-            'pending' => Communication::where('business_id', $business_id)->where('status', 'pending')->count(),
-            'overdue' => Communication::where('business_id', $business_id)->where('status', 'pending')->where('created_at', '<=', now()->subHour())->count(),
-            'resolved' => Communication::where('business_id', $business_id)->where('status', 'resolved')->count(),
+            'pending' => $vals['reply'] ?? 0,
+            'overdue' => $vals['upset'] ?? 0,
+            'resolved' => Communication::where('business_id', $business_id)->where('status', 'resolved')->count() + ($vals['done'] ?? 0),
         ];
 
         $topic_counts = Communication::where('business_id', $business_id)
             ->where('status', 'pending')
+            ->whereIn('id', array_keys(array_filter($tri, fn ($l) => $l !== 'done')) ?: [0])
             ->select('topic', DB::raw('count(*) as c'))
             ->groupBy('topic')
             ->pluck('c', 'topic');
+        $topic_counts['unhappy_customer'] = $vals['upset'] ?? 0;
 
         return [$counts, $topic_counts];
     }
@@ -55,7 +62,7 @@ class CommunicationController extends Controller
         $business_id = request()->session()->get('user.business_id');
         $channels = Communication::CHANNELS;
         $topics = Communication::TOPICS;
-        $statuses = ['pending' => 'Pending', 'overdue' => 'Unresolved 1hr+', 'unreplied' => 'Not Replied To', 'replied' => 'Replied', 'resolved' => 'Resolved'];
+        $statuses = ['answer' => 'Ready to answer', 'happy' => 'Make them happy', 'pending' => 'All open', 'unreplied' => 'Not replied to yet', 'replied' => 'Replied', 'resolved' => 'Finished'];
 
         if (request()->ajax()) {
             // Bind the cutoff from PHP (app timezone, America/Los_Angeles)
@@ -75,7 +82,11 @@ class CommunicationController extends Controller
                 ->selectRaw("(communications.status = 'pending' AND communications.created_at <= ?) as is_overdue", [$overdue_cutoff]);
 
             if (request()->has('status') && request()->status != '') {
-                if (request()->status == 'overdue') {
+                if (in_array(request()->status, ['answer', 'happy'], true)) {
+                    $want = request()->status === 'happy' ? 'upset' : 'reply';
+                    $ids = array_keys(array_filter(\App\Utils\OpenItemsUtil::triage((int) $business_id), fn ($l) => $l === $want));
+                    $rows->whereIn('communications.id', $ids ?: [0]);
+                } elseif (request()->status == 'overdue') {
                     $rows->where('communications.status', 'pending')
                         ->where('communications.created_at', '<=', now()->subHour());
                 } elseif (request()->status == 'unreplied') {
@@ -94,7 +105,12 @@ class CommunicationController extends Controller
             }
 
             if (request()->has('topic') && request()->topic != '') {
-                $rows->where('communications.topic', request()->topic);
+                if (request()->topic === 'unhappy_customer') {
+                    $ids = array_keys(array_filter(\App\Utils\OpenItemsUtil::triage((int) $business_id), fn ($l) => $l === 'upset'));
+                    $rows->whereIn('communications.id', $ids ?: [0]);
+                } else {
+                    $rows->where('communications.topic', request()->topic);
+                }
             }
 
             if (request()->has('channel') && request()->channel != '') {

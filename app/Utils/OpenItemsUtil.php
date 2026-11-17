@@ -141,10 +141,7 @@ class OpenItemsUtil
             ->where('business_id', $business_id)
             ->whereIn('channel', self::REPLY_CHANNELS)
             ->where('status', 'pending')
-            ->whereNotIn('id', array_keys(self::upsetIds($business_id)) ?: [0])
-            ->where(function ($q) {
-                $q->whereNull('resolution_notes')->orWhere('resolution_notes', '');
-            })
+            ->whereIn('id', array_keys(array_filter(self::triage($business_id), fn ($l) => $l === 'reply')) ?: [0])
             ->where('created_at', '<', now()->subDay())
             ->where('created_at', '>=', now()->subDays(30))
             ->where('message', '!=', '(no inbound message logged for this contact)')
@@ -167,76 +164,86 @@ class OpenItemsUtil
         return self::section('Customers to reply to', 'Send them a real answer today. If it was already handled another way, click Fixed it and say how.', url('/communications'), self::oldestFirst($out));
     }
 
+    const TRIAGE_SYSTEM = 'You sort open text, call and DM threads for Nivessa Records, a record store with stores on Pico and Hollywood. Each thread shows what the customer sent and what we already replied. Give each ID exactly one label:
+"upset" = the customer is clearly unhappy with us (complaint, frustration, wrong or missing order, refund because something went wrong, felt ignored) AND it is not settled yet in the thread.
+"reply" = a real customer is still waiting on an answer or action from us (a question we have not answered, or we promised to follow up and have not).
+"done" = nothing left for us to do: they said thanks, ok, see you, no worries, or the question was answered; a missed call with no message (an automatic text already went out); spam, sales pitches, loans or working capital offers; verification codes; STOP; wrong numbers; and messages from our own staff about shifts, training or work.
+Reply with only a JSON object mapping each ID to its label, like {"12":"done","40":"reply"}.';
+
     /**
-     * Which open messages come from someone who is actually upset. The old
-     * keyword tag flagged polite questions ("still has not shipped") and
-     * missed real complaints, so Claude reads each message once and the
-     * answer is cached for good. If Claude can't be reached, falls back to
-     * the keyword tag.
+     * Claude sorts every open message thread (with our replies) into upset,
+     * still needs a reply, or done. Keyword tags were wrong too often: polite
+     * questions showed as unhappy, and thank-yous, spam and staff texts
+     * showed as waiting. Each thread is read once and re-read only when it
+     * changes. If Claude can't be reached, falls back to the old rules.
      */
-    public static function upsetIds(int $business_id): array
+    public static function triage(int $business_id): array
     {
+        static $memo = [];
+        if (isset($memo[$business_id])) {
+            return $memo[$business_id];
+        }
         $rows = \DB::table('communications')
             ->where('business_id', $business_id)
             ->whereIn('channel', self::REPLY_CHANNELS)
             ->where('status', 'pending')
             ->where('created_at', '>=', now()->subDays(45))
-            ->where('message', '!=', '(no inbound message logged for this contact)')
             ->orderBy('created_at')
-            ->limit(300)
-            ->get(['id', 'topic', 'message']);
-        $upset = [];
+            ->limit(400)
+            ->get(['id', 'topic', 'message', 'resolution_notes', 'has_real_reply']);
+        $out = [];
         $todo = [];
         foreach ($rows as $r) {
-            $v = \Cache::get('oi_upset_' . $r->id);
-            if ($v === null) {
-                $todo[] = $r;
-            } elseif ($v === 'yes') {
-                $upset[$r->id] = true;
+            $ours = trim(preg_replace('/<!--.*?-->/s', '', (string) $r->resolution_notes));
+            $text = 'CUSTOMER: ' . mb_substr(preg_replace('/\s+/', ' ', (string) $r->message), -900)
+                . ($ours !== '' ? ' || WE REPLIED: ' . mb_substr(preg_replace('/\s+/', ' ', $ours), -500) : ' || WE REPLIED: nothing yet');
+            $ck = 'oi_tri_' . $r->id . '_' . md5($text);
+            $v = \Cache::get($ck);
+            if ($v !== null) {
+                $out[$r->id] = $v;
+            } else {
+                $todo[$r->id] = ['text' => $text, 'ck' => $ck, 'row' => $r];
             }
         }
-        foreach (array_chunk($todo, 40) as $chunk) {
-            $got = self::classifyUpset($chunk);
-            foreach ($chunk as $r) {
-                if ($got === null) {
-                    if ($r->topic === 'unhappy_customer') {
-                        $upset[$r->id] = true; // Claude unreachable: keep the old tag for now, retry next load
-                    }
+        foreach (array_chunk($todo, 30, true) as $chunk) {
+            $got = self::askClaudeLabels(array_map(fn ($x) => $x['text'], $chunk), self::TRIAGE_SYSTEM);
+            foreach ($chunk as $id => $x) {
+                $lab = $got[(string) $id] ?? null;
+                if (!in_array($lab, ['upset', 'reply', 'done'], true)) {
+                    // Claude unreachable: old rules for now, retried next load.
+                    $r = $x['row'];
+                    $out[$id] = $r->topic === 'unhappy_customer' ? 'upset' : ((trim((string) $r->resolution_notes) === '' && !self::isNoise((string) $r->message)) ? 'reply' : 'done');
                     continue;
                 }
-                $yes = in_array((int) $r->id, $got, true);
-                \Cache::forever('oi_upset_' . $r->id, $yes ? 'yes' : 'no');
-                if ($yes) {
-                    $upset[$r->id] = true;
-                }
+                \Cache::put($x['ck'], $lab, now()->addDays(60));
+                $out[$id] = $lab;
             }
         }
-        return $upset;
+        return $memo[$business_id] = $out;
     }
 
-    /** Returns the ids Claude says are upset, or null if it could not answer. */
-    protected static function classifyUpset(array $rows): ?array
+    /** Asks Claude to label items. $items is id => text. Returns id => label, or [] if it could not answer. */
+    public static function askClaudeLabels(array $items, string $system): array
     {
         $cfg = \App\Http\Controllers\HelpAssistantSettingsController::readConfig();
         $apiKey = ($cfg['api_key'] ?? null) ?: config('services.anthropic.api_key') ?: env('ANTHROPIC_API_KEY');
-        if (!$apiKey || !$rows) {
-            return null;
+        if (!$apiKey || !$items) {
+            return [];
         }
         $list = '';
-        foreach ($rows as $r) {
-            $list .= "ID " . $r->id . ": " . mb_substr(preg_replace('/\s+/', ' ', (string) $r->message), 0, 600) . "\n";
+        foreach ($items as $id => $text) {
+            $list .= 'ID ' . $id . ': ' . $text . "\n\n";
         }
-        $system = 'You sort customer messages for Nivessa, a record store. A message is UPSET only if the customer is clearly unhappy with Nivessa: complaining, angry, frustrated, disappointed, asking for a refund because something went wrong, saying they were ignored or treated badly, or threatening a bad review or chargeback. A calm question is NOT upset, even about a late order, shipping status, stock, prices, hours, events, selling records or jobs. Spam and automated messages are NOT upset. Reply with only a JSON array of the IDs that are UPSET, e.g. [12, 40], or [] if none.';
         try {
-            $client = new \GuzzleHttp\Client(['timeout' => 40]);
+            $client = new \GuzzleHttp\Client(['timeout' => 45]);
             $resp = $client->post('https://api.anthropic.com/v1/messages', [
                 'headers' => ['x-api-key' => $apiKey, 'anthropic-version' => '2023-06-01', 'content-type' => 'application/json'],
-                'json' => ['model' => $cfg['model'] ?? config('services.anthropic.model', 'claude-haiku-4-5'), 'max_tokens' => 400, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $list]]],
+                'json' => ['model' => $cfg['model'] ?? config('services.anthropic.model', 'claude-haiku-4-5'), 'max_tokens' => 1500, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $list]]],
                 'http_errors' => false,
             ]);
             if ($resp->getStatusCode() !== 200) {
-                \Log::warning('open-items upset check HTTP ' . $resp->getStatusCode());
-                return null;
+                \Log::warning('open-items triage HTTP ' . $resp->getStatusCode());
+                return [];
             }
             $data = json_decode((string) $resp->getBody(), true);
             $txt = '';
@@ -245,20 +252,21 @@ class OpenItemsUtil
                     $txt .= $b['text'];
                 }
             }
-            if (!preg_match('/\[[\d,\s]*\]/', $txt, $m)) {
-                return null;
+            if (!preg_match('/\{.*\}/s', $txt, $m)) {
+                return [];
             }
-            return array_map('intval', json_decode($m[0], true) ?: []);
+            $j = json_decode($m[0], true);
+            return is_array($j) ? array_map('strval', $j) : [];
         } catch (\Throwable $e) {
-            \Log::warning('open-items upset check failed: ' . $e->getMessage());
-            return null;
+            \Log::warning('open-items triage failed: ' . $e->getMessage());
+            return [];
         }
     }
 
     /** Open messages from customers who are actually upset (Claude reads each one). */
     public static function unhappyCustomers(int $business_id): array
     {
-        $ids = array_keys(self::upsetIds($business_id));
+        $ids = array_keys(array_filter(self::triage($business_id), fn ($l) => $l === 'upset'));
         $rows = $ids ? \DB::table('communications')
             ->where('business_id', $business_id)
             ->whereIn('id', $ids)
@@ -333,7 +341,32 @@ class OpenItemsUtil
             $m['_seller'] = (bool) preg_match(self::SELLER_RE, $blob) && !preg_match('/\b(order|refund|ship|tracking)\b/', $blob);
             $out[] = $m;
         }
-        return $out;
+        // Claude drops sales pitches (loans, data deals, marketing) that keywords miss. Cached per message.
+        $todo = [];
+        foreach ($out as $i => $m) {
+            $id = (string) ($m['_id'] ?? md5(json_encode($m)));
+            $v = \Cache::get('oi_spam_' . $id);
+            if ($v === 'spam') {
+                unset($out[$i]);
+            } elseif ($v === null) {
+                $todo[$id] = mb_substr(($m['subject'] ?? '') . ': ' . preg_replace('/\s+/', ' ', (string) ($m['message'] ?? '')), 0, 700);
+            }
+        }
+        if ($todo) {
+            $got = self::askClaudeLabels($todo, 'You sort messages sent to Nivessa Records through its website contact form. Label each ID "spam" if it is a sales pitch or solicitation aimed at the business (loans, credit, funding, data licensing, marketing, SEO, ads, software, AI tools) or junk. Label it "real" if it is a real person writing to us: customers, people selling us records, job seekers, event or artist partners, press, or a business asking us to fix or remove something about them. Reply with only a JSON object mapping each ID to its label.');
+            if ($got) {
+                foreach ($out as $i => $m) {
+                    $id = (string) ($m['_id'] ?? md5(json_encode($m)));
+                    if (isset($todo[$id], $got[$id])) {
+                        \Cache::put('oi_spam_' . $id, $got[$id] === 'spam' ? 'spam' : 'real', now()->addDays(60));
+                        if ($got[$id] === 'spam') {
+                            unset($out[$i]);
+                        }
+                    }
+                }
+            }
+        }
+        return array_values($out);
     }
 
     protected static function contactRows(array $msgs, string $kind = 'contact'): array

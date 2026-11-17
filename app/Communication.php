@@ -34,7 +34,7 @@ class Communication extends Model
     ];
 
     const TOPICS = [
-        'unhappy_customer' => 'Unhappy Customer',
+        'unhappy_customer' => 'Make Them Happy',
         'shipping' => 'Shipping',
         'stock' => 'Stock Inquiry',
         'events' => 'Event Question',
