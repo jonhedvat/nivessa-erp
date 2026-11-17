@@ -5358,10 +5358,13 @@ class ProductController extends Controller
             return null;
         }
         $floor = (int) $want * self::SCARCE_PER_WANT;
-        // With 1-2 listed, the cheapest copy counts too if it's higher
-        // (capped at 2x the want price so one silly listing can't run it up).
-        if ((int) $forSale > 0 && $lowest > 0) {
-            $floor = max($floor, min((float) $lowest, $floor * 2));
+        // With 1-2 listed, the cheapest copy is the market: floor = that copy,
+        // but never above $1/want (2 copies at $99 with 762 wants = $99, not $762).
+        if ((int) $forSale > 0) {
+            if (!($lowest > 0)) {
+                return null;
+            }
+            $floor = min($floor, (float) $lowest);
         }
         return round($floor, 2);
     }
