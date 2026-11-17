@@ -365,7 +365,7 @@ class CommunicationController extends Controller
             'channel' => $c->channel,
             'channel_label' => Communication::CHANNELS[$c->channel] ?? $c->channel,
             'contact_info' => $c->contact_info,
-            'can_reply' => in_array($c->channel, ['phone_1', 'phone_2'], true),
+            'can_reply' => in_array($c->channel, ['phone_1', 'phone_2', 'instagram'], true),
             'entries' => $entries,
         ]);
     }

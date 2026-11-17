@@ -263,6 +263,27 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         }
     }
 
+    /** Which customer channels flow into the dashboard, for the strip on Happy customers. */
+    public static function channelStatus(): array
+    {
+        $j = function ($f) {
+            $p = storage_path('app/' . $f);
+            $d = is_file($p) ? json_decode((string) @file_get_contents($p), true) : [];
+            return is_array($d) ? $d : [];
+        };
+        $mail = [];
+        try { $mail = (new \App\Services\EmailInboxService())->mailboxes(); } catch (\Throwable $e) {}
+        return [
+            ['name' => 'Store texts and calls', 'on' => true, 'setup' => '/communications/quo-settings'],
+            ['name' => 'Website messages', 'on' => true, 'setup' => null],
+            ['name' => 'Discogs buyers', 'on' => true, 'setup' => null],
+            ['name' => 'Email (hello@)', 'on' => !empty($mail['hello']['password']), 'setup' => '/communications/email-settings'],
+            ['name' => 'Instagram', 'on' => trim((string) ($j('instagram-webhook.json')['page_access_token'] ?? '')) !== '', 'setup' => '/communications/instagram-settings'],
+            ['name' => 'Facebook', 'on' => trim((string) ($j('facebook-oauth.json')['page_access_token'] ?? '')) !== '', 'setup' => '/communications/facebook-settings'],
+            ['name' => 'TikTok', 'on' => trim((string) ($j('tiktok-oauth.json')['access_token'] ?? '')) !== '', 'setup' => '/communications/tiktok-settings'],
+        ];
+    }
+
     /** Open messages from customers who are actually upset (Claude reads each one). */
     public static function unhappyCustomers(int $business_id): array
     {

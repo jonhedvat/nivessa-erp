@@ -70,7 +70,15 @@
 .open-shell .oi-side-body { padding:12px 16px; display:grid; gap:10px; font-size:14px; color:var(--d-ink); max-height:calc(100vh - 110px); overflow:auto; }
 .open-shell .oi-side textarea { width:100%; min-height:150px; font:inherit; font-size:14px; border:1px solid var(--d-line-2); border-radius:8px; padding:10px; color:var(--d-ink); background:var(--d-surface); }
 .open-shell .oi-side input[type=text] { width:100%; font:inherit; font-size:13px; border:1px solid var(--d-line-2); border-radius:8px; padding:8px; color:var(--d-ink); }
-.open-shell .oi-quote { background:var(--d-surface-2); border-radius:8px; padding:10px; white-space:pre-wrap; max-height:180px; overflow:auto; }
+.open-shell .oi-quote { background:var(--d-surface-2); border-radius:8px; padding:10px; white-space:pre-wrap; max-height:320px; overflow:auto; display:grid; gap:8px; }
+.open-shell .oi-bub { max-width:85%; padding:8px 10px; border-radius:12px; font-size:13px; line-height:1.4; white-space:pre-wrap; }
+.open-shell .oi-bub.c { background:#fff; border:1px solid var(--d-line); justify-self:start; border-bottom-left-radius:4px; }
+.open-shell .oi-bub.s { background:#3B2E2A; color:#fff; justify-self:end; border-bottom-right-radius:4px; }
+.open-shell .oi-bub small { display:block; font-size:11px; opacity:.75; margin-top:3px; }
+.open-shell .oi-chans { display:flex; flex-wrap:wrap; gap:6px; padding:12px 20px; border-bottom:1px solid var(--d-line); }
+.open-shell .oi-chan { font-size:12px; font-weight:700; border-radius:999px; padding:4px 10px; text-decoration:none; }
+.open-shell .oi-chan.on { background:#DDF1DE; color:#1B5E20; }
+.open-shell a.oi-chan.off, .open-shell span.oi-chan.off { background:#F1ECE6; color:#4A3D38; border:1px dashed #C9BFB5; }
 .open-shell .oi-pills { display:flex; flex-wrap:wrap; gap:6px; }
 .open-shell .oi-pill { font:inherit; font-size:12px; font-weight:700; border-radius:999px; padding:5px 10px; border:1px solid #A9CDEB; background:#E3F0FB; color:#174E7C; cursor:pointer; }
 .open-shell .oi-go { font:inherit; font-size:13px; font-weight:700; border-radius:8px; padding:8px 12px; border:1px solid var(--d-accent-deep); background:var(--d-accent); color:var(--d-accent-text); cursor:pointer; }
@@ -235,6 +243,15 @@
                 @php $tot = $open[$bk] + $doneB[$bk]; @endphp
                 <section class="oi-panel" data-b="{{ $bk }}" style="display:none">
                     <div class="oi-panel-head"><h2>{{ $nm }}</h2><span>{{ $doneB[$bk] }} of {{ $tot }} done</span></div>
+                    @if($bk === 'customers')
+                        <div class="oi-chans">
+                            @foreach(\App\Utils\OpenItemsUtil::channelStatus() as $ch)
+                                @if($ch['on'])<span class="oi-chan on">{{ $ch['name'] }}: on</span>
+                                @elseif($isOwner && $ch['setup'])<a class="oi-chan off" href="{{ url($ch['setup']) }}">{{ $ch['name'] }}: connect</a>
+                                @else<span class="oi-chan off">{{ $ch['name'] }}: not connected</span>@endif
+                            @endforeach
+                        </div>
+                    @endif
                     @if($bk === 'store')
                         @php $yday = now('America/Los_Angeles')->subDay()->format('Y-m-d'); $rn = ((array) (\App\Utils\RegisterReconUtil::settings()['day_notes'] ?? []))[$yday] ?? null; @endphp
                         <div class="oi-group"><h3>Register recon for yesterday</h3><p>{{ $rn ? 'Done. Your summary is saved.' : 'Read the flags, find out why, and write your summary.' }}</p></div>
@@ -302,7 +319,7 @@
             <div id="oi-side-empty">Click <strong>Reply with Claude</strong> on a row.</div>
             <details><summary style="cursor:pointer;font-weight:700">Reply tips</summary>@include('open_items.partials.text_tips')</details>
             <div id="oi-side-work" style="display:none;gap:10px">
-                <div><strong id="oi-side-who"></strong> wrote:</div>
+                <div><strong id="oi-side-who"></strong> <span id="oi-side-via" style="font-size:12px;font-weight:700"></span></div>
                 <div class="oi-quote" id="oi-side-msg"></div>
                 <textarea id="oi-side-draft" placeholder="Claude is writing..."></textarea>
                 <div class="oi-pills">
@@ -382,13 +399,39 @@
             $('oi-side-empty').style.display = 'none';
             $('oi-side-work').style.display = 'grid';
             $('oi-side-who').textContent = cur.who;
-            $('oi-side-msg').textContent = cur.text;
+            $('oi-side-via').textContent = cur.via ? '(' + cur.via + ')' : '';
+            $('oi-side-msg').innerHTML = '';
+            var one = document.createElement('div'); one.className = 'oi-bub c'; one.textContent = cur.text; $('oi-side-msg').appendChild(one);
             $('oi-side-open').href = cur.link;
             $('oi-side-send').style.display = cur.canSend ? '' : 'none';
             $('oi-side-send').textContent = cur.canSend ? ('Send by ' + cur.via) : 'Send';
             $('oi-side-copy').textContent = cur.canSend ? 'Copy' : 'Copy, then reply in the inbox';
             side.classList.add('open'); $('oi-side-close').style.display = '';
-            draft('');
+            if (cur.commId) {
+                // Full conversation, both sides, oldest first; Claude drafts from all of it.
+                fetch('/communications/' + cur.commId + '/thread', { headers: { 'Accept': 'application/json' } })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (!d || !d.success || !(d.entries || []).length) { draft(''); return; }
+                        var box = $('oi-side-msg'); box.innerHTML = '';
+                        var lines = [];
+                        d.entries.forEach(function (e) {
+                            if (!e.text) return;
+                            var b2 = document.createElement('div');
+                            b2.className = 'oi-bub ' + (e.who === 'staff' ? 's' : 'c');
+                            b2.textContent = e.text;
+                            var sm = document.createElement('small'); sm.textContent = (e.who === 'staff' ? 'Us' : 'Customer') + (e.time_label ? ', ' + e.time_label : ''); b2.appendChild(sm);
+                            box.appendChild(b2);
+                            lines.push((e.who === 'staff' ? 'Nivessa: ' : 'Customer: ') + e.text);
+                        });
+                        box.scrollTop = box.scrollHeight;
+                        cur.text = 'Full conversation so far (oldest first):\n' + lines.join('\n').slice(-3500);
+                        draft('');
+                    })
+                    .catch(function () { draft(''); });
+            } else {
+                draft('');
+            }
         });
     });
     document.querySelectorAll('#oi-side .oi-pill[data-ask]').forEach(function (p) {
