@@ -73,8 +73,6 @@
 
   @include('website_admin.warehouse._nav')
 
-  <div class="wh-note warn"><b>Can't find an item?</b> We can use AMS or Alliance if you do not find it.</div>
-
   <div class="wh-filters">
     <div class="wh-field">
       <label>Store</label>
@@ -152,8 +150,15 @@
             $dloc = trim((string) (($it['discogs_location'] ?? '') ?: ($it['location']['discogs_location_code'] ?? '')));
             $ps = $it['picking_status'] ?? 'Not Picked';
             $cls = $ps === 'Picked' ? 'st-picked' : ($ps === "Can't Find" ? 'st-cant' : '');
+            // Can't-find reminder: sealed vinyl/CD/cassette -> order from AMS/Alliance; used -> dropship via eBay/Discogs.
+            $catTxt = strtolower(($e['category'] ?? '') . ' ' . ($e['subcategory'] ?? ''));
+            $alt = '';
+            if (preg_match('/vinyl|\blp\b|\bcds?\b|compact disc|cassette/', $catTxt)) {
+              if (strpos($catTxt, 'seal') !== false || preg_match('/\bnew\b/', strtolower($e['category'] ?? ''))) $alt = 'We can use AMS or Alliance if you do not find it.';
+              elseif (strpos($catTxt, 'used') !== false) $alt = 'Reminder: we can dropship this on eBay or Discogs if you do not find it.';
+            }
           @endphp
-          <div class="pk-item {{ $cls }}" data-order="{{ $it['order_id'] ?? '' }}" data-item="{{ $it['_id'] ?? '' }}" data-status="{{ $ps }}" data-zone="{{ $zid }}">
+          <div class="pk-item {{ $cls }}" data-order="{{ $it['order_id'] ?? '' }}" data-item="{{ $it['_id'] ?? '' }}" data-status="{{ $ps }}" data-zone="{{ $zid }}" data-alt="{{ $alt }}">
             @if(!empty($it['image']))
               <button type="button" class="pk-img" onclick="pkZoom(this.querySelector('img').src)"><img src="{{ $it['image'] }}" alt="" loading="lazy">@if(($it['cover_type'] ?? '') === 'generic')<span class="g">G</span>@endif</button>
             @else
@@ -205,8 +210,8 @@
                 <button type="button" class="wh-btn wh-btn-red" onclick="pkPick(this, &quot;Can't Find&quot;)">Can't find</button>
               @else
                 <div class="pk-done {{ $ps === 'Picked' ? 'ok' : 'bad' }}">{{ $ps === 'Picked' ? 'Picked' : "Can't find" }}</div>
-                @if($ps !== 'Picked')
-                  <div class="pk-alt">We can use AMS or Alliance if you do not find it.</div>
+                @if($ps !== 'Picked' && $alt !== '')
+                  <div class="pk-alt">{{ $alt }}</div>
                 @endif
                 @if(!empty($it['picked_by_name']))
                   <div class="pk-by">{{ $it['picked_by_name'] }}@if(!empty($it['picked_at'])), {{ \Carbon\Carbon::parse($it['picked_at'])->setTimezone($tz)->format('M j, g:i a') }}@endif</div>
@@ -267,7 +272,7 @@
     } else {
       row.classList.add(status === 'Picked' ? 'st-picked' : 'st-cant');
       box.innerHTML = '<div class="pk-done ' + (status === 'Picked' ? 'ok' : 'bad') + '">' + (status === 'Picked' ? 'Picked' : 'Can\'t find') + '</div>'
-        + (status === 'Picked' ? '' : '<div class="pk-alt">We can use AMS or Alliance if you do not find it.</div>')
+        + (status !== 'Picked' && row.dataset.alt ? '<div class="pk-alt">' + pkEsc(row.dataset.alt) + '</div>' : '')
         + (by ? '<div class="pk-by">' + pkEsc(by) + ', just now</div>' : '')
         + '<button type="button" class="wh-btn" onclick="pkPick(this, \'Not Picked\')">Undo</button>';
     }
@@ -340,7 +345,7 @@
       .then(function (j) {
         row.dataset.busy = '0';
         if (!j.success) throw new Error(j.message || 'Could not save the pick.');
-        pkToast(status === 'Not Picked' ? 'Undone.' : (status === 'Picked' ? 'Marked picked.' : "Marked can't find. We can use AMS or Alliance if you do not find it."));
+        pkToast(status === 'Not Picked' ? 'Undone.' : (status === 'Picked' ? 'Marked picked.' : ("Marked can't find." + (row.dataset.alt ? ' ' + row.dataset.alt : ''))));
       })
       .catch(function (e) {
         row.dataset.busy = '0';
