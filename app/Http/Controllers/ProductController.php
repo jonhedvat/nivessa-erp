@@ -4278,7 +4278,7 @@ class ProductController extends Controller
                 if (!$dg) continue;
                 $cond = trim((string) ($pi['condition'] ?? ''));
                 $grade = $cond !== '' && $cond !== 'Sealed' ? $cond : null;
-                $sp = self::scarcePrice($dg['for_sale'] ?? null, $dg['want'] ?? null, $grade);
+                $sp = self::scarcePrice($dg['for_sale'] ?? null, $dg['want'] ?? null, $grade, $dg['lowest'] ?? null);
                 if ($sp && $pr < $sp * 0.70) {
                     $new = max(0.99, ceil($sp) - 0.01);
                     $scarceIn[$i]['single_dsp_inc_tax'] = number_format($new, 2, '.', '');
@@ -5348,15 +5348,22 @@ class ProductController extends Controller
      * $1 per Discogs want when nobody is selling a copy (none listed and
      * 25+ wants). Not for beat-up copies (Good or worse).
      */
-    public static function scarcePrice($forSale, $want, $grade = null)
+    public static function scarcePrice($forSale, $want, $grade = null, $lowest = null)
     {
-        if ($forSale === null || (int) $forSale !== 0 || (int) $want < self::SCARCE_MIN_WANTS) {
+        // 0-2 copies listed counts as scarce (Sarah 11/17: 1 for sale is just as rare).
+        if ($forSale === null || (int) $forSale > 2 || (int) $want < self::SCARCE_MIN_WANTS) {
             return null;
         }
         if ($grade && preg_match('/^(Good|Fair|Poor)\b|\(G\)|\(F\)|\(P\)/i', $grade)) {
             return null;
         }
-        return round((int) $want * self::SCARCE_PER_WANT, 2);
+        $floor = (int) $want * self::SCARCE_PER_WANT;
+        // With 1-2 listed, the cheapest copy counts too if it's higher
+        // (capped at 2x the want price so one silly listing can't run it up).
+        if ((int) $forSale > 0 && $lowest > 0) {
+            $floor = max($floor, min((float) $lowest, $floor * 2));
+        }
+        return round($floor, 2);
     }
 
     public function massCreatePriceGuard(Request $request)
@@ -5453,7 +5460,7 @@ class ProductController extends Controller
                     'lowest' => $dg['lowest'],
                     'for_sale' => $dg['for_sale'],
                     'want' => $dg['want'] ?? null,
-                    'scarce' => self::scarcePrice($dg['for_sale'], $dg['want'] ?? null, $label),
+                    'scarce' => self::scarcePrice($dg['for_sale'], $dg['want'] ?? null, $label, $dg['lowest'] ?? null),
                 ];
             }
 
@@ -5474,7 +5481,7 @@ class ProductController extends Controller
                 $refs['Discogs ' . $discogsOut['grade']] = $discogsOut['value'];
             }
             if (!empty($discogsOut['scarce'])) {
-                $refs['0 for sale on Discogs, ' . number_format($discogsOut['want']) . ' wants ($1/want)'] = $discogsOut['scarce'];
+                $refs[(int) $discogsOut['for_sale'] . ' for sale on Discogs, ' . number_format($discogsOut['want']) . ' wants'] = $discogsOut['scarce'];
             }
 
             // eBay, only when there's no Discogs release to go on
@@ -5548,7 +5555,7 @@ class ProductController extends Controller
 
             $scarceLow = !empty($discogsOut['scarce']) && $price < $discogsOut['scarce'] * 0.70;
             if ($scarceLow && !$reasons) {
-                $reasons[] = '0 for sale on Discogs, ' . number_format($discogsOut['want']) . ' wants';
+                $reasons[] = (int) $discogsOut['for_sale'] . ' for sale on Discogs, ' . number_format($discogsOut['want']) . ' wants';
                 $suggested = max(0.99, ceil($discogsOut['scarce']) - 0.01);
             }
             $out[$idx] = [
