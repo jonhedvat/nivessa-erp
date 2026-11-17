@@ -98,13 +98,13 @@ class Kernel extends ConsoleKernel
         // (Sarah 11/17: the webhook never delivered anything). No-ops if no token.
         $schedule->call(function () {
             \App\Http\Controllers\InstagramWebhookController::importConversations();
-        })->name('instagram-dm-import')->everyTenMinutes()->withoutOverlapping(10);
+        })->name('instagram-dm-import')->everyMinute()->withoutOverlapping(5);
 
         // Discogs buyer messages + website contact messages into the Hub.
         $schedule->call(function () {
             \App\Services\HubImportService::discogs();
             \App\Services\HubImportService::website();
-        })->name('hub-discogs-website-import')->everyFifteenMinutes()->withoutOverlapping(15);
+        })->name('hub-discogs-website-import')->everyMinute()->withoutOverlapping(5);
 
         // Distributor invoices -> ERP purchases with no one uploading them:
         // AMS portal (both accounts) + Alliance e-invoice emails, every 3

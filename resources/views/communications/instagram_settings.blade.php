@@ -72,7 +72,7 @@ body.pos-v2 .status-line { font-size: 12.5px; color: #8a8070; margin-bottom: 10p
     <div class="quo-card">
         <div style="margin:16px 0;padding:14px 16px;border:1px solid #E3DDD7;border-radius:10px;background:#fff">
     <strong>Test it and pull DMs now</strong>
-    <p style="margin:6px 0 10px;font-size:13px">Checks the saved Page token with Meta and imports recent DM conversations. It also runs by itself every 10 minutes.</p>
+    <p style="margin:6px 0 10px;font-size:13px">Checks the saved Page token with Meta and imports recent DM conversations. It also runs by itself every minute.</p>
     <form method="POST" action="{{ route('instagram.import') }}">{{ csrf_field() }}<button type="submit" class="btn btn-primary">Import DMs now</button></form>
 </div>
 <h3>Note on token expiry</h3>
