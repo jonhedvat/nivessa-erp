@@ -1,0 +1,35 @@
+# One-off, read-only: per category > subcategory (and per store), 90-day
+# conversion by list-price bucket for items added 90-450 days ago, plus the
+# "price floor" where going cheaper stops selling better. SELECTs + temp tables only.
+
+name: Diag price floor mapping check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CiRiaWQgPSAoaW50KSBEQjo6dGFibGUoJ2J1c2luZXNzJyktPnZhbHVlKCdpZCcpOwokY29tYm9zID0gXEFwcFxDYXRlZ29yeTo6ZmxhdHRlbmVkUHJvZHVjdENhdGVnb3J5Q29tYm9zKCRiaWQpOwokbj0wOyBmb3JlYWNoICgkY29tYm9zIGFzICRjKSB7ICRtID0gXEFwcFxIdHRwXENvbnRyb2xsZXJzXFByb2R1Y3RDb250cm9sbGVyOjptYXNzQWRkTWluUHJpY2UoJGNbJ2xhYmVsJ10pOyBpZiAoJG0pIHsgZWNobyAiRkxPT1JcdHskY1snbGFiZWwnXX1cdCRtXG4iOyAkbisrOyB9IH0KZWNobyAiY29tYm9zPSIuY291bnQoJGNvbWJvcykuIiB3aXRoX2Zsb29yPSRuXG4iOwpmb3JlYWNoIChhcnJheV9rZXlzKFxBcHBcSHR0cFxDb250cm9sbGVyc1xQcm9kdWN0Q29udHJvbGxlcjo6Q0FURUdPUllfUFJJQ0VfRkxPT1JTKSBhcyAkaykgeyAkaGl0PWZhbHNlOyBbJGEsJGJdPWV4cGxvZGUoJyA+ICcsJGspOyBmb3JlYWNoICgkY29tYm9zIGFzICRjKSB7IGlmIChzdHJpcG9zKCRjWydsYWJlbCddLCRhKT09PTAgJiYgKCRiPT09JyonIHx8IFxBcHBcSHR0cFxDb250cm9sbGVyc1xQcm9kdWN0Q29udHJvbGxlcjo6Y2F0ZWdvcnlQcmljZUZsb29yKCRjWydsYWJlbCddKSE9PW51bGwgJiYgc3RyaXBvcygkY1snbGFiZWwnXSwkYikhPT1mYWxzZSkpIHskaGl0PXRydWU7YnJlYWs7fSB9IGlmKCEkaGl0KSBlY2hvICJVTk1BVENIRURcdCRrXG4iOyB9Cg==' | base64 -d > /tmp/floor_check.php
+            php -l /tmp/floor_check.php
+            php /tmp/floor_check.php
+            rm -f /tmp/floor_check.php
