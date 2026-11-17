@@ -5,6 +5,8 @@ namespace App\Http\Controllers\WebsiteAdmin;
 use App\Http\Controllers\Controller;
 use App\Services\WebsiteBridge;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Warehouse pages moved from the website's /admin/warehouse (Sarah,
@@ -258,13 +260,14 @@ class WarehouseController extends Controller
         $resp = WebsiteBridge::admin('GET', '/warehouse/packer-view' . ($params ? '?' . http_build_query($params) : ''), null, 30);
         $error = ($resp['success'] ?? false) ? null : ($resp['message'] ?? 'Could not load the pick list.');
         $grouped = $resp['groupedByZone'] ?? [];
+        $erp = self::erpInfo(array_merge([], ...array_values($grouped)));
         if ($f['sort'] !== '') {
-            $key = function ($i) use ($f) {
+            $key = function ($i) use ($f, $erp) {
                 switch ($f['sort']) {
                     case 'order': return strtolower((string) ($i['order_number'] ?? $i['external_order_id'] ?? ''));
                     case 'customer': return strtolower((string) ($i['customer_name'] ?? ''));
                     case 'item': return strtolower((string) ($i['name'] ?? ''));
-                    case 'location': return strtolower((string) ($i['discogs_location'] ?? $i['location']['sub_location'] ?? ''));
+                    case 'location': return strtolower((string) (($erp[(string) ($i['_id'] ?? '')]['bin'] ?? '') ?: ($i['discogs_location'] ?? $i['location']['sub_location'] ?? '')));
                     case 'status': return strtolower((string) ($i['picking_status'] ?? ''));
                     case 'qty': return (int) ($i['quantity'] ?? 0);
                 }
@@ -286,6 +289,7 @@ class WarehouseController extends Controller
             'page' => $page,
             'hasMore' => $summary && ($page * 100) < (int) ($summary['total_items'] ?? 0) && $shown >= 100,
             'zones' => self::allZones(),
+            'erp' => $erp,
         ]);
     }
 
@@ -310,6 +314,72 @@ class WarehouseController extends Controller
         return redirect()->back()->with($saved ? 'status' : 'error', $saved ? 'Pick saved.' : $message);
     }
 
+    /**
+     * ERP facts for each order item, keyed by item _id: artist, album,
+     * category, subcategory and the ERP bin. Matches the ERP product by
+     * ERP id, then Discogs listing id, then SKU. Falls back to splitting
+     * "Artist - Album" from the item name.
+     */
+    public static function erpInfo(array $items): array
+    {
+        $ids = $listings = $skus = [];
+        foreach ($items as $it) {
+            if (!empty($it['pos_product_id']) && ctype_digit((string) $it['pos_product_id'])) $ids[] = (int) $it['pos_product_id'];
+            if (!empty($it['discogs_listing_id'])) { $listings[] = (string) $it['discogs_listing_id']; $skus[] = (string) $it['discogs_listing_id']; $skus[] = 'DISCOGS-' . $it['discogs_listing_id']; }
+            if (!empty($it['product_sku_code'])) $skus[] = (string) $it['product_sku_code'];
+        }
+        $rows = collect();
+        try {
+            $bid = request()->session()->get('user.business_id');
+            $hasListing = Schema::hasColumn('products', 'discogs_listing_id');
+            if ($ids || $skus || ($listings && $hasListing)) {
+                $cols = ['p.id', 'p.sku', 'p.name', 'p.artist', 'p.bin_position', 'p.listing_location', 'c.name as category', 'sc.name as subcategory'];
+                if ($hasListing) $cols[] = 'p.discogs_listing_id';
+                $rows = DB::table('products as p')
+                    ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+                    ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+                    ->when($bid, fn($q) => $q->where('p.business_id', $bid))
+                    ->where(function ($q) use ($ids, $skus, $listings, $hasListing) {
+                        $q->whereRaw('1 = 0');
+                        if ($ids) $q->orWhereIn('p.id', array_unique($ids));
+                        if ($skus) $q->orWhereIn('p.sku', array_unique($skus));
+                        if ($listings && $hasListing) $q->orWhereIn('p.discogs_listing_id', array_unique($listings));
+                    })
+                    ->get($cols);
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Packer ERP lookup failed: ' . $e->getMessage());
+        }
+        $byId = $rows->keyBy('id');
+        $bySku = $rows->keyBy(fn($r) => (string) $r->sku);
+        $byListing = $rows->filter(fn($r) => !empty($r->discogs_listing_id ?? null))->keyBy(fn($r) => (string) $r->discogs_listing_id);
+
+        $out = [];
+        foreach ($items as $it) {
+            $l = (string) ($it['discogs_listing_id'] ?? '');
+            $p = (!empty($it['pos_product_id']) ? $byId->get((int) $it['pos_product_id']) : null)
+                ?: ($l !== '' ? ($byListing->get($l) ?: $bySku->get($l) ?: $bySku->get('DISCOGS-' . $l)) : null)
+                ?: (!empty($it['product_sku_code']) ? $bySku->get((string) $it['product_sku_code']) : null);
+
+            $name = trim((string) ($it['name'] ?? ''));
+            $artist = trim((string) ($it['artist'] ?? '')) ?: trim((string) ($p->artist ?? ''));
+            $album = $name;
+            $parts = preg_split('/\s+[-\x{2013}]\s+/u', $name, 2);
+            if (count($parts) === 2) {
+                if ($artist === '') $artist = trim($parts[0]);
+                if (strcasecmp(trim($parts[0]), $artist) === 0) $album = trim($parts[1]);
+            }
+            $out[(string) ($it['_id'] ?? '')] = [
+                'artist' => $artist,
+                'album' => $album !== '' ? $album : 'Item',
+                'category' => $p->category ?? null,
+                'subcategory' => $p->subcategory ?? null,
+                'bin' => $p ? trim((string) ($p->bin_position ?: $p->listing_location)) : '',
+            ];
+        }
+        return $out;
+    }
+
     /* ---------- Order detail ---------- */
 
     public function show(string $id)
@@ -323,6 +393,11 @@ class WarehouseController extends Controller
             'zones' => self::allZones(),
             'settable' => self::DISCOGS_SETTABLE,
             'services' => self::USPS_SERVICES,
+            'erp' => $order ? self::erpInfo(array_map(fn($i) => $i + [
+                'product_sku_code' => is_array($i['product_id'] ?? null) ? ($i['product_id']['sku'] ?? null) : null,
+                'pos_product_id' => is_array($i['product_id'] ?? null) ? ($i['product_id']['posProductId'] ?? null) : null,
+                'artist' => is_array($i['product_id'] ?? null) ? ($i['product_id']['artist'] ?? null) : null,
+            ], (array) ($order['items'] ?? []))) : [],
         ]);
     }
 

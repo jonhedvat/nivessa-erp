@@ -25,6 +25,10 @@
   .pk-img img { width:96px; height:96px; border-radius:10px; object-fit:cover; display:block; }
   .pk-img .g { position:absolute; top:-6px; right:-6px; background:#eab308; color:#fff; font-size:11px; font-weight:700; border-radius:999px; padding:2px 6px; }
   .pk-name { font-size:16px; font-weight:700; color:#111827; line-height:1.3; }
+  .pk-artist { font-size:14px; font-weight:600; color:#4b5563; line-height:1.3; }
+  .pk-loc { display:inline-block; background:#111827; color:#fff; font-weight:800; font-size:15px; border-radius:7px; padding:3px 10px; margin-right:6px; letter-spacing:.3px; }
+  .pk-loc.none { background:#fee2e2; color:#991b1b; font-size:13px; font-weight:700; }
+  .pk-cat { font-size:13px; color:#374151; margin-top:4px; }
   .pk-meta { font-size:13px; color:#4b5563; margin-top:3px; }
   .pk-meta a { color:#2563eb; font-weight:600; text-decoration:none; }
   .pk-tags { margin-top:6px; }
@@ -135,6 +139,8 @@
 
         @foreach($items as $it)
           @php
+            $e = $erp[(string) ($it['_id'] ?? '')] ?? ['artist' => '', 'album' => ($it['name'] ?? 'Item'), 'category' => null, 'subcategory' => null, 'bin' => ''];
+            $dloc = trim((string) (($it['discogs_location'] ?? '') ?: ($it['location']['discogs_location_code'] ?? '')));
             $ps = $it['picking_status'] ?? 'Not Picked';
             $cls = $ps === 'Picked' ? 'st-picked' : ($ps === "Can't Find" ? 'st-cant' : '');
           @endphp
@@ -145,14 +151,19 @@
               <div class="pk-img"></div>
             @endif
             <div>
-              <div class="pk-name">@if(($it['quantity'] ?? 1) > 1)<span class="pk-qty">x{{ $it['quantity'] }}</span>@endif{{ $it['name'] ?? 'Item' }}</div>
+              @if($e['artist'] !== '')<div class="pk-artist">{{ $e['artist'] }}</div>@endif
+              <div class="pk-name">@if(($it['quantity'] ?? 1) > 1)<span class="pk-qty">x{{ $it['quantity'] }}</span>@endif{{ $e['album'] }}</div>
+              <div class="pk-cat">
+                @if($e['bin'] !== '')<span class="pk-loc">{{ $e['bin'] }}</span>@elseif($dloc !== '')<span class="pk-loc">{{ $dloc }}</span>@else<span class="pk-loc none">No location</span>@endif
+                @if($e['category']){{ $e['category'] }}@if($e['subcategory']) › {{ $e['subcategory'] }}@endif @endif
+              </div>
               <div class="pk-meta">
                 <a href="{{ route('wa.warehouse.show', $it['order_id'] ?? '') }}">{{ ($it['order_number'] ?? '') ?: ($it['external_order_id'] ?? '') }}</a>
                 · {{ $it['order_source'] ?? '' }} · {{ $it['customer_name'] ?? '' }}
               </div>
               <div class="pk-tags">
                 <span class="wh-tag zone">{{ ($it['zone'] ?? '') ?: $zone }}</span>
-                @if(!empty($it['discogs_location']))<span class="wh-tag code">{{ $it['discogs_location'] }}</span>@endif
+                @if($dloc !== '' && strcasecmp($dloc, $e['bin']) !== 0 && $e['bin'] !== '')<span class="wh-tag code">Discogs: {{ $dloc }}</span>@endif
                 @if(!empty($it['location']['sub_location']))<span class="wh-tag sub">{{ $it['location']['sub_location'] }}</span>@endif
                 @if(!empty($it['location']['shelf_details']))<span class="wh-tag shelf">{{ $it['location']['shelf_details'] }}</span>@endif
                 @if(!empty($it['media_condition']))<span class="wh-pill blue">Vinyl: {{ $it['media_condition'] }}</span>@endif
