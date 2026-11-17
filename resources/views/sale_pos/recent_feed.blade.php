@@ -1380,12 +1380,11 @@
                                 $baseArtist = $line->product_artist;
                             }
                             $unit = (float) ($line->unit_price_inc_tax ?: $line->unit_price);
+                            // unit_price / unit_price_inc_tax are already AFTER the
+                            // line discount (unit_price_before_discount holds the
+                            // sticker price) - don't subtract the discount again.
+                            // Sale #35620: $2.00 -20% = $1.60 charged, feed showed $1.28.
                             $disc = 0;
-                            if (!empty($line->line_discount_amount)) {
-                                $disc = $line->line_discount_type === 'percentage'
-                                    ? ($unit * $line->line_discount_amount / 100)
-                                    : (float) $line->line_discount_amount;
-                            }
                             $key = ($product->id ?? ('m:' . $baseName))
                                 . '|' . ($line->variation_id ?? '')
                                 . '|' . round($unit, 2)
