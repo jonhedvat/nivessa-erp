@@ -753,6 +753,25 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         } catch (\Throwable $e) {
             \Log::warning('scoreboard hub wins: ' . $e->getMessage());
         }
+        // His daily checklist: every task he ticked off counts.
+        try {
+            $cut = $now->copy()->subDays(60)->format('Y-m-d');
+            foreach (\App\Http\Controllers\DailyChecklistController::readAll() as $day) {
+                if (stripos((string) ($day['user_name'] ?? ''), $who) !== 0 || ($day['date'] ?? '') < $cut) {
+                    continue;
+                }
+                $n = count((array) ($day['checked'] ?? []));
+                if ($n === 0) {
+                    continue;
+                }
+                $byDay[$day['date']] = ($byDay[$day['date']] ?? 0) + $n;
+                $total += $n;
+                $at = Carbon::parse(($day['updated_at'] ?? $day['date']), self::TZ);
+                $recent[] = ['label' => 'Daily checklist', 'note' => $n . ' of ' . (int) ($day['total'] ?? $n) . ' tasks done', 'at' => $at->toIso8601String()];
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('scoreboard checklist wins: ' . $e->getMessage());
+        }
         usort($recent, fn ($x, $y) => strcmp($y['at'], $x['at']));
         // Streak: days he hit the target in a row. Days he didn't work (no points) are skipped, not counted against him.
         $streak = 0;
