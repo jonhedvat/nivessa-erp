@@ -2334,6 +2334,9 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/admin/vinylfuture-invoice-import', 'AmsInvoiceImportController@vinylfutureIndex');
     Route::post('/admin/vinylfuture-invoice-import/preview', 'AmsInvoiceImportController@vinylfuturePreview');
     Route::post('/admin/vinylfuture-invoice-import/apply', 'AmsInvoiceImportController@vinylfutureApply');
+    Route::get('/admin/matador-invoice-import', 'AmsInvoiceImportController@matadorIndex');
+    Route::post('/admin/matador-invoice-import/preview', 'AmsInvoiceImportController@matadorPreview');
+    Route::post('/admin/matador-invoice-import/apply', 'AmsInvoiceImportController@matadorApply');
     Route::post('/admin/redeye-invoice-import/preview', 'AmsInvoiceImportController@redeyePreview');
     Route::post('/admin/redeye-invoice-import/apply', 'AmsInvoiceImportController@redeyeApply');
     Route::post('/admin/redeye-invoice-import/auto', 'AmsInvoiceImportController@redeyeAuto');

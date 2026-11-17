@@ -86,6 +86,8 @@ body.pos-v2 .payment_modal input[type=file], body.pos-v2 .edit_payment_modal inp
                     <i class="fa fa-file-pdf-o"></i> Import Alliance Invoice (PDF)</a>
                     <a class="btn btn-block btn-success" href="{{action('AmsInvoiceImportController@vinylfutureIndex')}}" style="margin-bottom:5px;font-weight:600;">
                     <i class="fa fa-file-pdf-o"></i> Import Vinyl Future Invoice (PDF)</a>
+                    <a class="btn btn-block btn-success" href="{{action('AmsInvoiceImportController@matadorIndex')}}" style="margin-bottom:5px;font-weight:600;">
+                    <i class="fa fa-file-pdf-o"></i> Import Matador Invoice (PDF)</a>
                     <a class="btn btn-block btn-primary" href="{{action('PurchaseController@create')}}">
                     <i class="fa fa-plus"></i> @lang('messages.add')</a>
                 </div>

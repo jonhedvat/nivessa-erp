@@ -74,6 +74,22 @@ class DistributorInvoiceImport
             // Never suggest less than this (what the store charges for deejay 12"s).
             'min_price' => 23.00,
         ],
+        // Matador Direct (Matador, XL, 4AD, Young, Rough Trade, Beggars).
+        // Sales orders / invoices print the label catalog # ("XL-529-1"), not a
+        // barcode. The controller maps it to the UPC through the Matador price
+        // feed (same sheet MatadorFetcher reads nightly), so most lines go the
+        // normal UPC route; a catalog # the sheet doesn't know falls back to
+        // catalog # / artist + title matching like Vinyl Future.
+        'matador' => [
+            'label' => 'Matador',
+            'long' => 'Matador Direct',
+            'ref' => 'MATADOR-',
+            'dir' => 'matador-imports',
+            'action' => 'matador-invoice-import',
+            'supplier_like' => ['Matador Records', 'Matador Direct', 'Matador'],
+            'accounts' => [],
+            'catalog' => true,
+        ],
     ];
 
     // Category names new products can land in (top-level, product type).
@@ -313,7 +329,7 @@ class DistributorInvoiceImport
                     'sku' => $catno !== '' ? '' : self::skuForUpc($upc),
                     'category_id' => $catId,
                     'category_name' => $catName,
-                    'sub_category_id' => $catno !== '' && $catId ? self::subCategoryId($business_id, $catId, 'Electronic/Dance') : null,
+                    'sub_category_id' => $catno !== '' && $catId && $distributor === 'vinylfuture' ? self::subCategoryId($business_id, $catId, 'Electronic/Dance') : null,
                     'sell_price' => self::suggestPrice($unit, $catName, (self::config($distributor) ?: [])['markup'] ?? 1.6, (self::config($distributor) ?: [])['min_price'] ?? 0),
                 ];
             }
@@ -794,7 +810,7 @@ class DistributorInvoiceImport
             return DB::table('variations as v')->join('products as p', 'v.product_id', '=', 'p.id')
                 ->where('p.business_id', $business_id)->whereNull('v.deleted_at');
         };
-        $byCat = $base()->where('p.added_via', 'vinylfuture_invoice')->where(function ($q) use ($catnos) {
+        $byCat = $base()->whereIn('p.added_via', ['vinylfuture_invoice', 'matador_invoice'])->where(function ($q) use ($catnos) {
             foreach (array_keys($catnos) as $c) $q->orWhere('p.product_description', 'like', '%: ' . self::likeEscape($c) . ' - %');
         })->limit(2000)->get(self::CATALOG_COLS);
         $byArtist = $artists ? $base()->where(function ($q) use ($artists) {
