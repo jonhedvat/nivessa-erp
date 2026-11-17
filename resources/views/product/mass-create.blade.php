@@ -1071,6 +1071,8 @@
             // (only when the operator hasn't already typed a cost). Covers
             // manual category picks as well as the Discogs/artist auto-fills.
             window.applyCategoryDefaultPurchasePrice($this.closest('.tr, .product-row'));
+            // Category picked after the price: raise to its minimum now.
+            if (typeof window.applyPriceFloor === 'function') window.applyPriceFloor($this.closest('.tr, .product-row'));
         });
 
         // Auto-fill category from the store's curated Artist→Bin list when an
@@ -2168,21 +2170,26 @@
     // ---- Underpricing guard (Sarah 2026-11-17) ----------------------------
     // Server compares each row's price to Discogs (sales-based value for its
     // grade + cheapest copy listed), our own sales, and eBay asking prices.
-    // 7" / 45s never go out under $3 (Sarah 2026-11-17); server enforces too.
-    const SEVEN_INCH_RE = /7"|7 inch|45 ?rpm|\b45s\b/i;
-    function applySevenInchFloor($row) {
+    // Minimum prices (Sarah 2026-11-17): 7" / 45s $3, plus per-category floors
+    // from ProductController::CATEGORY_PRICE_FLOORS (e.g. DVD > Horror $8).
+    // Keyed by combo value "catId_subId". The server enforces the same on save.
+    const PRICE_FLOORS = @json((object) ($price_floors ?? []));
+    window.applyPriceFloor = function ($row) {
         const $p = $row.find('input[name*="[single_dsp_inc_tax]"]');
         const v = parseFloat($p.val());
-        const cat = $.trim($row.find('.category-combo-select option:selected').text() || '');
-        if (v > 0 && v < 3 && SEVEN_INCH_RE.test(cat)) {
+        const $combo = $row.find('.category-combo-select');
+        const min = parseFloat(PRICE_FLOORS[$combo.val() || ''] || 0);
+        if (v > 0 && min > 0 && v < min - 0.011) {
             const was = $p.val();
-            $p.val('3.00');
+            const label = $.trim($combo.find('option:selected').text() || '');
+            $p.val(min.toFixed(2));
             if (typeof markStorePriceRaised === 'function') {
-                markStorePriceRaised($p, was, '3.00', '7" / 45s have a $3 minimum');
+                markStorePriceRaised($p, was, min.toFixed(2), label + ' has a $' + min.toFixed(2) + ' minimum (lower prices don\'t sell faster)');
             }
-            toastr.info('Raised a 7" from $' + was + ' to $3.00 (45s minimum).');
+            toastr.info('Raised ' + (label || 'item') + ' from $' + was + ' to the $' + min.toFixed(2) + ' minimum.');
         }
-    }
+    };
+    function applySevenInchFloor($row) { window.applyPriceFloor($row); }
 
     function priceGuardItem($row) {
         applySevenInchFloor($row);

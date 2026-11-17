@@ -45,6 +45,62 @@ class ProductController extends Controller
     /** 7" / 45s minimum shelf price (Sarah 2026-11-17). */
     const SEVEN_INCH_MIN_PRICE = 3.00;
     const SEVEN_INCH_CATEGORY = '/7"|7 inch|45 ?rpm|\\b45s\\b/i';
+
+    // Sarah 2026-11-17: minimum price per "Category > Subcategory" for Mass
+    // Add (Discogs rows + eBay/AI Bulk Entry). From diag-price-floor.yml:
+    // items priced under these sold no better in 90 days (usually worse), so
+    // anything lower is raised to the floor. "Category > *" = every sub.
+    // Keys are compared lowercased with everything but letters/digits removed.
+    const CATEGORY_PRICE_FLOORS = [
+        'DVD > Horror' => 8, 'DVD > Action/Adventure' => 10, 'DVD > Comedy' => 8,
+        'DVD > Drama' => 8, 'DVD > Thriller' => 8,
+        'VHS > *' => 8,
+        'Vinyl - Used > Rock' => 10, 'Vinyl - Used > Jazz' => 10, 'Vinyl - Used > R&B, Soul & Funk' => 8,
+        'Vinyl - Used > Hip Hop LPs' => 10, 'Vinyl - Used > Electronic/Dance' => 6, 'Vinyl - Used > Pop' => 10,
+        'Vinyl - Used > Folk' => 10, 'Vinyl - Used > Classical' => 10, 'Vinyl - Used > Blues' => 10,
+        'Vinyl - Used > Country' => 10, 'Vinyl - Used > Latin' => 5,
+        'CD - Used > Rock' => 6, 'CD - Used > Hip-Hop' => 8, 'CD - Used > Pop' => 8,
+        'CD - Used > R&B, Soul, and Funk' => 8, 'CD - Used > Electronic/Dance' => 8, 'CD - Used > Soundtracks' => 8,
+        'Cassettes - Used > Rock' => 10,
+        'Books > Comic Books' => 5,
+        'CD - Sealed > *' => 15,
+        'Vinyl - Sealed > *' => 30,
+    ];
+
+    private static function floorKey($s)
+    {
+        return preg_replace('/[^a-z0-9]/', '', strtolower((string) $s));
+    }
+
+    /** Floor for a "Category > Subcategory" label (or cat + sub names), or null. */
+    public static function categoryPriceFloor($cat, $sub = null)
+    {
+        static $map = null;
+        if ($map === null) {
+            $map = [];
+            foreach (self::CATEGORY_PRICE_FLOORS as $label => $floor) {
+                $parts = array_map('trim', explode(' > ', $label, 2));
+                $map[self::floorKey($parts[0]) . '|' . ($parts[1] === '*' ? '*' : self::floorKey($parts[1]))] = (float) $floor;
+            }
+        }
+        if ($sub === null && strpos((string) $cat, ' > ') !== false) {
+            [$cat, $sub] = array_map('trim', explode(' > ', $cat, 2));
+        }
+        $c = self::floorKey($cat);
+        if ($c === '') return null;
+        $s = self::floorKey($sub);
+        return $map[$c . '|' . $s] ?? $map[$c . '|*'] ?? null;
+    }
+
+    /** Minimum price for a row: category floor, and $3 for 7"/45s. */
+    public static function massAddMinPrice($cat, $sub = null)
+    {
+        $min = self::categoryPriceFloor($cat, $sub);
+        if (preg_match(self::SEVEN_INCH_CATEGORY, trim($cat . ' ' . $sub))) {
+            $min = max((float) $min, self::SEVEN_INCH_MIN_PRICE);
+        }
+        return $min ?: null;
+    }
     // Sarah 2026-11-17: nothing for sale on Discogs = price at $1 per want
     // (Ariana Grande Positions deluxe went out at $175; 450 wants, 0 listed = $450).
     const SCARCE_PER_WANT = 1.00;
@@ -4147,7 +4203,15 @@ class ProductController extends Controller
         $category_cost_defaults = \App\Http\Controllers\CostPriceRulesController::defaultCostsByCategoryId($business_id);
         $category_cost_rules = \App\Http\Controllers\CostPriceRulesController::RULES;
 
+        // Minimum price per category combo id ("catId_subId"), see CATEGORY_PRICE_FLOORS.
+        $price_floors = [];
+        foreach ($category_combos as $combo) {
+            $min = self::massAddMinPrice($combo['label']);
+            if ($min) $price_floors[$combo['id']] = $min;
+        }
+
         return view('product.mass-create')->with(compact(
+            'price_floors',
             'categories',
             'category_combos',
             'brands',
@@ -4251,16 +4315,22 @@ class ProductController extends Controller
             }
             $catNames = $catIds ? \DB::table('categories')->whereIn('id', array_unique($catIds))->pluck('name', 'id')->all() : [];
             $changed = false;
+            $raisedLog = [];
             foreach ($floorInput as $i => $pi) {
-                $names = ($catNames[(int) ($pi['category_id'] ?? 0)] ?? '') . ' ' . ($catNames[(int) ($pi['sub_category_id'] ?? 0)] ?? '');
+                $catName = $catNames[(int) ($pi['category_id'] ?? 0)] ?? '';
+                $subName = $catNames[(int) ($pi['sub_category_id'] ?? 0)] ?? '';
                 $pr = isset($pi['single_dsp_inc_tax']) && $pi['single_dsp_inc_tax'] !== '' ? (float) preg_replace('/[^0-9.]/', '', (string) $pi['single_dsp_inc_tax']) : null;
-                if ($pr !== null && $pr > 0 && $pr < self::SEVEN_INCH_MIN_PRICE && preg_match(self::SEVEN_INCH_CATEGORY, $names)) {
-                    $floorInput[$i]['single_dsp_inc_tax'] = number_format(self::SEVEN_INCH_MIN_PRICE, 2, '.', '');
+                // Category floors too (Sarah 2026-11-17); $X.99 under a floor counts as meeting it.
+                $min = self::massAddMinPrice($catName, $subName);
+                if ($pr !== null && $pr > 0 && $min && $pr < $min - 0.011) {
+                    $floorInput[$i]['single_dsp_inc_tax'] = number_format($min, 2, '.', '');
+                    $raisedLog[] = ($pi['name'] ?? '?') . ' (' . $catName . ' > ' . $subName . ') $' . $pr . '->$' . $min;
                     $changed = true;
                 }
             }
             if ($changed) {
                 $request->merge(['products' => $floorInput]);
+                \Log::info('mass-add price floor raised for user ' . auth()->id() . ': ' . implode('; ', $raisedLog));
             }
         }
 
@@ -5553,8 +5623,9 @@ class ProductController extends Controller
                 }
             }
             $suggested = $high ? $highSuggested : ($reasons ? max(0.99, ceil($best) - 0.01) : null);
-            if ($suggested !== null && preg_match(self::SEVEN_INCH_CATEGORY, (string) ($item['category'] ?? ''))) {
-                $suggested = max($suggested, self::SEVEN_INCH_MIN_PRICE);
+            $rowMin = self::massAddMinPrice((string) ($item['category'] ?? ''));
+            if ($suggested !== null && $rowMin) {
+                $suggested = max($suggested, $rowMin);
             }
 
             $scarceLow = !empty($discogsOut['scarce']) && $price < $discogsOut['scarce'] * 0.70;

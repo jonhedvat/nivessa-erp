@@ -396,6 +396,12 @@ class MassAddAiPriceController extends Controller
                     $notes[] = $histNote($price); // we have history and the AI was not under it
                 }
 
+                // Sarah 2026-11-17: category minimum (DVD > Horror $8 etc.) - cheaper doesn't sell faster.
+                $min = \App\Http\Controllers\ProductController::massAddMinPrice($cat, $sub);
+                if ($price > 0 && $min && $price < $min - 0.011) {
+                    $price = (float) $min;
+                }
+
                 // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
                 $lines[] = implode(' | ', [$name, $artist, $cat, $sub, '', $price > 0 ? number_format($price, 2, '.', '') : '', '', '', $cond]);
             }
