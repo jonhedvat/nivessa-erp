@@ -42,6 +42,10 @@ use App\Services\EbayService;
 
 class ProductController extends Controller
 {
+    /** 7" / 45s minimum shelf price (Sarah 2026-11-17). */
+    const SEVEN_INCH_MIN_PRICE = 3.00;
+    const SEVEN_INCH_CATEGORY = '/7"|7 inch|45 ?rpm|\\b45s\\b/i';
+
     /**
      * All Utils instance.
      *
@@ -4231,6 +4235,31 @@ class ProductController extends Controller
 
     public function massStore(Request $request)
     {
+        // Sarah 2026-11-17: 7" / 45s never go out under $3. The page raises
+        // them already; this makes it stick even if the page is bypassed.
+        $floorInput = $request->input('products');
+        if (is_array($floorInput)) {
+            $catIds = [];
+            foreach ($floorInput as $pi) {
+                foreach (['category_id', 'sub_category_id'] as $k) {
+                    if (!empty($pi[$k])) $catIds[] = (int) $pi[$k];
+                }
+            }
+            $catNames = $catIds ? \DB::table('categories')->whereIn('id', array_unique($catIds))->pluck('name', 'id')->all() : [];
+            $changed = false;
+            foreach ($floorInput as $i => $pi) {
+                $names = ($catNames[(int) ($pi['category_id'] ?? 0)] ?? '') . ' ' . ($catNames[(int) ($pi['sub_category_id'] ?? 0)] ?? '');
+                $pr = isset($pi['single_dsp_inc_tax']) && $pi['single_dsp_inc_tax'] !== '' ? (float) preg_replace('/[^0-9.]/', '', (string) $pi['single_dsp_inc_tax']) : null;
+                if ($pr !== null && $pr > 0 && $pr < self::SEVEN_INCH_MIN_PRICE && preg_match(self::SEVEN_INCH_CATEGORY, $names)) {
+                    $floorInput[$i]['single_dsp_inc_tax'] = number_format(self::SEVEN_INCH_MIN_PRICE, 2, '.', '');
+                    $changed = true;
+                }
+            }
+            if ($changed) {
+                $request->merge(['products' => $floorInput]);
+            }
+        }
+
         if ($request->filled('price_guard_reason')) {
             \Log::info('mass-add price guard override by user ' . auth()->id() . ': ' . mb_substr((string) $request->input('price_guard_reason'), 0, 1000));
         }
@@ -5445,11 +5474,28 @@ class ProductController extends Controller
                 $best = max($best, $lowest);
             }
 
+            // Way above market: over 2.5x the most generous signal and $15+ over.
+            $high = false;
+            $highSuggested = null;
+            if (!$reasons && $refs) {
+                $top = max($refs);
+                if ($top > 0 && $price > $top * 2.5 && $price - $top >= 15) {
+                    $high = true;
+                    $reasons[] = array_search($top, $refs) . ' ~$' . number_format($top, 2);
+                    $highSuggested = max(0.99, ceil($top * 1.25) - 0.01);
+                }
+            }
+            $suggested = $high ? $highSuggested : ($reasons ? max(0.99, ceil($best) - 0.01) : null);
+            if ($suggested !== null && preg_match(self::SEVEN_INCH_CATEGORY, (string) ($item['category'] ?? ''))) {
+                $suggested = max($suggested, self::SEVEN_INCH_MIN_PRICE);
+            }
+
             $out[$idx] = [
-                'flag' => !empty($reasons),
+                'flag' => !empty($reasons) && !$high,
+                'high' => $high,
                 'unchecked' => $unchecked,
                 'reasons' => $reasons,
-                'suggested' => $reasons ? max(0.99, ceil($best) - 0.01) : null,
+                'suggested' => $suggested,
                 'discogs' => $discogsOut,
                 'store' => $store ? ['median' => $store['median'], 'sales' => $store['sales']] : null,
                 'ebay' => $ebayOut,

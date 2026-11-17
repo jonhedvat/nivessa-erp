@@ -83,6 +83,9 @@ jobs:
                 ->reject(function ($r) use ($sold) { return $sold->contains('discogs_release_id', $r->discogs_release_id); })
                 ->unique('discogs_release_id')->take($n);
             echo "PICKED sold=" . $sold->count() . " never=" . $never->count() . "\n";
+            $re = App\Http\Controllers\ProductController::SEVEN_INCH_CATEGORY;
+            echo "SEVENCATS " . json_encode(DB::table('categories')->pluck('name')->unique()->filter(function ($nm) use ($re) { return preg_match($re, (string) $nm); })->values()->all()) . "\n";
+            $seven = (clone $base)->where(function ($q) { $q->where('c.name', 'like', '%45 RPM%')->orWhere('sc.name', 'like', '%45 RPM%'); })->inRandomOrder()->limit(6)->get();
 
             $grades = ['Very Good Plus (VG+)', 'Near Mint (NM or M-)', 'Very Good (VG)', 'Good Plus (G+)', ''];
             $ladder = [1.99, 4.99, 9.99, 19.99, 39.99];
@@ -93,6 +96,8 @@ jobs:
             $i = 0;
             foreach ($never as $r) { $tests[] = ['group' => 'never', 'r' => $r, 'price' => $ladder[$i % 5], 'note' => 'ladder']; $i++; }
 
+            $k = 0;
+            foreach ($seven as $r) { $tests[] = ['group' => 'seven', 'r' => $r, 'price' => [0.99, 1.5, 2.5, 4.99, 0.5, 2.99][$k % 6], 'note' => '7in']; $k++; }
             $bid = (int) ($tests[0]['r']->business_id ?? 1);
             $sess = app('session')->driver();
             $sess->put('user.business_id', $bid);

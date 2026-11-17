@@ -2168,7 +2168,24 @@
     // ---- Underpricing guard (Sarah 2026-11-17) ----------------------------
     // Server compares each row's price to Discogs (sales-based value for its
     // grade + cheapest copy listed), our own sales, and eBay asking prices.
+    // 7" / 45s never go out under $3 (Sarah 2026-11-17); server enforces too.
+    const SEVEN_INCH_RE = /7"|7 inch|45 ?rpm|\b45s\b/i;
+    function applySevenInchFloor($row) {
+        const $p = $row.find('input[name*="[single_dsp_inc_tax]"]');
+        const v = parseFloat($p.val());
+        const cat = $.trim($row.find('.category-combo-select option:selected').text() || '');
+        if (v > 0 && v < 3 && SEVEN_INCH_RE.test(cat)) {
+            const was = $p.val();
+            $p.val('3.00');
+            if (typeof markStorePriceRaised === 'function') {
+                markStorePriceRaised($p, was, '3.00', '7" / 45s have a $3 minimum');
+            }
+            toastr.info('Raised a 7" from $' + was + ' to $3.00 (45s minimum).');
+        }
+    }
+
     function priceGuardItem($row) {
+        applySevenInchFloor($row);
         const price = $.trim($row.find('input[name*="[single_dsp_inc_tax]"]').val() || '');
         if (!(parseFloat(price) > 0)) return null;
         return {
@@ -2217,6 +2234,13 @@
     function markPriceGuard($row, r) {
         const $price = $row.find('input[name*="[single_dsp_inc_tax]"]');
         $price.siblings('.price-guard-note').remove();
+        if (r && r.high) {
+            $price.css({ 'border-color': '#d97706', 'background': '#fffbeb' }).data('priceGuardRed', true);
+            $('<div class="price-guard-note" style="font-size:11px;color:#b45309;line-height:1.2;margin-top:2px;"></div>')
+                .html('Too high? ' + priceGuardSources(r) + ' &rarr; <a href="#" class="price-guard-use" data-price="' + r.suggested + '">use $' + Number(r.suggested).toFixed(2) + '</a>')
+                .insertAfter($price);
+            return;
+        }
         if (!r || !r.flag) {
             if ($price.data('priceGuardRed')) $price.css({ 'border-color': '', 'background': '' }).data('priceGuardRed', false);
             return;
@@ -2276,36 +2300,44 @@
             }
             const flagged = items.filter(function (it) { return res[it.idx] && res[it.idx].flag; });
             items.forEach(function (it) { markPriceGuard(rowsByIdx[it.idx], res[it.idx]); });
-            const unchecked = items.filter(function (it) { return res[it.idx] && res[it.idx].unchecked && !res[it.idx].flag; });
-            if (!flagged.length && !unchecked.length) return proceed();
+            const highs = items.filter(function (it) { return res[it.idx] && res[it.idx].high; });
+            const unchecked = items.filter(function (it) { return res[it.idx] && res[it.idx].unchecked && !res[it.idx].flag && !res[it.idx].high; });
+            if (!flagged.length && !highs.length && !unchecked.length) return proceed();
 
             const esc = function (v) { return $('<div>').text(v == null ? '' : String(v)).html(); };
             let rowsHtml = '';
-            flagged.forEach(function (it) {
+            const rowHtml = function (it, high) {
                 const r = res[it.idx];
-                rowsHtml += '<tr data-idx="' + esc(it.idx) + '">'
-                    + '<td><input type="checkbox" class="pg-use" checked></td>'
+                return '<tr data-idx="' + esc(it.idx) + '" class="' + (high ? 'pg-high' : 'pg-low') + '">'
+                    + '<td><input type="checkbox" class="pg-use"' + (high ? '' : ' checked') + '></td>'
                     + '<td><strong>' + esc(it.artist ? it.artist + ' - ' : '') + esc(it.name) + '</strong>'
                     + (it.condition ? ' <span class="text-muted">' + esc(it.condition) + '</span>' : '')
                     + '<div style="font-size:11px;">' + priceGuardSources(r) + '</div></td>'
-                    + '<td style="color:#b91c1c;font-weight:700;">$' + Number(it.price).toFixed(2) + '</td>'
+                    + '<td style="color:' + (high ? '#b45309' : '#b91c1c') + ';font-weight:700;">$' + Number(it.price).toFixed(2)
+                    + '<div style="font-size:10px;font-weight:400;">' + (high ? 'too high' : 'too low') + '</div></td>'
                     + '<td><input type="number" step="0.01" min="0" class="form-control input-sm pg-new" style="width:90px;" value="' + Number(r.suggested).toFixed(2) + '"></td>'
                     + '</tr>';
-            });
+            };
+            flagged.forEach(function (it) { rowsHtml += rowHtml(it, false); });
+            highs.forEach(function (it) { rowsHtml += rowHtml(it, true); });
+            const titleBits = [];
+            if (flagged.length) titleBits.push(flagged.length + ' priced well under market');
+            if (highs.length) titleBits.push(highs.length + ' priced way over market');
             $('#price_guard_modal').remove();
             const $m = $('<div class="modal fade" id="price_guard_modal" tabindex="-1" role="dialog"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">'
-                + '<div class="modal-header"><h4 class="modal-title"><i class="fa fa-exclamation-triangle" style="color:#dc2626;"></i> ' + (flagged.length ? flagged.length + ' item' + (flagged.length > 1 ? 's are' : ' is') + ' priced well under market' : 'Some prices could not be checked') + '</h4></div>'
-                + '<div class="modal-body">' + (flagged.length ? '<p>These prices are much lower than what they sell for on Discogs, eBay, or in our store. Ticked rows switch to the suggested price.</p>' : '')
+                + '<div class="modal-header"><h4 class="modal-title"><i class="fa fa-exclamation-triangle" style="color:#dc2626;"></i> ' + (titleBits.length ? titleBits.join(', ') : 'Some prices could not be checked') + '</h4></div>'
+                + '<div class="modal-body">' + (flagged.length ? '<p><strong>Too low</strong> = much less than it sells for on Discogs, eBay, or in our store. Ticked rows switch to the suggested price; to keep a low price, untick it and give a reason.</p>' : '')
+                + (highs.length ? '<p><strong>Too high</strong> = more than 2.5x what it sells for. Unticked by default: tick to switch to the suggested price, or leave it if you know it is worth more.</p>' : '')
                 + (unchecked.length ? '<div class="alert alert-warning" style="padding:8px 10px;"><strong>' + unchecked.length + ' row' + (unchecked.length > 1 ? 's' : '') + ' could not be checked against Discogs</strong> (Discogs is limiting how fast we can look things up). Go back, wait a minute and save again to check them, or save anyway: '
                     + unchecked.map(function (it) { return esc((it.artist ? it.artist + ' - ' : '') + it.name) + ' ($' + Number(it.price).toFixed(2) + ')'; }).join(', ') + '</div>' : '')
-                + (flagged.length ? '<table class="table table-condensed"><thead><tr><th></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
+                + (rowsHtml ? '<table class="table table-condensed"><thead><tr><th></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
                 + '<div id="pg_reason_wrap" style="display:none;"><label>Why keep the low price on the unticked rows? (required)</label>'
                 + '<input type="text" class="form-control" id="pg_reason" placeholder="e.g. damaged cover, bargain bin, matching another copy"></div></div>'
                 + '<div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">Go back</button>'
-                + '<button type="button" class="btn btn-success" id="pg_apply">' + (flagged.length ? 'Use these prices &amp; save' : 'Save anyway') + '</button></div>'
+                + '<button type="button" class="btn btn-success" id="pg_apply">' + (rowsHtml ? 'Use ticked prices &amp; save' : 'Save anyway') + '</button></div>'
                 + '</div></div></div>');
             $('body').append($m);
-            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('.pg-use:not(:checked)').length > 0); };
+            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('tr.pg-low .pg-use:not(:checked)').length > 0); };
             $m.on('change', '.pg-use', syncReason);
             $m.on('click', '#pg_apply', function () {
                 const kept = [];
@@ -2319,7 +2351,7 @@
                             $row.find('input[name*="[single_dsp_inc_tax]"]').val(v.toFixed(2));
                             markPriceGuard($row, null);
                         }
-                    } else {
+                    } else if ($tr.hasClass('pg-low')) {
                         kept.push($.trim($tr.find('td').eq(1).find('strong').text()));
                     }
                 });
