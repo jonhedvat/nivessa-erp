@@ -89,6 +89,8 @@ class DistributorInvoiceImport
             'supplier_like' => ['Matador Records', 'Matador Direct', 'Matador'],
             'accounts' => [],
             'catalog' => true,
+            // New titles: no suggested sell price, the buyer types it in.
+            'suggest_price' => false,
         ],
     ];
 
@@ -309,6 +311,9 @@ class DistributorInvoiceImport
                 'product_id' => $best ? (int) $best->product_id : null,
                 'product_name' => $best ? $best->product_name : null,
                 'product_inactive' => $best ? (bool) $best->is_inactive : false,
+                // Sell price the ERP has today (shown on the review; a matched
+                // product with none gets a box to type one in).
+                'current_sell' => $best && $best->sell_price_inc_tax !== null ? round((float) $best->sell_price_inc_tax, 2) : null,
                 'current_cost' => $best && $best->default_purchase_price !== null ? round((float) $best->default_purchase_price, 2) : null,
                 'existing' => [],   // same invoice already logged on another purchase: skip
                 'earlier' => [],    // the title is on an older purchase: just FYI
@@ -330,7 +335,7 @@ class DistributorInvoiceImport
                     'category_id' => $catId,
                     'category_name' => $catName,
                     'sub_category_id' => $catno !== '' && $catId && $distributor === 'vinylfuture' ? self::subCategoryId($business_id, $catId, 'Electronic/Dance') : null,
-                    'sell_price' => self::suggestPrice($unit, $catName, (self::config($distributor) ?: [])['markup'] ?? 1.6, (self::config($distributor) ?: [])['min_price'] ?? 0),
+                    'sell_price' => ((self::config($distributor) ?: [])['suggest_price'] ?? true) === false ? null : self::suggestPrice($unit, $catName, (self::config($distributor) ?: [])['markup'] ?? 1.6, (self::config($distributor) ?: [])['min_price'] ?? 0),
                 ];
             }
             $out[] = $line;
@@ -424,6 +429,14 @@ class DistributorInvoiceImport
                 $vid = (int) ($l['variation_id'] ?? 0);
 
                 if ($vid && isset($valid[$vid])) {
+                    // A matched product with no sell price: save the one typed
+                    // on the review. Never overwrites an existing price.
+                    $setSell = round((float) ($l['set_sell_price'] ?? 0), 2);
+                    if ($setSell > 0) {
+                        DB::table('variations')->where('id', $vid)
+                            ->where(function ($q) { $q->whereNull('sell_price_inc_tax')->orWhere('sell_price_inc_tax', '<=', 0); })
+                            ->update(['default_sell_price' => $setSell, 'sell_price_inc_tax' => $setSell, 'updated_at' => now()]);
+                    }
                     $clean[] = ['variation_id' => $vid, 'product_id' => (int) $valid[$vid], 'qty' => $qty, 'unit_price' => $unit];
                     continue;
                 }

@@ -442,7 +442,9 @@ function renderReview(data) {
             return `<tr${onOther ? ' style="background:#fff8e6;"' : ''}><td><input type="checkbox" class="inv-pick" data-i="${i}" ${onOther ? '' : 'checked'}></td>
                 <td>${esc(l.upc || l.catno)}</td><td>${esc(l.description)}</td><td><a href="/products/view/${l.product_id}" target="_blank">${esc(l.product_name)}</a></td><td></td>
                 <td style="text-align:right;">${l.qty}</td><td style="text-align:right;">${cost(l)}</td>
-                <td style="text-align:right;"></td><td style="text-align:right;">${money(l.line_total)}</td><td>${note}</td></tr>`;
+                <td style="text-align:right;">${l.current_sell > 0 ? money(l.current_sell)
+                    : `<input type="number" step="0.01" min="0" class="form-control input-sm inv-setsell" data-i="${i}" placeholder="no price" style="width:90px;display:inline-block;">`}</td>
+                <td style="text-align:right;">${money(l.line_total)}</td><td>${note}</td></tr>`;
         }
         const np = l.new_product;
         return `<tr style="background:#eef6ff;"><td><input type="checkbox" class="inv-pick" data-i="${i}" ${np.category_id ? 'checked' : ''}></td>
@@ -450,7 +452,7 @@ function renderReview(data) {
             <td><span class="label label-primary">NEW</span> <input type="text" class="form-control input-sm inv-name" data-i="${i}" value="${esc(np.name)}" style="min-width:240px;"></td>
             <td>${catSelect(i, np.category_id)}</td>
             <td style="text-align:right;">${l.qty}</td><td style="text-align:right;">${cost(l)}</td>
-            <td style="text-align:right;"><input type="number" step="0.01" min="0" class="form-control input-sm inv-sell" data-i="${i}" value="${np.sell_price != null ? np.sell_price.toFixed(2) : ''}" style="width:90px;display:inline-block;"></td>
+            <td style="text-align:right;"><input type="number" step="0.01" min="0" class="form-control input-sm inv-sell" data-i="${i}" value="${np.sell_price != null ? np.sell_price.toFixed(2) : ''}" placeholder="enter price" style="width:90px;display:inline-block;"></td>
             <td style="text-align:right;">${money(l.line_total)}</td><td>${np.category_id ? '' : 'Pick a category'}</td></tr>`;
     }).join('');
     status('', 'info');
@@ -463,6 +465,8 @@ $('inv_apply').addEventListener('click', async () => {
     const picks = [...document.querySelectorAll('.inv-pick:checked')].map(c => {
         const i = +c.dataset.i, l = previewLines[i];
         const line = {variation_id: l.variation_id, qty: l.qty, unit_price: l.unit_price, upc: l.upc, description: l.description, catno: l.catno || ''};
+        const setSell = document.querySelector(`.inv-setsell[data-i="${i}"]`);
+        if (setSell && setSell.value) line.set_sell_price = setSell.value;
         if (!l.matched) {
             const q = sel => document.querySelector(`${sel}[data-i="${i}"]`);
             line.new_product = {name: q('.inv-name').value.trim(), artist: l.new_product.artist, sku: l.new_product.sku,
@@ -471,6 +475,8 @@ $('inv_apply').addEventListener('click', async () => {
         return line;
     });
     if (!picks.length) { status('No lines ticked.', 'warning'); return; }
+    const noPrice = picks.filter(p => p.new_product && !(parseFloat(p.new_product.sell_price) > 0));
+    if (noPrice.length) { status('Enter a sell price for: ' + noPrice.map(p => esc(p.new_product.name)).join(', ') + '.', 'warning'); return; }
     $('inv_apply').disabled = true;
     const res = await fetch(BASE + '/apply', {
         method: 'POST',
