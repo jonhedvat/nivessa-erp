@@ -64,7 +64,7 @@ class ProductController extends Controller
         'Cassettes - Used > Rock' => 10,
         'Books > Comic Books' => 5,
         'CD - Sealed > *' => 15,
-        'Vinyl - Sealed > *' => 30,
+        // Sealed vinyl: no floor (Sarah 2026-11-17) - $30 caught cheap new reissues.
     ];
 
     private static function floorKey($s)
