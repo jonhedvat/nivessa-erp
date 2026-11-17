@@ -30,7 +30,7 @@
                     <tr><th>Account email</th><td>{{ $email ?: '—' }}</td></tr>
                     <tr><th>Org id</th><td>{{ $orgId ?: '—' }}</td></tr>
                     <tr><th>Token saved at</th><td>{{ $savedAt ?: '—' }}</td></tr>
-                    <tr><th>Stays logged in</th><td>{{ $autoRelogin ? 'Yes, the ERP logs itself back in when Sling expires the token' : 'No, log in below once to turn this on' }}</td></tr>
+                    <tr><th>Token good until</th><td>{{ $expiresAt ? $expiresAt->format('m/d/y') : '—' }}</td></tr>
                 </table>
                 <form method="POST" action="{{ url('/admin/sling/test') }}" style="display:inline;">
                     @csrf
@@ -41,9 +41,9 @@
                     <button type="submit" class="btn btn-default"><i class="fa fa-unlink"></i> Disconnect</button>
                 </form>
                 <hr>
-                <p class="text-muted">If Sling ever stops working, you get a Slack DM. Logging in below once keeps the ERP connected from then on.</p>
+                <p class="text-muted">Sling tokens last about 6 months. You get a Slack DM 10 days before this one runs out, and right away if Sling ever stops working.</p>
             @else
-                <p>Not connected. Type your Sling login below — the ERP will exchange it for an access token via Sling's API. Your login is saved encrypted so the ERP can log itself back in when Sling expires the token.</p>
+                <p>Not connected. Type your Sling login below — the ERP will exchange it for an access token via Sling's API. If Sling answers "Missing captcha response", use the Copy as cURL box below instead.</p>
             @endif
         </div>
     </div>
@@ -51,7 +51,7 @@
     <div class="box box-success">
         <div class="box-header with-border"><h3 class="box-title">Easiest: log in with your Sling email + password</h3></div>
         <div class="box-body">
-            <p>The ERP will call Sling's <code>/account/login</code> for you, take the token Sling returns, and save it. Your login is saved encrypted so the ERP can log itself back in when Sling expires the token.</p>
+            <p>The ERP will call Sling's <code>/account/login</code> for you, take the token Sling returns, and save it. If Sling answers "Missing captcha response", use the Copy as cURL box below instead.</p>
             <form method="POST" action="{{ url('/admin/sling/login') }}" class="form-horizontal" autocomplete="off">
                 @csrf
                 <div class="form-group">

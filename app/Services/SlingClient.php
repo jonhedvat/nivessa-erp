@@ -363,7 +363,7 @@ class SlingClient
     {
         $secret = (string) (System::getProperty('sling_login_secret') ?? '');
         if ($secret === '') {
-            self::alertBroken('Sling stopped accepting the ERP\'s login, so shifts are not updating (the time clock lets everyone in meanwhile). Please log in once at ' . url('/admin/sling/login') . ' and the ERP will keep itself logged in from then on.');
+            self::alertBroken('Sling stopped accepting the ERP\'s token, so shifts are not updating (the time clock lets everyone in meanwhile). Please save a fresh token with the "Copy as cURL" box at ' . url('/admin/sling/login') . '.');
             return false;
         }
         if (!\Cache::add('sling_relogin_try', 1, 600)) {
@@ -380,7 +380,7 @@ class SlingClient
         $r = self::loginWith((string) $cred['e'], (string) $cred['p']);
         if (!$r['ok']) {
             \Log::error('Sling auto re-login failed: ' . $r['error']);
-            self::alertBroken('The ERP could not log back in to Sling (' . $r['error'] . '), so shifts are not updating (the time clock lets everyone in meanwhile). Please log in again at ' . url('/admin/sling/login') . ' (did the Sling password change?).');
+            self::alertBroken('The ERP could not log back in to Sling (' . $r['error'] . '), so shifts are not updating (the time clock lets everyone in meanwhile). Please save a fresh token with the "Copy as cURL" box at ' . url('/admin/sling/login') . '.');
             return false;
         }
         $this->token = $r['token'];
@@ -388,6 +388,36 @@ class SlingClient
         System::addProperty('sling_token_saved_at', now()->toDateTimeString());
         \Log::info('Sling token expired, logged back in automatically.');
         return true;
+    }
+
+    /**
+     * Sling tokens last 180 days (the 5/8/26 token died 11/5/26, day 181).
+     * When the saved token runs out, or null if we don't know when it was saved.
+     */
+    public static function tokenExpiresAt(): ?\Carbon\Carbon
+    {
+        $saved = (string) (System::getProperty('sling_token_saved_at') ?? '');
+        if ($saved === '') return null;
+        try {
+            return \Carbon\Carbon::parse($saved)->addDays(180);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** Daily DM to Sarah from 10 days before the token runs out. */
+    public static function remindIfExpiringSoon(): void
+    {
+        $exp = self::tokenExpiresAt();
+        if (!$exp || $exp->gt(now()->addDays(10)) || !\Cache::add('sling_renew_reminder', 1, 20 * 3600)) {
+            return;
+        }
+        $text = 'The ERP\'s Sling token runs out on ' . $exp->format('m/d/y') . '. Please save a fresh one with the "Copy as cURL" box at '
+            . url('/admin/sling/login') . ' so the time clock and shift reports keep working.';
+        $r = \App\Services\TimeClockService::slackDm(self::ALERT_SLACK_ID, $text);
+        if (empty($r['ok'])) {
+            \Log::warning('Sling renew reminder DM failed: ' . ($r['error'] ?? ''));
+        }
     }
 
     /** DM Sarah on Slack, at most once every 6 hours. */

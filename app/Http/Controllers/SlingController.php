@@ -36,8 +36,8 @@ class SlingController extends Controller
         $email = (string) (System::getProperty(self::EMAIL_KEY) ?? '');
         $savedAt = (string) (System::getProperty(self::SAVED_AT_KEY) ?? '');
         $connected = $token !== '' && $orgId !== '';
-        $autoRelogin = (string) (System::getProperty('sling_login_secret') ?? '') !== '';
-        return view('admin.sling_login', compact('connected', 'orgId', 'email', 'savedAt', 'autoRelogin'));
+        $expiresAt = \App\Services\SlingClient::tokenExpiresAt();
+        return view('admin.sling_login', compact('connected', 'orgId', 'email', 'savedAt', 'expiresAt'));
     }
 
     public function login(Request $request)
