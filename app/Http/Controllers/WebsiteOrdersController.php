@@ -1572,6 +1572,22 @@ class WebsiteOrdersController extends Controller
     }
 
     /** pullParts() as one line: "Warehouse / HW Main Floor / Bin pico66". */
+    /**
+     * Reminder for an item nobody can find (packer Can't find + cancel box):
+     * sealed vinyl/CD/cassette can be ordered from AMS or Alliance, used ones
+     * can be dropshipped from eBay or Discogs. Other categories: none.
+     * "new" only counts in the main category, so a "New Wave" genre isn't sealed.
+     */
+    public static function cantFindHint(?string $category, ?string $subcategory): string
+    {
+        $cat = strtolower((string) $category);
+        $all = $cat . ' ' . strtolower((string) $subcategory);
+        if (!preg_match('/vinyl|\blp\b|\bcds?\b|compact disc|cassette/', $all)) return '';
+        if (strpos($all, 'seal') !== false || preg_match('/\bnew\b/', $cat)) return 'We can use AMS or Alliance if you do not find it.';
+        if (strpos($all, 'used') !== false) return 'Reminder: we can dropship this on eBay or Discogs if you do not find it.';
+        return '';
+    }
+
     public static function pullSpot(array $item, ?array $erp): string
     {
         $p = self::pullParts($item, $erp);
@@ -1619,7 +1635,7 @@ class WebsiteOrdersController extends Controller
                 // Store bins are laid out by genre (the ERP category), so this is
                 // what the picker walks to (Sarah, 2026-10-15).
                 $genre = implode(' / ', array_filter([trim((string) ($r->genre ?? '')), trim((string) ($r->sub_genre ?? ''))]));
-                $map[$pid] = ['stores' => [], 'stocked' => [], 'bin' => $bin, 'genre' => $genre, 'added' => $r->created_at];
+                $map[$pid] = ['stores' => [], 'stocked' => [], 'bin' => $bin, 'genre' => $genre, 'cat' => (string) ($r->genre ?? ''), 'subcat' => (string) ($r->sub_genre ?? ''), 'added' => $r->created_at];
             }
             if (empty($r->loc_name)) continue;
             $qty = (float) ($r->qty_available ?? 0);

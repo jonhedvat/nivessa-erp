@@ -708,6 +708,10 @@
                   // Where it is (shown in the cancel box) and which store's package it ships in
                   'spot' => empty($it['product_id']) ? '' : \App\Http\Controllers\WebsiteOrdersController::pullSpot($it, $erpLocations[(int) ($it['product_id']['posProductId'] ?? 0)] ?? null),
                   'store' => (string) ($it['ship_from'] ?? ''),
+                  // Can't-find reminder (AMS/Alliance for sealed, eBay/Discogs dropship for used)
+                  'alt' => empty($it['product_id']) ? '' : \App\Http\Controllers\WebsiteOrdersController::cantFindHint(
+                    $erpLocations[(int) ($it['product_id']['posProductId'] ?? 0)]['cat'] ?? '',
+                    $erpLocations[(int) ($it['product_id']['posProductId'] ?? 0)]['subcat'] ?? ''),
                 ])->values();
               @endphp
               @php
@@ -1717,6 +1721,12 @@
             where.style.cssText = 'display:block;font-size:12px;color:#000;font-weight:600;';
             where.textContent = l.spot;
             text.appendChild(where);
+          }
+          if (l.alt && !l.cancelled) {
+            var alt = document.createElement('span');
+            alt.style.cssText = 'display:block;margin-top:4px;padding:4px 8px;font-size:13px;font-weight:700;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;';
+            alt.textContent = l.alt;
+            text.appendChild(alt);
           }
           cb.dataset.store = l.store || '';
           cb.addEventListener('change', woCancelReady);
