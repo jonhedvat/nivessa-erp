@@ -2276,7 +2276,8 @@
             }
             const flagged = items.filter(function (it) { return res[it.idx] && res[it.idx].flag; });
             items.forEach(function (it) { markPriceGuard(rowsByIdx[it.idx], res[it.idx]); });
-            if (!flagged.length) return proceed();
+            const unchecked = items.filter(function (it) { return res[it.idx] && res[it.idx].unchecked && !res[it.idx].flag; });
+            if (!flagged.length && !unchecked.length) return proceed();
 
             const esc = function (v) { return $('<div>').text(v == null ? '' : String(v)).html(); };
             let rowsHtml = '';
@@ -2293,13 +2294,15 @@
             });
             $('#price_guard_modal').remove();
             const $m = $('<div class="modal fade" id="price_guard_modal" tabindex="-1" role="dialog"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">'
-                + '<div class="modal-header"><h4 class="modal-title"><i class="fa fa-exclamation-triangle" style="color:#dc2626;"></i> ' + flagged.length + ' item' + (flagged.length > 1 ? 's are' : ' is') + ' priced well under market</h4></div>'
-                + '<div class="modal-body"><p>These prices are much lower than what they sell for on Discogs, eBay, or in our store. Ticked rows switch to the suggested price.</p>'
-                + '<table class="table table-condensed"><thead><tr><th></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>'
+                + '<div class="modal-header"><h4 class="modal-title"><i class="fa fa-exclamation-triangle" style="color:#dc2626;"></i> ' + (flagged.length ? flagged.length + ' item' + (flagged.length > 1 ? 's are' : ' is') + ' priced well under market' : 'Some prices could not be checked') + '</h4></div>'
+                + '<div class="modal-body">' + (flagged.length ? '<p>These prices are much lower than what they sell for on Discogs, eBay, or in our store. Ticked rows switch to the suggested price.</p>' : '')
+                + (unchecked.length ? '<div class="alert alert-warning" style="padding:8px 10px;"><strong>' + unchecked.length + ' row' + (unchecked.length > 1 ? 's' : '') + ' could not be checked against Discogs</strong> (Discogs is limiting how fast we can look things up). Go back, wait a minute and save again to check them, or save anyway: '
+                    + unchecked.map(function (it) { return esc((it.artist ? it.artist + ' - ' : '') + it.name) + ' ($' + Number(it.price).toFixed(2) + ')'; }).join(', ') + '</div>' : '')
+                + (flagged.length ? '<table class="table table-condensed"><thead><tr><th></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
                 + '<div id="pg_reason_wrap" style="display:none;"><label>Why keep the low price on the unticked rows? (required)</label>'
                 + '<input type="text" class="form-control" id="pg_reason" placeholder="e.g. damaged cover, bargain bin, matching another copy"></div></div>'
                 + '<div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">Go back</button>'
-                + '<button type="button" class="btn btn-success" id="pg_apply">Use these prices &amp; save</button></div>'
+                + '<button type="button" class="btn btn-success" id="pg_apply">' + (flagged.length ? 'Use these prices &amp; save' : 'Save anyway') + '</button></div>'
                 + '</div></div></div>');
             $('body').append($m);
             const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('.pg-use:not(:checked)').length > 0); };
