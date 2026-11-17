@@ -134,7 +134,7 @@ jobs:
             foreach ($tests as $t) {
                 $r = $t['r'];
                 $hint = strtolower($r->cat . ' ' . $r->sub);
-                $cond = strpos($hint, 'seal') !== false ? 'Sealed' : $grades[$j % 5];
+                $cond = strpos($hint, 'seal') !== false ? 'Sealed' : ($t['group'] === 'sale' ? '' : $grades[$j % 5]);
                 $item = ['idx' => (string) $j, 'price' => (string) $t['price'], 'name' => $r->name, 'artist' => $r->artist,
                     'discogs_release_id' => (string) $r->discogs_release_id, 'condition' => $cond,
                     'category_id' => (string) $r->cat_id, 'category' => trim($r->cat . ' ' . $r->sub)];
