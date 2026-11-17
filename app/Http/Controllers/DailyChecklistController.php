@@ -514,11 +514,22 @@ class DailyChecklistController extends Controller
             }
         }
         list($sections, $done) = \App\Utils\OpenItemsUtil::applyActions(\App\Utils\OpenItemsUtil::sections($business_id));
+        $me = trim((string) auth()->user()->first_name);
+        // Board cleared: bonus once a day, only if he actually fixed something today.
+        $openNow = \App\Utils\OpenItemsUtil::total($sections);
+        $sb = \App\Utils\OpenItemsUtil::scoreboard($me);
+        if ($openNow === 0 && $sb['today'] > 0) {
+            if (\App\Utils\OpenItemsUtil::addPoints($me, \App\Utils\OpenItemsUtil::CLEAR_BONUS, 'Cleared the whole board', 'clear:' . $me . ':' . now('America/Los_Angeles')->format('Y-m-d'))) {
+                $sb = \App\Utils\OpenItemsUtil::scoreboard($me);
+            }
+        }
         return view('open_items.index', [
             'sections' => $sections,
             'done'     => $done,
             'isOwner'  => \App\Utils\FatteenGoalsUtil::isOwner() || self::isJon(),
-            'total'    => \App\Utils\OpenItemsUtil::total($sections),
+            'total'    => $openNow,
+            'sb'       => $sb,
+            'me'       => $me,
             'asOf'     => \Carbon\Carbon::now('America/Los_Angeles')->format('m/d/y g:i A'),
         ]);
     }
@@ -629,10 +640,14 @@ Their message:
                 'updated_at'    => now(),
             ]);
             \App\Utils\OpenItemsUtil::saveAction($key, 'bug', $note . ' (bug #' . $id . ')', $who, $label);
-            return redirect($back)->with('oi_msg', 'Filed as ERP bug #' . $id . ' in Bug Fixes. It comes back here in 48 hours if it is still open.');
+            \App\Utils\OpenItemsUtil::addPoints($who, \App\Utils\OpenItemsUtil::BUG_POINTS, 'Bug report: ' . $label, 'bug:' . $key);
+            return redirect($back)->with('oi_msg', '+' . \App\Utils\OpenItemsUtil::BUG_POINTS . ' points. Filed as ERP bug #' . $id . ' in Bug Fixes. It comes back here in 48 hours if it is still open.');
         }
 
-        \App\Utils\OpenItemsUtil::saveAction($key, 'fixed', $note, $who, $label);
+        $section = preg_replace('/[^a-z]/', '', (string) $request->input('section', ''));
+        $pts = \App\Utils\OpenItemsUtil::pointsFor($section, (int) $request->input('hours', 9999));
+        \App\Utils\OpenItemsUtil::saveAction($key, 'fixed', $note, $who, $label, $pts);
+        \App\Utils\OpenItemsUtil::addPoints($who, $pts, $label, 'fix:' . $key . ':' . now()->format('Y-m-d'));
         // A fixed contact form message is marked replied on the website so it doesn't come back.
         if (preg_match('/^contact:([a-f0-9]{24})$/', $key, $m)) {
             \App\Services\WebsiteBridge::admin('PATCH', '/contact/status/' . $m[1], ['status' => 'replied']);
@@ -646,9 +661,10 @@ Their message:
                 ->update(['status' => 'resolved', 'resolved_by' => auth()->id(), 'resolved_at' => now(), 'resolution_notes' => $note, 'updated_at' => now()]);
         }
         if ($request->wantsJson()) {
-            return response()->json(['ok' => true]);
+            return response()->json(['ok' => true, 'pts' => $pts]);
         }
-        return redirect($back)->with('oi_msg', 'Nice. Logged as fixed.');
+        $cheers = ['Nice.', 'Boom.', 'On a roll.', 'Clean.', 'That is how it is done.'];
+        return redirect($back)->with('oi_msg', '+' . $pts . ' points. ' . $cheers[array_rand($cheers)] . ' Logged as fixed.');
     }
 }
 

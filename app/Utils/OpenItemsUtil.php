@@ -494,6 +494,132 @@ class OpenItemsUtil
 
     /* ---------- Fixed it / ERP bug ---------- */
 
+    // ---- Scoreboard: points for real fixes, lost again if a fix bounces back ----
+    const SCORE_FILE = 'open_items_score.json';
+    const DAILY_TARGET = 75;
+    const CLEAR_BONUS = 25;
+    const FAST_BONUS = 5;
+    const BUG_POINTS = 3;
+    const POINTS = ['unhappy' => 20, 'sellers' => 15, 'orders' => 15, 'discogs' => 10, 'staff' => 10, 'events' => 10, 'bookings' => 10, 'customers' => 5, 'contact' => 5, 'buys' => 5];
+    const LEVELS = [0 => 'Rookie', 250 => 'Crate Digger', 750 => 'Selector', 1500 => 'Headliner', 3000 => 'Legend'];
+
+    public static function pointsFor(string $section, int $hours = 9999): int
+    {
+        return (self::POINTS[$section] ?? 5) + ($hours < 24 ? self::FAST_BONUS : 0);
+    }
+
+    public static function readScore(): array
+    {
+        $f = storage_path('app/' . self::SCORE_FILE);
+        $d = is_file($f) ? json_decode((string) file_get_contents($f), true) : [];
+        return is_array($d) ? $d : [];
+    }
+
+    /** Appends one score event. $once makes it a no-op if that id was already logged. */
+    public static function addPoints(string $who, int $pts, string $why, ?string $once = null): bool
+    {
+        $f = storage_path('app/' . self::SCORE_FILE);
+        $fp = fopen($f, 'c+');
+        if (!$fp) {
+            return false;
+        }
+        flock($fp, LOCK_EX);
+        $d = json_decode(stream_get_contents($fp) ?: '[]', true) ?: [];
+        $added = true;
+        if ($once !== null) {
+            foreach ($d as $e) {
+                if (($e['once'] ?? null) === $once) {
+                    $added = false;
+                    break;
+                }
+            }
+        }
+        if ($added) {
+            $now = Carbon::now(self::TZ);
+            $d[] = array_filter(['d' => $now->format('Y-m-d'), 'at' => $now->toIso8601String(), 'who' => $who, 'pts' => $pts, 'why' => $why, 'once' => $once], fn ($v) => $v !== null);
+            $cut = $now->copy()->subDays(400)->format('Y-m-d');
+            $d = array_values(array_filter($d, fn ($e) => ($e['d'] ?? '') >= $cut));
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($d, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+            fflush($fp);
+        }
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return $added;
+    }
+
+    /** Today, streak, best day, level and this week for one person. */
+    public static function scoreboard(string $who): array
+    {
+        $now = Carbon::now(self::TZ);
+        $today = $now->format('Y-m-d');
+        $byDay = [];
+        $total = 0;
+        $feed = [];
+        foreach (self::readScore() as $e) {
+            if (($e['who'] ?? '') !== $who) {
+                continue;
+            }
+            $byDay[$e['d']] = ($byDay[$e['d']] ?? 0) + (int) $e['pts'];
+            $total += (int) $e['pts'];
+            if ($e['d'] === $today) {
+                $feed[] = $e;
+            }
+        }
+        // Streak: days he hit the target in a row. Days he didn't work (no points) are skipped, not counted against him.
+        $streak = 0;
+        $days = array_keys($byDay);
+        rsort($days);
+        foreach ($days as $d) {
+            if ($d === $today && $byDay[$d] < self::DAILY_TARGET) {
+                continue; // today isn't over yet
+            }
+            if ($byDay[$d] >= self::DAILY_TARGET) {
+                $streak++;
+            } elseif ($byDay[$d] > 0) {
+                break;
+            }
+        }
+        $monday = $now->copy()->startOfWeek()->format('Y-m-d');
+        $lastMonday = $now->copy()->startOfWeek()->subWeek()->format('Y-m-d');
+        $week = $lastWeek = 0;
+        foreach ($byDay as $d => $p) {
+            if ($d >= $monday) {
+                $week += $p;
+            } elseif ($d >= $lastMonday) {
+                $lastWeek += $p;
+            }
+        }
+        $total = max(0, $total);
+        $level = 'Rookie';
+        $next = null;
+        $levelFrom = 0;
+        foreach (self::LEVELS as $min => $name) {
+            if ($total >= $min) {
+                $level = $name;
+                $levelFrom = $min;
+            } elseif ($next === null) {
+                $next = ['name' => $name, 'at' => $min];
+            }
+        }
+        $pastDays = array_diff_key($byDay, [$today => 1]);
+        usort($feed, fn ($a, $b) => strcmp($b['at'] ?? '', $a['at'] ?? ''));
+        return [
+            'today' => $byDay[$today] ?? 0,
+            'target' => self::DAILY_TARGET,
+            'streak' => $streak,
+            'best' => $pastDays ? max($pastDays) : 0,
+            'week' => $week,
+            'lastWeek' => $lastWeek,
+            'total' => $total,
+            'level' => $level,
+            'levelFrom' => $levelFrom,
+            'next' => $next,
+            'feed' => array_slice($feed, 0, 6),
+        ];
+    }
+
     const ACTIONS_FILE = 'open_items_actions.json';
     const RECHECK_HOURS = 48;
 
@@ -504,7 +630,7 @@ class OpenItemsUtil
         return is_array($d) ? $d : [];
     }
 
-    public static function saveAction(string $key, string $action, string $note, string $who, string $label): void
+    public static function saveAction(string $key, string $action, string $note, string $who, string $label, int $pts = 0): void
     {
         $f = storage_path('app/' . self::ACTIONS_FILE);
         $fp = fopen($f, 'c+');
@@ -514,7 +640,7 @@ class OpenItemsUtil
         flock($fp, LOCK_EX);
         $raw = stream_get_contents($fp);
         $d = json_decode($raw ?: '[]', true) ?: [];
-        $d[$key] = ['action' => $action, 'note' => $note, 'by' => $who, 'label' => $label, 'at' => Carbon::now(self::TZ)->toIso8601String()];
+        $d[$key] = ['action' => $action, 'note' => $note, 'by' => $who, 'label' => $label, 'pts' => $pts, 'at' => Carbon::now(self::TZ)->toIso8601String()];
         // Keep the file small: drop entries older than 90 days.
         $cut = Carbon::now(self::TZ)->subDays(90);
         foreach ($d as $k => $v) {
@@ -557,6 +683,13 @@ class OpenItemsUtil
                     }
                     $r['reopened'] = ($a['action'] === 'bug' ? 'Reported as an ERP bug ' : 'Marked fixed ')
                         . $at->format('m/d/y') . ' ("' . $a['note'] . '") but it is still open.';
+                    if ($a['action'] === 'fixed' && !empty($a['by']) && !empty($a['pts'])) {
+                        $lost = (int) $a['pts'] + 5;
+                        if (self::addPoints($a['by'], -$lost, 'Came back: ' . ($a['label'] ?? $r['key']), 'back:' . $r['key'] . ':' . $a['at'])) {
+                            \Log::info('open-items bounce-back -' . $lost . ' ' . $r['key']);
+                        }
+                        $r['reopened'] .= ' Lost ' . $lost . ' points. Fix it for real to earn them back.';
+                    }
                 }
                 $keep[] = $r;
             }

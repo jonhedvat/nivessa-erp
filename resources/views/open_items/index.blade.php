@@ -57,6 +57,20 @@
 .open-shell .oi-acts .ai summary { background:#FFF4C2; border-color:#E8D27A; color:#5B4A00; }
 .open-shell .oi-acts .ai { list-style:none; cursor:pointer; font-size:12px; font-weight:700; border-radius:999px; padding:5px 10px; white-space:nowrap; border:1px solid #E8D27A; background:#FFF4C2; color:#5B4A00; }
 .open-shell .oi-row.picked { background:#FFFBE6; }
+.open-shell .sb { margin-top:16px; background:var(--d-surface); border:1px solid var(--d-line); border-radius:var(--d-radius); padding:16px 18px; display:grid; gap:12px; }
+.open-shell .sb-grid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+.open-shell .sb-tile { background:var(--d-surface-2); border-radius:10px; padding:10px 12px; }
+.open-shell .sb-tile .k { font-size:12px; font-weight:700; color:var(--d-ink); text-transform:uppercase; letter-spacing:.5px; }
+.open-shell .sb-tile .v { font-size:24px; font-weight:800; color:var(--d-ink); font-variant-numeric:tabular-nums; line-height:1.2; }
+.open-shell .sb-tile .s { font-size:12px; color:var(--d-ink); }
+.open-shell .sb-bar { height:12px; background:var(--d-surface-2); border-radius:999px; overflow:hidden; }
+.open-shell .sb-bar span { display:block; height:100%; background:#F2C94C; border-radius:999px; transition:width .6s; }
+.open-shell .sb-bar.hit span { background:#3FA35B; }
+.open-shell .sb-feed { font-size:13px; color:var(--d-ink); display:flex; flex-wrap:wrap; gap:6px; }
+.open-shell .sb-feed span { background:#E3F0FB; color:#174E7C; border-radius:999px; padding:3px 10px; font-weight:600; }
+.open-shell .sb-feed span.neg { background:#FDE2E1; color:#8A1C17; }
+.open-shell .oi-acts .fix summary b { color:#1B5E20; margin-left:4px; }
+@media (max-width: 700px) { .open-shell .sb-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
 @media (max-width: 1100px) {
   .open-shell .oi-layout { grid-template-columns:1fr; }
   .open-shell .oi-side { position:fixed; left:auto; right:8px; bottom:8px; top:auto; width:min(420px, calc(100vw - 16px)); z-index:1050; display:none; box-shadow:0 10px 30px rgba(0,0,0,.25); }
@@ -84,6 +98,29 @@
     </div>
 
     @if(session('oi_msg'))<div class="oi-msg">{{ session('oi_msg') }}</div>@endif
+
+    @php
+        $pct = min(100, (int) round($sb['today'] * 100 / max(1, $sb['target'])));
+        $toGo = max(0, $sb['target'] - $sb['today']);
+        $lvlPct = $sb['next'] ? (int) round(($sb['total'] - $sb['levelFrom']) * 100 / max(1, $sb['next']['at'] - $sb['levelFrom'])) : 100;
+    @endphp
+    <div class="sb" id="oi-score">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <h2 style="font-size:17px;font-weight:800;margin:0;color:var(--d-ink)">{{ $me }}'s score today: {{ $sb['today'] }} / {{ $sb['target'] }}</h2>
+            <strong style="color:var(--d-ink)">{{ $toGo > 0 ? $toGo . ' points to hit today\'s goal' : 'Goal hit. Streak safe.' }}</strong>
+        </div>
+        <div class="sb-bar {{ $toGo === 0 ? 'hit' : '' }}"><span style="width:{{ $pct }}%"></span></div>
+        <div class="sb-grid">
+            <div class="sb-tile"><div class="k">Streak</div><div class="v">{{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }}</div><div class="s">Days in a row at {{ $sb['target'] }}+</div></div>
+            <div class="sb-tile"><div class="k">Best day</div><div class="v">{{ $sb['best'] }}</div><div class="s">{{ $sb['today'] > $sb['best'] && $sb['best'] > 0 ? 'New record today!' : 'Beat it today' }}</div></div>
+            <div class="sb-tile"><div class="k">This week</div><div class="v">{{ $sb['week'] }}</div><div class="s">Last week: {{ $sb['lastWeek'] }}</div></div>
+            <div class="sb-tile"><div class="k">Level</div><div class="v">{{ $sb['level'] }}</div><div class="s">{{ $sb['next'] ? ($sb['next']['at'] - $sb['total']) . ' to ' . $sb['next']['name'] : 'Top level' }}</div><div class="sb-bar" style="height:6px;margin-top:6px"><span style="width:{{ $lvlPct }}%"></span></div></div>
+        </div>
+        @if(count($sb['feed']))
+            <div class="sb-feed">@foreach($sb['feed'] as $e)<span class="{{ $e['pts'] < 0 ? 'neg' : '' }}">{{ $e['pts'] > 0 ? '+' : '' }}{{ $e['pts'] }} {{ \Illuminate\Support\Str::limit($e['why'], 40) }}</span>@endforeach</div>
+        @endif
+        <p style="margin:0;font-size:13px;color:var(--d-ink)">Points: unhappy customer 20, seller lead or stuck order 15, most others 10, quick replies 5. Fixed within a day of coming in: +{{ \App\Utils\OpenItemsUtil::FAST_BONUS }}. Clear the whole board: +{{ \App\Utils\OpenItemsUtil::CLEAR_BONUS }}. If a "fixed" item comes back, you lose those points plus 5.</p>
+    </div>
 
     <div class="oi-card" id="oi-start">
         <div class="oi-head"><h2>How to use this page</h2></div>
@@ -117,15 +154,16 @@
                         <div class="oi-open"><a href="{{ $r['link'] }}">Open</a></div>
                         <div class="oi-acts">
                             @if(!empty($r['reply']))
-                                <button type="button" class="ai" data-reply="{{ json_encode(array_merge($r['reply'], ['who' => $r['who'], 'key' => $r['key'], 'section' => $key, 'label' => $s['title'] . ': ' . $r['who'], 'link' => $r['link']])) }}">Reply with Claude</button>
+                                <button type="button" class="ai" data-reply="{{ json_encode(array_merge($r['reply'], ['who' => $r['who'], 'key' => $r['key'], 'section' => $key, 'hours' => (int) $r['hours'], 'label' => $s['title'] . ': ' . $r['who'], 'link' => $r['link']])) }}">Reply with Claude</button>
                             @endif
                             @if(!empty($r['key']))
-                            <details class="fix"><summary>Fixed it</summary>
+                            <details class="fix"><summary>Fixed it <b>+{{ \App\Utils\OpenItemsUtil::pointsFor($key, (int) $r['hours']) }}</b></summary>
                                 <form method="POST" action="{{ route('open-items.act') }}">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="key" value="{{ $r['key'] }}">
                                     <input type="hidden" name="action" value="fixed">
                                     <input type="hidden" name="section" value="{{ $key }}">
+                                    <input type="hidden" name="hours" value="{{ (int) $r['hours'] }}">
                                     <input type="hidden" name="label" value="{{ $s['title'] }}: {{ $r['who'] }}">
                                     <textarea name="note" required minlength="8" placeholder="What did you do? e.g. Called her, refunded $24.50, she is happy"></textarea>
                                     <button type="submit">Save</button>
@@ -245,7 +283,8 @@
         post('/communications/' + cur.commId + '/send-reply', { message: t }).then(function (d) {
             btn.disabled = false;
             if (!d.success) { status(d.msg || 'Did not send.'); return; }
-            post('{{ route('open-items.act') }}', { key: cur.key, action: 'fixed', note: 'Replied by ' + cur.via + ': ' + t, label: cur.label, section: cur.section, link: cur.link });
+            post('{{ route('open-items.act') }}', { key: cur.key, action: 'fixed', note: 'Replied by ' + cur.via + ': ' + t, label: cur.label, section: cur.section, hours: cur.hours, link: cur.link })
+                .then(function (r) { status('Sent and marked fixed. +' + ((r && r.pts) || 0) + ' points. Refresh to see your score.'); });
             status('Sent and marked fixed.');
             if (picked) picked.style.display = 'none';
         }).catch(function () { btn.disabled = false; status('Did not send. Try again.'); });
