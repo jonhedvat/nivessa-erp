@@ -2224,7 +2224,7 @@
             let t = '<a href="https://www.discogs.com/sell/release/' + d.release_id + '" target="_blank">Discogs</a>';
             if (d.value) t += ' ' + $('<div>').text(d.grade).html() + ' $' + Number(d.value).toFixed(2);
             if (d.lowest) t += ', cheapest $' + Number(d.lowest).toFixed(2);
-            if (d.scarce) t += ', <strong>0 for sale, ' + Number(d.want).toLocaleString() + ' wants = $' + Number(d.scarce).toFixed(0) + ' ($1/want)</strong>';
+            if (d.scarce) t += ', <strong>' + Number(d.for_sale) + ' for sale, ' + Number(d.want).toLocaleString() + ' wants = $' + Number(d.scarce).toFixed(0) + '</strong>';
             bits.push(t);
         }
         if (r.store) bits.push('our sales $' + Number(r.store.median).toFixed(2) + ' (' + r.store.sales + ')');
@@ -2331,13 +2331,13 @@
             const rowHtml = function (it, high) {
                 const r = res[it.idx];
                 return '<tr data-idx="' + esc(it.idx) + '" class="' + (high ? 'pg-high' : 'pg-low') + '">'
-                    + '<td><input type="checkbox" class="pg-use"' + (high ? '' : ' checked') + (r.locked ? ' disabled title="Nothing for sale on Discogs - only a manager can price this low"' : '') + '></td>'
+                    + '<td><input type="checkbox" class="pg-use"' + (high ? '' : ' checked') + (r.locked ? ' disabled title="Almost none for sale on Discogs - only a manager can price this low"' : '') + '></td>'
                     + '<td><strong>' + esc(it.artist ? it.artist + ' - ' : '') + esc(it.name) + '</strong>'
                     + (it.condition ? ' <span class="text-muted">' + esc(it.condition) + '</span>' : '')
                     + '<div style="font-size:11px;">' + priceGuardSources(r) + '</div></td>'
                     + '<td style="color:' + (high ? '#b45309' : '#b91c1c') + ';font-weight:700;">$' + Number(it.price).toFixed(2)
                     + '<div style="font-size:10px;font-weight:400;">' + (high ? 'too high' : 'too low') + '</div>'
-                    + (r.locked ? '<div style="font-size:10px;font-weight:400;">none for sale - manager only</div>' : '') + '</td>'
+                    + (r.locked ? '<div style="font-size:10px;font-weight:400;">rare - manager only</div>' : '') + '</td>'
                     + '<td><input type="number" step="0.01" min="' + (r.locked ? (Math.ceil(r.discogs.scarce * 0.7)) : 0) + '" class="form-control input-sm pg-new" style="width:90px;" value="' + Number(r.suggested).toFixed(2) + '"></td>'
                     + '</tr>';
             };
