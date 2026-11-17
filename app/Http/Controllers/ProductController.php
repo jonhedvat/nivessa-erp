@@ -5293,6 +5293,7 @@ class ProductController extends Controller
         $discogs = null;
         $token = null;
         $ebay = null;
+        $discogsFails = 0; // after 2 failed lookups (rate limit), stop calling Discogs this request
 
         foreach (array_slice($items, 0, 300) as $item) {
             $idx = (string) ($item['idx'] ?? '');
@@ -5308,10 +5309,13 @@ class ProductController extends Controller
 
             // Discogs
             $dg = null;
+            $unchecked = false;
             if ($releaseId > 0) {
                 $key = 'massadd-guard-dg2:' . $releaseId;
                 $dg = \Cache::get($key);
-                if ($dg === null) {
+                if ($dg === null && $discogsFails >= 2) {
+                    $unchecked = true;
+                } elseif ($dg === null) {
                     try {
                         $discogs = $discogs ?: new \App\Services\DiscogsService($business_id);
                         if ($token === null) {
@@ -5319,7 +5323,14 @@ class ProductController extends Controller
                             $token = trim((string) ($d['token'] ?? '')) ?: trim((string) ($d['user_token'] ?? ''));
                         }
                         $t = urlencode($token);
-                        $st = $discogs->callApi('https://api.discogs.com/marketplace/stats/' . $releaseId . '?curr_abbr=USD&token=' . $t);
+                        // Lowest/for-sale usually came with the release fetch when
+                        // the row was added (see fetchDiscogsReleaseForMassCreate),
+                        // so only the price-suggestions call is needed then.
+                        $low = \Cache::get('massadd-guard-low:' . $releaseId);
+                        $st = $low ? ['data' => (object) [
+                            'lowest_price' => $low['lowest'] !== null ? (object) ['value' => $low['lowest']] : null,
+                            'num_for_sale' => $low['for_sale'],
+                        ]] : $discogs->callApi('https://api.discogs.com/marketplace/stats/' . $releaseId . '?curr_abbr=USD&token=' . $t);
                         $sg = $discogs->callApi('https://api.discogs.com/marketplace/price_suggestions/' . $releaseId . '?token=' . $t);
                         $grades = [];
                         foreach ((array) ($sg['data'] ?? []) as $label => $v) {
@@ -5335,9 +5346,15 @@ class ProductController extends Controller
                         ];
                         if (empty($st['error']) && empty($sg['error'])) {
                             \Cache::put($key, $dg, now()->addDays(3));
+                        } else {
+                            $discogsFails++;
+                            $unchecked = true;
+                            $dg = null;
                         }
                     } catch (\Throwable $e) {
                         \Log::warning('mass-add price guard Discogs ' . $releaseId . ': ' . $e->getMessage());
+                        $discogsFails++;
+                        $unchecked = true;
                         $dg = null;
                     }
                 }
@@ -5356,9 +5373,6 @@ class ProductController extends Controller
                     'lowest' => $dg['lowest'],
                     'for_sale' => $dg['for_sale'],
                 ];
-                if ($val) {
-                    $refs['Discogs ' . $label] = $val;
-                }
             }
 
             // Our own sales
@@ -5370,6 +5384,12 @@ class ProductController extends Controller
             }
             if ($store && !empty($store['median'])) {
                 $refs['Our sales'] = (float) $store['median'];
+            }
+            // 5+ of our own sales = we know what it gets here; Discogs' grade
+            // value only counts when our track record is thin.
+            $ownTrack = $store && (int) ($store['sales'] ?? 0) >= 5;
+            if (!empty($discogsOut['value']) && !$ownTrack) {
+                $refs['Discogs ' . $discogsOut['grade']] = $discogsOut['value'];
             }
 
             // eBay, only when there's no Discogs release to go on
@@ -5415,14 +5435,19 @@ class ProductController extends Controller
             if ($best > 0 && $price < $best * 0.70 && $best - $price >= 3) {
                 $reasons[] = $bestSrc . ' ~$' . number_format($best, 2);
             }
+            // Cheapest copy is only a real floor when several are listed and it
+            // isn't one overpriced copy (lone $110 listing on a $15 record).
             $lowest = $discogsOut['lowest'] ?? null;
-            if ($lowest && $price < $lowest * 0.85 && $lowest - $price >= 3) {
+            $lowestReal = $lowest && (int) ($discogsOut['for_sale'] ?? 0) >= 3
+                && (empty($discogsOut['value']) || $lowest <= $discogsOut['value'] * 2);
+            if ($lowestReal && $price < $lowest * 0.85 && $lowest - $price >= 3) {
                 $reasons[] = 'cheapest copy on Discogs is $' . number_format($lowest, 2);
                 $best = max($best, $lowest);
             }
 
             $out[$idx] = [
                 'flag' => !empty($reasons),
+                'unchecked' => $unchecked,
                 'reasons' => $reasons,
                 'suggested' => $reasons ? max(0.99, ceil($best) - 0.01) : null,
                 'discogs' => $discogsOut,
@@ -5747,6 +5772,12 @@ class ProductController extends Controller
 
         // Surface marketplace stats from the Discogs payload so the bulk-add
         // row can show Have/Want/lowest price alongside the sales history.
+        if (isset($payload->lowest_price) || isset($payload->num_for_sale)) {
+            \Cache::put('massadd-guard-low:' . $id, [
+                'lowest' => isset($payload->lowest_price) ? round((float) $payload->lowest_price, 2) : null,
+                'for_sale' => isset($payload->num_for_sale) ? (int) $payload->num_for_sale : null,
+            ], now()->addDays(3));
+        }
         $stats = [
             'have'         => $payload->community->have   ?? null,
             'want'         => $payload->community->want   ?? null,

@@ -115,9 +115,9 @@ jobs:
                 } catch (\Throwable $e) { $res = null; $err = substr($e->getMessage(), 0, 200); }
                 echo 'ROW ' . json_encode(['g' => $t['group'], 'rel' => (int) $r->discogs_release_id, 'item' => $r->artist . ' - ' . $r->name,
                     'cat' => trim($r->cat . ' / ' . $r->sub), 'cond' => $cond, 'price' => $t['price'], 'why_price' => $t['note'],
-                    'ms' => (int) round((microtime(true) - $t0) * 1000), 'res' => $res, 'err' => $err]) . "\n";
+                    'ms' => (int) round((microtime(true) - $t0) * 1000), 'res' => $res, 'err' => $err, 'unchecked' => $res['unchecked'] ?? null]) . "\n";
                 $j++;
-                usleep(1200000);
+                usleep(2500000);
             }
             PHP
             php "$F"
