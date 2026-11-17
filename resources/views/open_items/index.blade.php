@@ -155,6 +155,17 @@
 .oi-confetti { position:fixed; top:-12px; width:10px; height:14px; z-index:2000; border-radius:2px; animation:oiFall 1.8s ease-in forwards; pointer-events:none; }
 @keyframes oiFall { to { transform:translateY(105vh) rotate(720deg); opacity:.9; } }
 @media (max-width: 900px) { .open-shell .oi-wins { grid-template-columns:1fr; } }
+.open-shell #oi-focus { padding:16px 20px; border-bottom:1px solid var(--d-line); display:grid; gap:12px; }
+.open-shell .oi-focus-bar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+.open-shell .oi-focus-bar b { font-size:16px; }
+.open-shell .oi-fbtn { font:inherit; font-size:13px; font-weight:700; border-radius:999px; padding:7px 14px; border:1px solid var(--d-line-2); background:var(--d-surface); color:var(--d-ink); cursor:pointer; }
+.open-shell #oi-focus-slot .oi-side { position:static; display:block; width:auto; box-shadow:none; z-index:auto; border:1px solid var(--d-line); }
+.open-shell #oi-focus-slot .oi-side-body { max-height:none; }
+.open-shell #oi-focus-slot #oi-side-close { display:none !important; }
+.open-shell #oi-focus-slot .oi-quote { max-height:360px; }
+.open-shell #oi-focus-slot #oi-side-send, .open-shell #oi-focus-slot .oi-go { font-size:15px; padding:10px 18px; }
+.open-shell .oi-all { border-top:1px solid var(--d-line); }
+.open-shell .oi-all > summary { cursor:pointer; padding:12px 20px; font-weight:700; color:var(--d-ink); }
 </style>
 
 <div class="open-shell">
@@ -244,6 +255,19 @@
                 <section class="oi-panel" data-b="{{ $bk }}" style="display:none">
                     <div class="oi-panel-head"><h2>{{ $nm }}</h2><span>{{ $doneB[$bk] }} of {{ $tot }} done</span></div>
                     @if($bk === 'customers')
+                        <div id="oi-focus">
+                            <div class="oi-focus-bar">
+                                <div><b id="oi-focus-count"></b></div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                                    <button type="button" class="oi-fbtn" id="oi-handled">Already handled</button>
+                                    <button type="button" class="oi-fbtn" id="oi-skip">Skip for now</button>
+                                </div>
+                            </div>
+                            <div id="oi-handled-box" style="display:none;gap:8px;align-items:center;flex-wrap:wrap"><input type="text" id="oi-handled-why" placeholder="How was it handled? e.g. Answered on the phone" style="flex:1;min-width:240px;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--d-line-2);border-radius:8px"><button type="button" class="oi-fbtn" id="oi-handled-save">Save and next</button></div>
+                            <div id="oi-focus-slot"></div>
+                            <div id="oi-focus-done" class="oi-empty" style="display:none">Everyone has an answer. Amazing work! Click box 2 on the left.</div>
+                        </div>
+                        <details class="oi-all"><summary>See the full list</summary>
                         <div class="oi-chans">
                             @foreach(\App\Utils\OpenItemsUtil::channelStatus() as $ch)
                                 @if(!empty($ch['gmail']))<a class="oi-chan on" href="https://mail.google.com/mail/u/?authuser=hello@nivessa.com" target="_blank">Email (hello@): answer in Gmail</a>
@@ -307,6 +331,7 @@
                             @endforeach
                         @endif
                     @endforeach
+                    @if($bk === 'customers')</details>@endif
                 </section>
             @endforeach
             <section class="oi-panel" data-b="week" style="display:none"></section>
@@ -371,6 +396,7 @@
     tiles.forEach(function (x) { x.addEventListener('click', function () { pick(x.getAttribute('data-b')); window.scrollTo({top: 0, behavior: 'smooth'}); }); });
     var saved = null; try { saved = sessionStorage.getItem('oiPanel'); } catch (e) {}
     pick(saved && document.querySelector('.oi-panel[data-b="' + saved + '"]') ? saved : '{{ $startB }}');
+    tiles.forEach(function (x) { x.addEventListener('click', function () { if (x.getAttribute('data-b') === 'customers' && window.oiFocusOpen) window.oiFocusOpen(); }); });
 })();
 (function () {
     var side = document.getElementById('oi-side');
@@ -444,6 +470,43 @@
         var t = $('oi-side-draft').value;
         (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { status('Copied. Paste it in the inbox, send it, then click Fixed it on the row.'); }, function () { $('oi-side-draft').select(); status('Press Cmd+C to copy.'); });
     });
+    // ---- One customer at a time (Sarah 11/17: make it super clear what to do) ----
+    var queue = [].slice.call(document.querySelectorAll('.oi-panel[data-b="customers"] .oi-acts .ai'));
+    var qi = 0, doneN = 0, total = queue.length;
+    var slot = $('oi-focus-slot');
+    function showFocus() {
+        while (qi < queue.length && queue[qi].closest('.oi-row').style.display === 'none') qi++;
+        if (!slot) return;
+        if (qi >= queue.length) {
+            side.classList.remove('open');
+            $('oi-focus-count').textContent = total ? 'All ' + total + ' customers answered or skipped.' : 'No customers waiting.';
+            $('oi-focus-done').style.display = '';
+            ['oi-skip', 'oi-handled'].forEach(function (id) { $(id).style.display = 'none'; });
+            return;
+        }
+        if (side.parentNode !== slot) slot.appendChild(side);
+        $('oi-focus-count').textContent = 'Customer ' + (doneN + 1) + ' of ' + total + ': read it, check the reply, click Send.';
+        queue[qi].click();
+    }
+    window.oiFocusOpen = function () { if (document.querySelector('.oi-panel[data-b="customers"]').style.display !== 'none') showFocus(); };
+    window.oiFocusNext = function (finished) { if (finished) { doneN++; } qi++; showFocus(); };
+    if ($('oi-skip')) $('oi-skip').addEventListener('click', function () {
+        // Skipped ones go to the back of the line.
+        if (qi < queue.length) { queue.push(queue[qi]); }
+        window.oiFocusNext(false);
+    });
+    if ($('oi-handled')) $('oi-handled').addEventListener('click', function () { $('oi-handled-box').style.display = 'flex'; $('oi-handled-why').focus(); });
+    if ($('oi-handled-save')) $('oi-handled-save').addEventListener('click', function () {
+        if (!cur) return;
+        var why = $('oi-handled-why').value;
+        if (!why || why.trim().length < 8) { $('oi-handled-why').placeholder = 'Write a few words, e.g. Answered on the phone'; return; }
+        $('oi-handled-why').value = ''; $('oi-handled-box').style.display = 'none';
+        post('{{ route('open-items.act') }}', { key: cur.key, action: 'fixed', note: why.trim(), label: cur.label, section: cur.section, hours: cur.hours, link: cur.link });
+        if (picked) picked.style.display = 'none';
+        window.oiFocusNext(true);
+    });
+    if (slot) window.oiFocusOpen();
+
     $('oi-side-send').addEventListener('click', function () {
         var t = $('oi-side-draft').value.trim();
         if (!cur || !cur.commId || !t) return;
@@ -456,6 +519,7 @@
                 .then(function (r) { status('Sent and marked fixed. Refresh to see your count.'); });
             status('Sent and marked fixed.');
             if (picked) picked.style.display = 'none';
+            if (window.oiFocusNext) setTimeout(function () { window.oiFocusNext(true); }, 900);
         }).catch(function () { btn.disabled = false; status('Did not send. Try again.'); });
     });
 })();
