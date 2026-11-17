@@ -1,0 +1,59 @@
+# READ-ONLY (2026-11-17): did a Sling login reach the ERP? Access + app log lines. No writes.
+name: Diag Sling login attempts
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Log date (YYYY-MM-DD)"
+        required: true
+        default: "2026-11-17"
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+
+      - name: Inspect (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          SINCE: ${{ github.event.inputs.since }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 120s
+          envs: SINCE
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            echo "=== app log ==="
+            for f in storage/logs/laravel-$SINCE.log storage/logs/laravel.log; do [ -f "$f" ] && grep -i "sling" "$f" | grep -v "time clock: Sling schedule" | tail -20 | cut -c1-400; done
+            echo "=== access log ==="
+            for f in /var/log/nginx/*access*.log /www/wwwlogs/*.log; do [ -r "$f" ] && grep -h "admin/sling" "$f" | tail -20 | sed -E 's/(password|email)=[^& ]*/\1=REDACTED/g' | cut -c1-300; done
+            echo "=== done ==="
