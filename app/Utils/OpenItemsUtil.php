@@ -141,7 +141,7 @@ class OpenItemsUtil
             ->where('business_id', $business_id)
             ->whereIn('channel', self::REPLY_CHANNELS)
             ->where('status', 'pending')
-            ->where('topic', '!=', 'unhappy_customer')
+            ->whereNotIn('id', array_keys(self::upsetIds($business_id)) ?: [0])
             ->where(function ($q) {
                 $q->whereNull('resolution_notes')->orWhere('resolution_notes', '');
             })
@@ -167,23 +167,109 @@ class OpenItemsUtil
         return self::section('Customers waiting over 24 hours', 'Reply, or mark it resolved if it was handled another way.', url('/communications'), self::oldestFirst($out));
     }
 
-    /** Anything tagged "unhappy customer" that is still open. */
-    public static function unhappyCustomers(int $business_id): array
+    /**
+     * Which open messages come from someone who is actually upset. The old
+     * keyword tag flagged polite questions ("still has not shipped") and
+     * missed real complaints, so Claude reads each message once and the
+     * answer is cached for good. If Claude can't be reached, falls back to
+     * the keyword tag.
+     */
+    public static function upsetIds(int $business_id): array
     {
         $rows = \DB::table('communications')
             ->where('business_id', $business_id)
-            ->where('topic', 'unhappy_customer')
+            ->whereIn('channel', self::REPLY_CHANNELS)
             ->where('status', 'pending')
             ->where('created_at', '>=', now()->subDays(45))
+            ->where('message', '!=', '(no inbound message logged for this contact)')
             ->orderBy('created_at')
-            ->limit(100)
-            ->get(['id', 'channel', 'customer_name', 'contact_info', 'message', 'created_at']);
+            ->limit(300)
+            ->get(['id', 'topic', 'message']);
+        $upset = [];
+        $todo = [];
+        foreach ($rows as $r) {
+            $v = \Cache::get('oi_upset_' . $r->id);
+            if ($v === null) {
+                $todo[] = $r;
+            } elseif ($v === 'yes') {
+                $upset[$r->id] = true;
+            }
+        }
+        foreach (array_chunk($todo, 40) as $chunk) {
+            $got = self::classifyUpset($chunk);
+            foreach ($chunk as $r) {
+                if ($got === null) {
+                    if ($r->topic === 'unhappy_customer') {
+                        $upset[$r->id] = true; // Claude unreachable: keep the old tag for now, retry next load
+                    }
+                    continue;
+                }
+                $yes = in_array((int) $r->id, $got, true);
+                \Cache::forever('oi_upset_' . $r->id, $yes ? 'yes' : 'no');
+                if ($yes) {
+                    $upset[$r->id] = true;
+                }
+            }
+        }
+        return $upset;
+    }
+
+    /** Returns the ids Claude says are upset, or null if it could not answer. */
+    protected static function classifyUpset(array $rows): ?array
+    {
+        $cfg = \App\Http\Controllers\HelpAssistantSettingsController::readConfig();
+        $apiKey = ($cfg['api_key'] ?? null) ?: config('services.anthropic.api_key') ?: env('ANTHROPIC_API_KEY');
+        if (!$apiKey || !$rows) {
+            return null;
+        }
+        $list = '';
+        foreach ($rows as $r) {
+            $list .= "ID " . $r->id . ": " . mb_substr(preg_replace('/\s+/', ' ', (string) $r->message), 0, 600) . "\n";
+        }
+        $system = 'You sort customer messages for Nivessa, a record store. A message is UPSET only if the customer is clearly unhappy with Nivessa: complaining, angry, frustrated, disappointed, asking for a refund because something went wrong, saying they were ignored or treated badly, or threatening a bad review or chargeback. A calm question is NOT upset, even about a late order, shipping status, stock, prices, hours, events, selling records or jobs. Spam and automated messages are NOT upset. Reply with only a JSON array of the IDs that are UPSET, e.g. [12, 40], or [] if none.';
+        try {
+            $client = new \GuzzleHttp\Client(['timeout' => 40]);
+            $resp = $client->post('https://api.anthropic.com/v1/messages', [
+                'headers' => ['x-api-key' => $apiKey, 'anthropic-version' => '2023-06-01', 'content-type' => 'application/json'],
+                'json' => ['model' => $cfg['model'] ?? config('services.anthropic.model', 'claude-haiku-4-5'), 'max_tokens' => 400, 'system' => $system, 'messages' => [['role' => 'user', 'content' => $list]]],
+                'http_errors' => false,
+            ]);
+            if ($resp->getStatusCode() !== 200) {
+                \Log::warning('open-items upset check HTTP ' . $resp->getStatusCode());
+                return null;
+            }
+            $data = json_decode((string) $resp->getBody(), true);
+            $txt = '';
+            foreach ((array) ($data['content'] ?? []) as $b) {
+                if (($b['type'] ?? '') === 'text') {
+                    $txt .= $b['text'];
+                }
+            }
+            if (!preg_match('/\[[\d,\s]*\]/', $txt, $m)) {
+                return null;
+            }
+            return array_map('intval', json_decode($m[0], true) ?: []);
+        } catch (\Throwable $e) {
+            \Log::warning('open-items upset check failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /** Open messages from customers who are actually upset (Claude reads each one). */
+    public static function unhappyCustomers(int $business_id): array
+    {
+        $ids = array_keys(self::upsetIds($business_id));
+        $rows = $ids ? \DB::table('communications')
+            ->where('business_id', $business_id)
+            ->whereIn('id', $ids)
+            ->orderBy('created_at')
+            ->get(['id', 'channel', 'customer_name', 'contact_info', 'message', 'created_at']) : collect();
         $out = [];
         foreach ($rows as $r) {
             $row = self::row(self::whoWithChannel($r), (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
             $out[] = self::replyable($row, 'unhappy', (string) $r->message, (int) $r->id, (string) $r->channel);
         }
-        return self::section('Unhappy customers not resolved (last 45 days)', 'Call them, fix it, then mark it resolved with what you did.', url('/communications'), self::oldestFirst($out));
+        return self::section('Unhappy customers not resolved (last 45 days)', 'These customers are upset with us. Call them today, fix the problem, then click Fixed it and write what you did.', url('/communications'), self::oldestFirst($out));
     }
 
     /** Paid website orders still open after 3 days, plus every "can't find" order. */

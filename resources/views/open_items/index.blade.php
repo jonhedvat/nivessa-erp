@@ -107,6 +107,7 @@
         <h2 style="font-size:20px;font-weight:800;margin:0;color:var(--d-ink)">Today: {{ $sb['today'] }} of {{ $sb['target'] }} fixed</h2>
         <div class="sb-bar {{ $left === 0 ? 'hit' : '' }}" style="height:16px"><span style="width:{{ $pct }}%"></span></div>
         <div style="font-size:15px;font-weight:700;color:var(--d-ink)">{{ $left > 0 ? $left . ' more to hit today\'s goal.' : 'Goal hit!' }} Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }} in a row.</div>
+        <div style="font-size:14px;color:var(--d-ink)">Every time you click <strong>Fixed it</strong> on a row below, that is 1. Get to {{ $sb['target'] }} every day you work to keep your streak. If something you marked fixed comes back, it stops counting.</div>
     </div>
 
     <div class="oi-card" id="oi-start">
