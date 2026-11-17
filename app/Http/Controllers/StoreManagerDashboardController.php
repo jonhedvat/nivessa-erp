@@ -251,7 +251,7 @@ class StoreManagerDashboardController extends Controller
                 'signups_all' => (int) ($signups[$uid] ?? 0),
                 'shifts' => $sh ? $sh['shifts'] : 0,
                 'hours' => $sh ? $sh['hours'] : 0,
-                'priced' => $sh ? $sh['priced'] : 0,
+                'priced' => (int) ($valueListed[$uid]['qty'] ?? 0),
                 'signups' => $sh ? $sh['signups'] : 0,
                 'tasks_done' => (int) ($tasks['by_user'][$uid]['done'] ?? 0),
                 'tasks_in_progress' => (int) ($tasks['by_user'][$uid]['in_progress'] ?? 0),
@@ -260,7 +260,7 @@ class StoreManagerDashboardController extends Controller
                 'said_done' => (int) ($checkins['by_user'][$uid]['done'] ?? 0),
                 'said_not_done' => (int) ($checkins['by_user'][$uid]['not_done'] ?? 0),
                 'value_all' => (float) ($priced['people'][$uid]['value'] ?? 0),
-                'value' => (float) ($valueListed[$uid] ?? 0),
+                'value' => (float) ($valueListed[$uid]['value'] ?? 0),
                 'revenue' => $revenue === null ? null : (float) ($revenue[$uid]['revenue'] ?? 0),
                 'sold' => $revenue === null ? null : (int) ($revenue[$uid]['sold'] ?? 0),
                 'shelf_changed' => (int) ($shelf[$uid] ?? 0),
@@ -317,10 +317,10 @@ class StoreManagerDashboardController extends Controller
             ->whereIn('t.created_by', array_keys($roster))
             ->whereRaw('COALESCE(pl.created_at, t.created_at) >= ?', [$fromStr])
             ->groupBy('t.created_by')
-            ->select('t.created_by', DB::raw('SUM(pl.quantity * COALESCE(va.sell_price_inc_tax, 0)) as value'))
+            ->select('t.created_by', DB::raw('SUM(pl.quantity * COALESCE(va.sell_price_inc_tax, 0)) as value'), DB::raw('SUM(pl.quantity) as qty'))
             ->get();
         foreach ($rows as $r) {
-            $out[(int) $r->created_by] = (float) $r->value;
+            $out[(int) $r->created_by] = ['value' => (float) $r->value, 'qty' => (int) round((float) $r->qty)];
         }
         return $out;
     }
