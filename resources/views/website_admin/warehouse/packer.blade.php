@@ -29,6 +29,12 @@
   .pk-loc { display:inline-block; background:#111827; color:#fff; font-weight:800; font-size:15px; border-radius:7px; padding:3px 10px; margin-right:6px; letter-spacing:.3px; }
   .pk-loc.none { background:#fee2e2; color:#991b1b; font-size:13px; font-weight:700; }
   .pk-cat { font-size:13px; color:#374151; margin-top:4px; }
+  .pk-note { margin-top:8px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:8px 10px; font-size:14px; color:#78350f; }
+  .pk-note .by { font-size:11.5px; color:#92400e; margin-top:2px; }
+  .pk-note-btn { margin-top:8px; background:none; border:1px dashed #9ca3af; color:#374151; border-radius:8px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+  .pk-note-edit { margin-top:8px; display:none; }
+  .pk-note-edit textarea { width:100%; min-height:60px; font-size:15px; padding:8px; border:1px solid #d1d5db; border-radius:8px; }
+  .pk-note-edit .row { display:flex; gap:8px; margin-top:6px; }
   .pk-meta { font-size:13px; color:#4b5563; margin-top:3px; }
   .pk-meta a { color:#2563eb; font-weight:600; text-decoration:none; }
   .pk-tags { margin-top:6px; }
@@ -171,6 +177,24 @@
                 @if(($it['cover_type'] ?? '') === 'generic')<span class="wh-pill yellow">Generic cover</span>@endif
               </div>
               @if(!empty($it['picking_notes']))<div class="pk-meta">Note: {{ $it['picking_notes'] }}</div>@endif
+              @php
+                $pn = trim((string) ($it['packer_note']['text'] ?? ''));
+                $pnBy = $it['packer_note']['by'] ?? '';
+                $pnAt = $it['packer_note']['at'] ?? '';
+              @endphp
+              <div class="js-note-view">
+                @if($pn !== '')
+                  <div class="pk-note"><div class="js-note-text">{{ $pn }}</div><div class="by">{{ $pnBy }}@if($pnAt) · {{ \Carbon\Carbon::parse($pnAt)->setTimezone($tz)->format('M j, g:i a') }}@endif</div></div>
+                @endif
+                <button type="button" class="pk-note-btn" onclick="pkNoteOpen(this)">{{ $pn !== '' ? 'Edit note' : '+ Add note' }}</button>
+              </div>
+              <div class="pk-note-edit js-note-edit">
+                <textarea maxlength="1000" placeholder="e.g. Moved to HW / Sold this morning">{{ $pn }}</textarea>
+                <div class="row">
+                  <button type="button" class="wh-btn wh-btn-green" onclick="pkNoteSave(this)">Save note</button>
+                  <button type="button" class="wh-btn" onclick="pkNoteClose(this)">Cancel</button>
+                </div>
+              </div>
             </div>
             <div class="pk-actions js-actions">
               @if($ps === 'Not Picked')
@@ -252,6 +276,45 @@
     z.querySelector('.js-picked').textContent = picked;
     z.querySelector('.js-pending').textContent = pending;
     z.querySelector('.js-pct').textContent = total ? Math.round(picked / total * 100) : 0;
+  }
+
+  var pkNoteUrl = {!! json_encode(route('wa.warehouse.itemNote', ['orderId' => '__O__', 'itemId' => '__I__']), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!};
+
+  function pkNoteOpen(btn) {
+    var row = btn.closest('.pk-item');
+    row.querySelector('.js-note-view').style.display = 'none';
+    row.querySelector('.js-note-edit').style.display = 'block';
+    row.querySelector('.js-note-edit textarea').focus();
+  }
+
+  function pkNoteClose(btn) {
+    var row = btn.closest('.pk-item');
+    row.querySelector('.js-note-edit').style.display = 'none';
+    row.querySelector('.js-note-view').style.display = '';
+  }
+
+  function pkNoteSave(btn) {
+    var row = btn.closest('.pk-item');
+    var text = row.querySelector('.js-note-edit textarea').value.trim();
+    btn.disabled = true;
+    fetch(pkNoteUrl.replace('__O__', row.dataset.order).replace('__I__', row.dataset.item), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': pkCsrf },
+      body: JSON.stringify({ notes: text })
+    }).then(function (r) { return r.json().catch(function () { return { success: false, message: 'The ERP returned an error.' }; }); })
+      .then(function (j) {
+        btn.disabled = false;
+        if (!j.success) throw new Error(j.message || 'Could not save the note.');
+        var view = row.querySelector('.js-note-view');
+        view.innerHTML = (j.text ? '<div class="pk-note"><div class="js-note-text">' + pkEsc(j.text) + '</div><div class="by">' + pkEsc(j.by || '') + ' · just now</div></div>' : '')
+          + '<button type="button" class="pk-note-btn" onclick="pkNoteOpen(this)">' + (j.text ? 'Edit note' : '+ Add note') + '</button>';
+        pkNoteClose(btn);
+        pkToast(j.text ? 'Note saved.' : 'Note removed.');
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        pkToast((e && e.message) || 'Could not save the note.', true);
+      });
   }
 
   // Updates the row right away, then saves. Puts it back if the save fails.

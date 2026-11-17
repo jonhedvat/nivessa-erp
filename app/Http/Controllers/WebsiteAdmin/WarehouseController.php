@@ -293,6 +293,24 @@ class WarehouseController extends Controller
         ]);
     }
 
+    /** Packer note on one line ("moved to HW", "sold this morning"). JSON. Empty text clears it. */
+    public function itemNote(Request $request, string $orderId, string $itemId)
+    {
+        $this->guard();
+        if (!self::validId($orderId) || !self::validId($itemId)) {
+            return response()->json(['success' => false, 'message' => 'That note could not be saved.'], 422);
+        }
+        $text = mb_substr(trim((string) $request->input('notes', '')), 0, 1000);
+        $resp = WebsiteBridge::erp('POST', "/picks/{$orderId}/items/{$itemId}/note", ['notes' => $text, 'changedBy' => WebsiteBridge::actor()]);
+        $ok = ($resp['success'] ?? false) === true;
+        return response()->json([
+            'success' => $ok,
+            'message' => $ok ? 'Saved.' : ($resp['message'] ?? 'Could not save the note.'),
+            'text' => $text,
+            'by' => WebsiteBridge::actor(),
+        ], $ok ? 200 : 422);
+    }
+
     /** One line ($itemId) or every line ("all") Picked / Can't Find / Not Picked. JSON for the page buttons. */
     public function pick(Request $request, string $orderId, string $itemId)
     {
