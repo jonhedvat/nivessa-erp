@@ -123,7 +123,7 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
             <span class="filter-label">Status:</span>
             <select id="status_filter">
                 @foreach($statuses as $key => $label)
-                    <option value="{{ $key }}" {{ $key == 'answer' ? 'selected' : '' }}>{{ $label }}</option>
+                    <option value="{{ $key }}" {{ $key == 'needs' ? 'selected' : '' }}>{{ $label }}</option>
                 @endforeach
                 <option value="">All</option>
             </select>

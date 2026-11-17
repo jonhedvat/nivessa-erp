@@ -62,7 +62,7 @@ class CommunicationController extends Controller
         $business_id = request()->session()->get('user.business_id');
         $channels = Communication::CHANNELS;
         $topics = Communication::TOPICS;
-        $statuses = ['answer' => 'Ready to answer', 'happy' => 'Make them happy', 'pending' => 'All open', 'unreplied' => 'Not replied to yet', 'replied' => 'Replied', 'resolved' => 'Finished'];
+        $statuses = ['needs' => 'Needs us (most important first)', 'answer' => 'Ready to answer', 'happy' => 'Make them happy', 'pending' => 'All open', 'unreplied' => 'Not replied to yet', 'replied' => 'Replied', 'resolved' => 'Finished'];
 
         if (request()->ajax()) {
             // Bind the cutoff from PHP (app timezone, America/Los_Angeles)
@@ -82,7 +82,15 @@ class CommunicationController extends Controller
                 ->selectRaw("(communications.status = 'pending' AND communications.created_at <= ?) as is_overdue", [$overdue_cutoff]);
 
             if (request()->has('status') && request()->status != '') {
-                if (in_array(request()->status, ['answer', 'happy'], true)) {
+                if (request()->status === 'needs') {
+                    // Everything that still needs us, most important first:
+                    // upset customers, then everyone else, oldest waiting first.
+                    $tri = \App\Utils\OpenItemsUtil::triage((int) $business_id);
+                    $upsetIds = array_map('intval', array_keys(array_filter($tri, fn ($l) => $l === 'upset')));
+                    $needIds = array_map('intval', array_keys(array_filter($tri, fn ($l) => $l !== 'done')));
+                    $rows->whereIn('communications.id', $needIds ?: [0]);
+                    $prioSql = ($upsetIds ? '(communications.id IN (' . implode(',', $upsetIds) . ')) DESC, ' : '') . 'communications.created_at ASC';
+                } elseif (in_array(request()->status, ['answer', 'happy'], true)) {
                     $want = request()->status === 'happy' ? 'upset' : 'reply';
                     $ids = array_keys(array_filter(\App\Utils\OpenItemsUtil::triage((int) $business_id), fn ($l) => $l === $want));
                     $rows->whereIn('communications.id', $ids ?: [0]);
@@ -121,7 +129,8 @@ class CommunicationController extends Controller
                 $rows->whereDate('communications.created_at', now()->toDateString());
             }
 
-            return DataTables::of($rows)
+            $prioSql = $prioSql ?? null;
+            return ($prioSql ? DataTables::of($rows)->order(function ($q) use ($prioSql) { $q->orderByRaw($prioSql); }) : DataTables::of($rows))
                 ->editColumn('channel', function ($row) {
                     $text = Communication::CHANNELS[$row->channel] ?? $row->channel;
                     return e($text);
