@@ -50,7 +50,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ steps.flags.outputs.ssh_port }}
           script_stop: false
-          command_timeout: 25m
+          command_timeout: 55m
           envs: PG_COUNT
           script: |
             set +e
@@ -118,9 +118,15 @@ jobs:
                     $res = $ctl->massCreatePriceGuard($req)->getData(true)['results'][(string) $j] ?? null;
                     $err = null;
                 } catch (\Throwable $e) { $res = null; $err = substr($e->getMessage(), 0, 200); }
+                $retries = 0;
+                foreach ([20, 40] as $wait) {
+                    if (!$res || empty($res['unchecked'])) break;
+                    sleep($wait); $retries++;
+                    try { $res = app(App\Http\Controllers\ProductController::class)->massCreatePriceGuard($req)->getData(true)['results'][(string) $j] ?? null; } catch (\Throwable $e) { $err = substr($e->getMessage(), 0, 200); }
+                }
                 echo 'ROW ' . json_encode(['g' => $t['group'], 'rel' => (int) $r->discogs_release_id, 'item' => $r->artist . ' - ' . $r->name,
                     'cat' => trim($r->cat . ' / ' . $r->sub), 'cond' => $cond, 'price' => $t['price'], 'why_price' => $t['note'],
-                    'ms' => (int) round((microtime(true) - $t0) * 1000), 'res' => $res, 'err' => $err, 'unchecked' => $res['unchecked'] ?? null]) . "\n";
+                    'ms' => (int) round((microtime(true) - $t0) * 1000), 'res' => $res, 'err' => $err, 'unchecked' => $res['unchecked'] ?? null, 'retries' => $retries]) . "\n";
                 $j++;
                 usleep(2500000);
             }
