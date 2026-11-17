@@ -25,7 +25,7 @@ class MarginCheckController extends Controller
         @set_time_limit(300);
         $business_id = (int) request()->session()->get('user.business_id');
 
-        $rows = \Cache::remember('margin_check_' . $business_id, 1800, function () use ($business_id) {
+        $rows = \Cache::remember('margin_check_v2_' . $business_id, 1800, function () use ($business_id) {
             $svc = app(\App\Services\InventoryCheckService::class);
             $q = DB::table('products as p')
                 ->leftJoin('categories as c1', 'p.category_id', '=', 'c1.id')
@@ -56,6 +56,20 @@ class MarginCheckController extends Controller
                     if (($h['supplier_key'] ?? '') === 'ams') { $ams = $h; break; }
                 }
                 $best = $ams ?: $hits[0];
+                // Only trust barcode matches: a title match can be today's reissue
+                // priced against an old sealed original we bought for $3.
+                $skuDigits = preg_replace('/\D/', '', (string) $r->sku);
+                $hitDigits = preg_replace('/\D/', '', (string) ($best['upc'] ?? ''));
+                $byBarcode = strlen($skuDigits) >= 11 && $hitDigits !== '' && (ltrim($skuDigits, '0') === ltrim($hitDigits, '0'));
+                if (!$byBarcode) {
+                    foreach ($hits as $h) {
+                        $hd = preg_replace('/\D/', '', (string) ($h['upc'] ?? ''));
+                        if (strlen($skuDigits) >= 11 && $hd !== '' && ltrim($skuDigits, '0') === ltrim($hd, '0')) { $best = $h; $byBarcode = true; break; }
+                    }
+                }
+                if (!$byBarcode) {
+                    continue;
+                }
                 $cost = (float) $best['cost'];
                 if ($cost <= 0) {
                     continue;
