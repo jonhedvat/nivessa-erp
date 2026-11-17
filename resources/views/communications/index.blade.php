@@ -346,7 +346,7 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
                 $('[data-stat="pending"]').text(data.counts.pending);
                 $('[data-stat="overdue"]').text(data.counts.overdue);
                 $('[data-stat="resolved"]').text(data.counts.resolved);
-                $('.topic-tag').each(function() {
+                $('.topic-tag').not('.ch-chip').each(function() {
                     var topic = $(this).data('topic');
                     $(this).find('.count').text(data.topic_counts[topic] || 0);
                 });
@@ -373,7 +373,7 @@ body.pos-v2 #comm_modal .checkbox-row { margin-top: 14px; }
             reload();
         });
 
-        $('.topic-tag').on('click', function() {
+        $('.topic-tag').not('.ch-chip').on('click', function() {
             $('#topic_filter').val($(this).data('topic'));
             $('#status_filter').val('');
             reload();
