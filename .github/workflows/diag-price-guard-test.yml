@@ -1,0 +1,125 @@
+# READ-ONLY (2026-11-17): runs 50 real Discogs release IDs from our products
+# (25 sold 3+ times in 2 yrs, 25 never sold) at a spread of prices through the
+# Mass Add underpricing guard (ProductController::massCreatePriceGuard) and
+# prints one ROW json per item. Nothing is saved (only the guard's API cache).
+name: Diag price guard test
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Release IDs per group (sold / never sold)"
+        required: false
+        default: "25"
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+
+      - name: Price guard test (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PG_COUNT: ${{ github.event.inputs.count }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 25m
+          envs: PG_COUNT
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export PG_COUNT
+            F=$(mktemp /tmp/pgtest.XXXXXX.php)
+            cat > "$F" <<'PHP'
+            <?php
+            require __DIR__ . '/vendor/autoload.php';
+            PHP
+            sed -i "s#__DIR__ . '/vendor#'$(pwd)/vendor#" "$F"
+            cat >> "$F" <<'PHP'
+            $app = require getcwd() . '/bootstrap/app.php';
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $n = max(1, (int) (getenv('PG_COUNT') ?: 25));
+            $base = DB::table('products as p')
+                ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+                ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+                ->where('p.discogs_release_id', '>', 0)
+                ->select('p.id', 'p.business_id', 'p.name', 'p.artist', 'p.discogs_release_id', 'c.id as cat_id', 'c.name as cat', 'sc.name as sub');
+            $salesSub = DB::table('transaction_sell_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')
+                ->where('t.type', 'sell')->where('t.status', 'final')->where('t.transaction_date', '>=', now()->subYears(2))
+                ->where('l.unit_price_inc_tax', '>', 0)
+                ->selectRaw('l.product_id, count(*) as n, avg(l.unit_price_inc_tax) as avgp')->groupBy('l.product_id');
+            $sold = (clone $base)->joinSub($salesSub, 's', 's.product_id', '=', 'p.id')->where('s.n', '>=', 3)
+                ->addSelect('s.n', 's.avgp')->inRandomOrder()->limit($n * 3)->get()->unique('discogs_release_id')->take($n);
+            $never = (clone $base)->whereNotExists(function ($q) {
+                    $q->select(DB::raw(1))->from('transaction_sell_lines as l2')->whereColumn('l2.product_id', 'p.id');
+                })->inRandomOrder()->limit($n * 3)->get()
+                ->reject(function ($r) use ($sold) { return $sold->contains('discogs_release_id', $r->discogs_release_id); })
+                ->unique('discogs_release_id')->take($n);
+            echo "PICKED sold=" . $sold->count() . " never=" . $never->count() . "\n";
+
+            $grades = ['Very Good Plus (VG+)', 'Near Mint (NM or M-)', 'Very Good (VG)', 'Good Plus (G+)', ''];
+            $ladder = [1.99, 4.99, 9.99, 19.99, 39.99];
+            $mult = [0.3, 0.5, 0.8, 1.0, 1.5];
+            $tests = [];
+            $i = 0;
+            foreach ($sold as $r) { $p = round(max(0.99, $r->avgp * $mult[$i % 5]), 2); $tests[] = ['group' => 'sold', 'r' => $r, 'price' => $p, 'note' => 'avg sold $' . round($r->avgp, 2) . ' x' . $mult[$i % 5]]; $i++; }
+            $i = 0;
+            foreach ($never as $r) { $tests[] = ['group' => 'never', 'r' => $r, 'price' => $ladder[$i % 5], 'note' => 'ladder']; $i++; }
+
+            $bid = (int) ($tests[0]['r']->business_id ?? 1);
+            $sess = app('session')->driver();
+            $sess->put('user.business_id', $bid);
+            $j = 0;
+            foreach ($tests as $t) {
+                $r = $t['r'];
+                $hint = strtolower($r->cat . ' ' . $r->sub);
+                $cond = strpos($hint, 'seal') !== false ? 'Sealed' : $grades[$j % 5];
+                $item = ['idx' => (string) $j, 'price' => (string) $t['price'], 'name' => $r->name, 'artist' => $r->artist,
+                    'discogs_release_id' => (string) $r->discogs_release_id, 'condition' => $cond,
+                    'category_id' => (string) $r->cat_id, 'category' => trim($r->cat . ' ' . $r->sub)];
+                $req = Illuminate\Http\Request::create('/product/mass-create/price-guard', 'POST', ['items' => [$item]]);
+                $req->setLaravelSession($sess);
+                app()->instance('request', $req);
+                $t0 = microtime(true);
+                try {
+                    $ctl = app(App\Http\Controllers\ProductController::class);
+                    $res = $ctl->massCreatePriceGuard($req)->getData(true)['results'][(string) $j] ?? null;
+                    $err = null;
+                } catch (\Throwable $e) { $res = null; $err = substr($e->getMessage(), 0, 200); }
+                echo 'ROW ' . json_encode(['g' => $t['group'], 'rel' => (int) $r->discogs_release_id, 'item' => $r->artist . ' - ' . $r->name,
+                    'cat' => trim($r->cat . ' / ' . $r->sub), 'cond' => $cond, 'price' => $t['price'], 'why_price' => $t['note'],
+                    'ms' => (int) round((microtime(true) - $t0) * 1000), 'res' => $res, 'err' => $err]) . "\n";
+                $j++;
+                usleep(1200000);
+            }
+            PHP
+            php "$F"
+            rm -f "$F"
+            echo "=== done ==="
