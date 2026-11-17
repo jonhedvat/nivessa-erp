@@ -372,8 +372,8 @@ class WarehouseController extends Controller
             $out[(string) ($it['_id'] ?? '')] = [
                 'artist' => $artist,
                 'album' => $album !== '' ? $album : 'Item',
-                'category' => $p->category ?? null,
-                'subcategory' => $p->subcategory ?? null,
+                'category' => ($p->category ?? null) ?: (($it['web_category'] ?? null) ?: null),
+                'subcategory' => ($p->category ?? null) ? ($p->subcategory ?? null) : (($it['web_genre'] ?? null) ?: null),
                 'bin' => $p ? trim((string) ($p->bin_position ?: $p->listing_location)) : '',
             ];
         }
