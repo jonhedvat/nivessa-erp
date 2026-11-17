@@ -65,8 +65,7 @@
 .open-shell .oi-rec { grid-column:1 / -1; font-size:13px; color:var(--d-ink); background:#E3F0FB; border-radius:8px; padding:6px 10px; }
 .open-shell .oi-msg { margin-top:12px; font-weight:700; color:var(--d-ink); background:#E3F0FB; border-radius:10px; padding:10px 14px; }
 .open-shell .oi-done { padding:10px 18px; border-bottom:1px solid var(--d-line); font-size:14px; color:var(--d-ink); }
-.open-shell .oi-layout { display:grid; grid-template-columns:minmax(0,1fr) 380px; gap:20px; align-items:start; }
-.open-shell .oi-side { position:sticky; top:12px; margin-top:16px; background:var(--d-surface); border:1px solid var(--d-line); border-radius:var(--d-radius); overflow:hidden; }
+.open-shell .oi-side { background:var(--d-surface); border:1px solid var(--d-line); border-radius:var(--d-radius); overflow:hidden; }
 .open-shell .oi-side .oi-head { padding:12px 16px; }
 .open-shell .oi-side-body { padding:12px 16px; display:grid; gap:10px; font-size:14px; color:var(--d-ink); max-height:calc(100vh - 110px); overflow:auto; }
 .open-shell .oi-side textarea { width:100%; min-height:150px; font:inherit; font-size:14px; border:1px solid var(--d-line-2); border-radius:8px; padding:10px; color:var(--d-ink); background:var(--d-surface); }
@@ -92,16 +91,46 @@
 .open-shell .sb-feed span.neg { background:#FDE2E1; color:#8A1C17; }
 .open-shell .oi-acts .fix summary b { color:#1B5E20; margin-left:4px; }
 @media (max-width: 700px) { .open-shell .sb-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
-@media (max-width: 1100px) {
-  .open-shell .oi-layout { grid-template-columns:1fr; }
-  .open-shell .oi-side { position:fixed; left:auto; right:8px; bottom:8px; top:auto; width:min(420px, calc(100vw - 16px)); z-index:1050; display:none; box-shadow:0 10px 30px rgba(0,0,0,.25); }
-  .open-shell .oi-side.open { display:block; }
-  .open-shell .oi-side-body { max-height:70vh; }
-}
+
 @media (max-width: 700px) {
   .open-shell .oi-acts form { right:auto; left:0; width:260px; }
   .open-shell .oi-row { grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"who open" "age age" "what what"; }
 }
+.open-shell .oi-layout { display:grid; grid-template-columns:250px minmax(0,1fr); gap:20px; align-items:start; margin-top:16px; }
+.open-shell .oi-nav { position:sticky; top:12px; display:grid; gap:8px; }
+.open-shell .oi-goal { background:#3B2E2A; color:#fff; border-radius:12px; padding:14px; display:grid; gap:8px; }
+.open-shell .oi-goal-n { font-size:28px; font-weight:800; line-height:1; color:#FFEE94; }
+.open-shell .oi-goal-n span { font-size:14px; font-weight:600; color:#fff; }
+.open-shell .oi-goal-s { font-size:13px; font-weight:600; }
+.open-shell .oi-goal .sb-bar { background:rgba(255,255,255,.2); height:10px; }
+.open-shell .bk { display:grid; gap:8px; text-align:left; font:inherit; background:var(--d-surface); border:1px solid var(--d-line); border-radius:10px; padding:12px 14px; cursor:pointer; color:var(--d-ink); }
+.open-shell .bk:hover { border-color:var(--d-accent-deep); }
+.open-shell .bk.on { border:2px solid #3B2E2A; padding:11px 13px; background:#FFFBE6; }
+.open-shell .bk-top { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.open-shell .bk-name { font-size:15px; font-weight:700; }
+.open-shell .bk-n { font-size:13px; font-weight:800; background:#FFE3D6; color:#7A2E0E; border-radius:999px; padding:2px 9px; }
+.open-shell .bk.clear .bk-n { background:#DDF1DE; color:#1B5E20; }
+.open-shell .bk .sb-bar { height:6px; }
+.open-shell .oi-panel { background:var(--d-surface); border:1px solid var(--d-line); border-radius:var(--d-radius); overflow:hidden; }
+.open-shell .oi-panel > .oi-card { border:0; margin:0; border-radius:0; }
+.open-shell .oi-panel-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:16px 20px; border-bottom:1px solid var(--d-line); }
+.open-shell .oi-panel-head h2 { font-size:20px; font-weight:800; margin:0; color:var(--d-ink); }
+.open-shell .oi-panel-head span { font-size:14px; font-weight:700; color:var(--d-ink); }
+.open-shell .oi-group { padding:14px 20px 6px; background:var(--d-surface-2); border-bottom:1px solid var(--d-line); }
+.open-shell .oi-group h3 { font-size:14px; font-weight:800; margin:0; color:var(--d-ink); }
+.open-shell .oi-group h3 span { font-weight:700; margin-left:4px; }
+.open-shell .oi-group p { margin:2px 0 8px; font-size:13px; color:var(--d-ink); }
+.open-shell .oi-row { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"who age" "what what" "acts acts"; gap:4px 14px; padding:12px 20px; border-bottom:1px solid var(--d-line); }
+.open-shell .oi-row .oi-who { grid-area:who; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.open-shell .oi-row .oi-age { grid-area:age; }
+.open-shell .oi-row .oi-what { grid-area:what; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--d-ink); }
+.open-shell .oi-row .oi-acts { grid-area:acts; justify-content:flex-start; margin-top:6px; position:relative; flex-wrap:wrap; }
+.open-shell .oi-act { font-size:12px; font-weight:700; border-radius:999px; padding:5px 12px; background:#3B2E2A; color:#FFEE94; text-decoration:none; white-space:nowrap; }
+.open-shell .oi-act:hover { text-decoration:none; color:#fff; }
+.open-shell .oi-side { position:fixed; left:auto; right:16px; bottom:16px; top:auto; width:min(440px, calc(100vw - 32px)); z-index:1050; display:none; box-shadow:0 10px 30px rgba(0,0,0,.25); margin:0; }
+.open-shell .oi-side.open { display:block; }
+.open-shell .oi-side-body { max-height:75vh; }
+@media (max-width: 900px) { .open-shell .oi-layout { grid-template-columns:1fr; } .open-shell .oi-nav { position:static; grid-template-columns:repeat(2, minmax(0,1fr)); } .open-shell .oi-goal { grid-column:1 / -1; } }
 </style>
 
 <div class="open-shell">
@@ -109,7 +138,6 @@
         <div>
             <h1>Open Items</h1>
             <p>Updated {{ $asOf }}.</p>
-            <div class="oi-total">Today: {{ $sb['today'] }} fixed (goal {{ $sb['target'] }}) &middot; Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
             <a class="oi-btn" href="{{ url('/open-items?refresh=1') }}">Refresh</a>
@@ -121,74 +149,72 @@
 
 
 
-    <div class="oi-layout"><div class="oi-main">
     @php
-        // Four buckets, worked in this order. Each row belongs to one bucket.
-        $bucketOf = ['unhappy' => 'customers', 'customers' => 'customers', 'contact' => 'customers', 'orders' => 'orders', 'discogs' => 'orders', 'sellers' => 'buying', 'bookings' => 'buying', 'buys' => 'buying', 'staff' => 'team', 'events' => 'team'];
-        $bucketName = ['customers' => 'Happy customers', 'orders' => 'Orders out the door', 'buying' => 'Buying & bookings', 'team' => 'Team & events'];
-        $rank = ['unhappy' => 1, 'customers' => 2, 'contact' => 3, 'orders' => 1, 'discogs' => 2, 'sellers' => 1, 'bookings' => 2, 'buys' => 3, 'staff' => 1, 'events' => 1];
-        $items = [];
+        // Buckets in the order he works them. Each list section belongs to one.
+        $bucketName = ['customers' => 'Happy customers', 'sellers' => 'Buy collections', 'orders' => 'Orders out the door', 'store' => 'Store tasks'];
+        $bucketKeys = ['customers' => ['unhappy', 'customers', 'contact'], 'sellers' => ['sellers'], 'orders' => ['orders', 'discogs'], 'store' => ['events', 'staff', 'bookings', 'buys']];
+        $bucketOf = [];
+        foreach ($bucketKeys as $bk => $ks) { foreach ($ks as $k) { $bucketOf[$k] = $bk; } }
         $failed = [];
-        $older = [];
         $open = array_fill_keys(array_keys($bucketName), 0);
         $titleToKey = [];
         foreach ($sections as $sk => $sec) {
             $titleToKey[$sec['title']] = $sk;
             if (!empty($sec['error'])) { $failed[] = $sec['title']; }
-            if (!empty($sec['older'])) { $older[] = [$sec['title'], $sec['older'], $sec['link']]; }
-            foreach ($sec['rows'] as $row) {
-                $b = $bucketOf[$sk] ?? 'team';
-                $open[$b]++;
-                $rk = $rank[$sk] ?? 9;
-                if (!empty($row['reopened'])) { $rk = 0; }
-                $items[] = ['sk' => $sk, 'r' => $row, 'rk' => $rk, 'b' => $b];
-            }
+            $open[$bucketOf[$sk] ?? 'store'] += count($sec['rows']);
         }
-        usort($items, fn ($x, $y) => [$x['rk'], -$x['r']['hours']] <=> [$y['rk'], -$y['r']['hours']]);
         $doneB = array_fill_keys(array_keys($bucketName), 0);
         foreach ($done as $a) {
             $title = trim(explode(':', (string) ($a['label'] ?? ''))[0]);
-            $b = $bucketOf[$titleToKey[$title] ?? ''] ?? null;
-            if ($b) { $doneB[$b]++; }
+            $bb = $bucketOf[$titleToKey[$title] ?? ''] ?? null;
+            if ($bb) { $doneB[$bb]++; }
         }
-        $startB = null;
-        foreach ($bucketName as $b => $nm) { if ($open[$b] > 0) { $startB = $b; break; } }
-        $num = array_fill_keys(array_keys($bucketName), 0);
+        $startB = 'week';
+        foreach ($bucketName as $bk => $nm) { if ($open[$bk] > 0) { $startB = $bk; break; } }
+        $goalPct = min(100, (int) round($sb['today'] * 100 / max(1, $sb['target'])));
     @endphp
-    <div class="bk-grid" id="oi-buckets">
-        @foreach($bucketName as $b => $nm)
-            @php $tot = $open[$b] + $doneB[$b]; $pctB = $tot ? (int) round($doneB[$b] * 100 / $tot) : 100; @endphp
-            <button type="button" class="bk {{ $b === $startB ? 'on' : '' }} {{ $open[$b] === 0 ? 'clear' : '' }}" data-b="{{ $b }}">
-                <span class="bk-step">{{ $loop->iteration }}</span>
-                <span class="bk-name">{{ $nm }}</span>
-                <span class="sb-bar {{ $open[$b] === 0 ? 'hit' : '' }}"><span style="width:{{ $pctB }}%"></span></span>
-                <span class="bk-left">{{ $open[$b] === 0 ? 'All done!' : $open[$b] . ' left' }}@if($b === $startB) &middot; <strong>Start here</strong>@endif</span>
-            </button>
-        @endforeach
-        <a class="bk" href="#oi-social"><span class="bk-step">5</span><span class="bk-name">Once a week</span><span class="bk-left">QuickBooks, reorder, social</span></a>
-        <a class="bk" href="#oi-bigger"><span class="bk-step">6</span><span class="bk-name">If you have time</span><span class="bk-left">Bigger jobs</span></a>
-    </div>
 
-    <div class="oi-card" id="oi-list">
-        @if($failed)<div class="oi-err">Could not load right now: {{ implode(', ', $failed) }}. Click Refresh in a few minutes.</div>@endif
-        @if(count($items) === 0)
-            <div class="oi-empty">All done. Amazing work! Now check Once a week.</div>
-        @endif
-        @foreach($bucketName as $b => $nm)
-            <div class="oi-empty bk-clear" data-b="{{ $b }}" style="{{ $open[$b] === 0 ? '' : 'display:none' }}">{{ $nm }}: all done! Click the next box above.</div>
-        @endforeach
-                @foreach($items as $n => $it)
-                    @php $key = $it['sk']; $s = $sections[$key]; $r = $it['r']; $num[$it['b']]++; @endphp
-                    <div class="oi-row" data-b="{{ $it['b'] }}">
-                        <div class="oi-who" title="{{ $r['who'] }}"><span class="oi-num">{{ $num[$it['b']] }}.</span> <span class="oi-tag oi-tag-{{ $key }}">{{ $s['title'] }}</span> {{ $r['who'] }}</div>
-                        <div class="oi-what">{{ $r['what'] }}</div>
-                        @if($s['how'])<div class="oi-todo">{{ $s['how'] }}</div>@endif
-                        <div class="oi-age {{ ($r['late'] ?? ($r['hours'] >= 72)) ? 'late' : '' }}" title="{{ $r['since'] }}">{{ $r['age'] }}</div>
-                        <div class="oi-open"><a href="{{ $r['link'] }}">Open</a></div>
-                        <div class="oi-acts">
-                            @if(!empty($r['reply']))
-                                <button type="button" class="ai" data-reply="{{ json_encode(array_merge($r['reply'], ['who' => $r['who'], 'key' => $r['key'], 'section' => $key, 'hours' => (int) $r['hours'], 'label' => $s['title'] . ': ' . $r['who'], 'link' => $r['link']])) }}">Reply with Claude</button>
-                            @endif
+    <div class="oi-layout">
+        <nav class="oi-nav" id="oi-buckets">
+            <div class="oi-goal">
+                <div class="oi-goal-n">{{ $sb['today'] }} <span>of {{ $sb['target'] }} today</span></div>
+                <div class="sb-bar {{ $goalPct >= 100 ? 'hit' : '' }}"><span style="width:{{ $goalPct }}%"></span></div>
+                <div class="oi-goal-s">Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }}</div>
+            </div>
+            @foreach($bucketName as $bk => $nm)
+                @php $tot = $open[$bk] + $doneB[$bk]; $p = $tot ? (int) round($doneB[$bk] * 100 / $tot) : 100; @endphp
+                <button type="button" class="bk {{ $open[$bk] === 0 ? 'clear' : '' }}" data-b="{{ $bk }}">
+                    <span class="bk-top"><span class="bk-name">{{ $loop->iteration }}. {{ $nm }}</span><span class="bk-n">{{ $open[$bk] === 0 ? 'Done' : $open[$bk] }}</span></span>
+                    <span class="sb-bar {{ $open[$bk] === 0 ? 'hit' : '' }}"><span style="width:{{ $p }}%"></span></span>
+                </button>
+            @endforeach
+            <button type="button" class="bk" data-b="week"><span class="bk-top"><span class="bk-name">5. Once a week</span></span></button>
+            <button type="button" class="bk" data-b="time"><span class="bk-top"><span class="bk-name">6. If you have time</span></span></button>
+        </nav>
+
+        <div class="oi-main" id="oi-list">
+            @if($failed)<div class="oi-err">Could not load: {{ implode(', ', $failed) }}. Click Refresh in a few minutes.</div>@endif
+            @foreach($bucketName as $bk => $nm)
+                @php $tot = $open[$bk] + $doneB[$bk]; @endphp
+                <section class="oi-panel" data-b="{{ $bk }}" style="display:none">
+                    <div class="oi-panel-head"><h2>{{ $nm }}</h2><span>{{ $doneB[$bk] }} of {{ $tot }} done</span></div>
+                    @if($open[$bk] === 0)
+                        <div class="oi-empty">All done! Click the next box on the left.</div>
+                    @endif
+                    @foreach($bucketKeys[$bk] as $key)
+                        @php $s = $sections[$key] ?? null; @endphp
+                        @if($s && count($s['rows']))
+                            <div class="oi-group"><h3>{{ $s['title'] }} <span>{{ count($s['rows']) }}</span></h3>@if($s['how'])<p>{{ $s['how'] }}</p>@endif</div>
+                            @foreach($s['rows'] as $r)
+                                <div class="oi-row">
+                                    <div class="oi-who" title="{{ $r['who'] }}">{{ $r['who'] }}</div>
+                                    <div class="oi-age {{ ($r['late'] ?? ($r['hours'] >= 72)) ? 'late' : '' }}" title="{{ $r['since'] }}">{{ $r['age'] }}</div>
+                                    <div class="oi-what">{{ $r['what'] }}</div>
+                                    <div class="oi-acts">
+                                        <a class="oi-act" href="{{ $r['link'] }}">Open</a>
+                                        @if(!empty($r['reply']))
+                                            <button type="button" class="ai" data-reply="{{ json_encode(array_merge($r['reply'], ['who' => $r['who'], 'key' => $r['key'], 'section' => $key, 'hours' => (int) $r['hours'], 'label' => $s['title'] . ': ' . $r['who'], 'link' => $r['link']])) }}">Reply with Claude</button>
+                                        @endif
                             @if(!empty($r['key']))
                             <details class="fix"><summary>Fixed it</summary>
                                 <form method="POST" action="{{ route('open-items.act') }}">
@@ -215,22 +241,21 @@
                                 </form>
                             </details>
                             @endif
-                        </div>
-                        @if(!empty($r['reopened']))<div class="oi-reopen">{{ $r['reopened'] }}</div>@endif
-                    </div>
-                @endforeach
-        @if($older)
-            <p class="oi-how" style="background:var(--d-surface)">Older than 2 weeks (not in the list):
-                @foreach($older as $o)<a href="{{ $o[2] }}" style="color:var(--d-accent-text);font-weight:700">{{ $o[0] }} ({{ $o[1] }})</a>@if(!$loop->last), @endif @endforeach
-            </p>
-        @endif
-    </div>
-
-    @include('open_items.partials.focus')
-    </div>
+                                    </div>
+                                    @if(!empty($r['reopened']))<div class="oi-reopen">{{ $r['reopened'] }}</div>@endif
+                                </div>
+                            @endforeach
+                        @endif
+                    @endforeach
+                </section>
+            @endforeach
+            <section class="oi-panel" data-b="week" style="display:none"></section>
+            <section class="oi-panel" data-b="time" style="display:none"></section>
+            <div style="display:none">@include('open_items.partials.focus')</div>
+        </div>
 
     <aside class="oi-side" id="oi-side">
-        <div class="oi-head"><h2>Reply with Claude</h2><button type="button" class="oi-pill" id="oi-side-close" style="display:none">Close</button></div>
+        <div class="oi-head"><h2>Reply with Claude</h2><button type="button" class="oi-pill" id="oi-side-close">Close</button></div>
         <div class="oi-side-body" id="oi-side-body">
             <div id="oi-side-empty">Click <strong>Reply with Claude</strong> on a row.</div>
             <details><summary style="cursor:pointer;font-weight:700">Reply tips</summary>@include('open_items.partials.text_tips')</details>
@@ -267,20 +292,19 @@
 </div>
 <script>
 (function () {
-    var tiles = document.querySelectorAll('#oi-buckets button.bk');
+    var week = document.querySelector('.oi-panel[data-b="week"]');
+    var time = document.querySelector('.oi-panel[data-b="time"]');
+    ['oi-social'].forEach(function (id) { var el = document.getElementById(id); if (el && week) week.appendChild(el); });
+    ['oi-bigger', 'oi-claude'].forEach(function (id) { var el = document.getElementById(id); if (el && time) time.appendChild(el); });
+    var tiles = document.querySelectorAll('#oi-buckets .bk');
     function pick(b) {
         tiles.forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-b') === b); });
-        document.querySelectorAll('#oi-list [data-b]').forEach(function (r) {
-            if (r.classList.contains('bk-clear')) { r.style.display = (r.getAttribute('data-b') === b && !document.querySelector('#oi-list .oi-row[data-b="' + b + '"]')) ? '' : 'none'; }
-            else { r.style.display = r.getAttribute('data-b') === b ? '' : 'none'; }
-        });
-        try { sessionStorage.setItem('oiBucket', b); } catch (e) {}
+        document.querySelectorAll('.oi-panel').forEach(function (p) { p.style.display = p.getAttribute('data-b') === b ? '' : 'none'; });
+        try { sessionStorage.setItem('oiPanel', b); } catch (e) {}
     }
-    tiles.forEach(function (x) { x.addEventListener('click', function () { pick(x.getAttribute('data-b')); document.getElementById('oi-list').scrollIntoView({behavior: 'smooth', block: 'start'}); }); });
-    var start = document.querySelector('#oi-buckets button.bk.on');
-    var saved = null; try { saved = sessionStorage.getItem('oiBucket'); } catch (e) {}
-    var b = (saved && document.querySelector('#oi-list .oi-row[data-b="' + saved + '"]')) ? saved : (start ? start.getAttribute('data-b') : 'customers');
-    pick(b);
+    tiles.forEach(function (x) { x.addEventListener('click', function () { pick(x.getAttribute('data-b')); window.scrollTo({top: 0, behavior: 'smooth'}); }); });
+    var saved = null; try { saved = sessionStorage.getItem('oiPanel'); } catch (e) {}
+    pick(saved && document.querySelector('.oi-panel[data-b="' + saved + '"]') ? saved : '{{ $startB }}');
 })();
 (function () {
     var side = document.getElementById('oi-side');
