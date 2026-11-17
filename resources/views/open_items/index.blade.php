@@ -25,6 +25,16 @@
 .open-shell .oi-row .oi-what { grid-area:what; }
 .open-shell .oi-row .oi-todo { grid-column:1 / -1; font-size:13px; color:var(--d-ink); background:var(--d-surface-2); border-radius:8px; padding:6px 10px; margin-top:4px; }
 .open-shell .oi-num { font-weight:800; margin-right:2px; }
+.open-shell .bk-grid { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px; margin-top:16px; }
+.open-shell .bk { display:grid; gap:6px; align-content:start; text-align:left; font:inherit; background:var(--d-surface); border:2px solid var(--d-line); border-radius:12px; padding:12px; cursor:pointer; color:var(--d-ink); text-decoration:none; }
+.open-shell .bk:hover { text-decoration:none; border-color:var(--d-accent-deep); }
+.open-shell .bk.on { border-color:#3B2E2A; background:#FFFBE6; box-shadow:0 2px 10px rgba(0,0,0,.08); }
+.open-shell .bk-step { font-size:12px; font-weight:800; color:var(--d-ink); }
+.open-shell .bk-name { font-size:16px; font-weight:800; line-height:1.2; }
+.open-shell .bk-left { font-size:13px; font-weight:600; }
+.open-shell .bk .sb-bar { height:10px; }
+@media (max-width: 1100px) { .open-shell .bk-grid { grid-template-columns:repeat(3, minmax(0,1fr)); } }
+@media (max-width: 600px) { .open-shell .bk-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
 .open-shell .oi-tag { display:inline-block; font-size:11px; font-weight:700; border-radius:999px; padding:2px 8px; margin-right:4px; background:#E3F0FB; color:#174E7C; vertical-align:1px; }
 .open-shell .oi-tag-unhappy { background:#FFE3D6; color:#7A2E0E; }
 .open-shell .oi-tag-orders, .open-shell .oi-tag-discogs { background:#FFF4C2; color:#5B4A00; }
@@ -99,7 +109,7 @@
         <div>
             <h1>Open Items</h1>
             <p>Updated {{ $asOf }}.</p>
-            <div class="oi-total {{ $total === 0 ? 'zero' : '' }}">{{ $total === 0 ? 'All done. Amazing work!' : $total . ' to do' }}</div>
+            <div class="oi-total">Today: {{ $sb['today'] }} fixed (goal {{ $sb['target'] }}) &middot; Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
             <a class="oi-btn" href="{{ url('/open-items?refresh=1') }}">Refresh</a>
@@ -109,47 +119,68 @@
 
     @if(session('oi_msg'))<div class="oi-msg">{{ session('oi_msg') }}</div>@endif
 
-    @php
-        $pct = min(100, (int) round($sb['today'] * 100 / max(1, $sb['target'])));
-        $left = max(0, $sb['target'] - $sb['today']);
-    @endphp
-    <div class="sb" id="oi-score">
-        <h2 style="font-size:20px;font-weight:800;margin:0;color:var(--d-ink)">Today: {{ $sb['today'] }} of {{ $sb['target'] }} fixed</h2>
-        <div class="sb-bar {{ $left === 0 ? 'hit' : '' }}" style="height:16px"><span style="width:{{ $pct }}%"></span></div>
-        <div style="font-size:15px;font-weight:700;color:var(--d-ink)">{{ $left > 0 ? $left . ' more to hit today\'s goal.' : 'Goal hit!' }} Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }} in a row.</div>
-    </div>
 
 
     <div class="oi-layout"><div class="oi-main">
     @php
-        // One list for the whole day, most important first. Lower rank = sooner.
-        $rank = ['unhappy' => 1, 'orders' => 2, 'customers' => 3, 'events' => 3, 'sellers' => 4, 'discogs' => 5, 'contact' => 6, 'staff' => 7, 'bookings' => 8, 'buys' => 9];
+        // Four buckets, worked in this order. Each row belongs to one bucket.
+        $bucketOf = ['unhappy' => 'customers', 'customers' => 'customers', 'contact' => 'customers', 'orders' => 'orders', 'discogs' => 'orders', 'sellers' => 'buying', 'bookings' => 'buying', 'buys' => 'buying', 'staff' => 'team', 'events' => 'team'];
+        $bucketName = ['customers' => 'Happy customers', 'orders' => 'Orders out the door', 'buying' => 'Buying & bookings', 'team' => 'Team & events'];
+        $rank = ['unhappy' => 1, 'customers' => 2, 'contact' => 3, 'orders' => 1, 'discogs' => 2, 'sellers' => 1, 'bookings' => 2, 'buys' => 3, 'staff' => 1, 'events' => 1];
         $items = [];
         $failed = [];
         $older = [];
+        $open = array_fill_keys(array_keys($bucketName), 0);
+        $titleToKey = [];
         foreach ($sections as $sk => $sec) {
+            $titleToKey[$sec['title']] = $sk;
             if (!empty($sec['error'])) { $failed[] = $sec['title']; }
             if (!empty($sec['older'])) { $older[] = [$sec['title'], $sec['older'], $sec['link']]; }
             foreach ($sec['rows'] as $row) {
+                $b = $bucketOf[$sk] ?? 'team';
+                $open[$b]++;
                 $rk = $rank[$sk] ?? 9;
-                if (!empty($row['late']) && in_array($sk, ['staff', 'events'], true)) { $rk = 1; } // shift or party within a day
-                if (!empty($row['reopened'])) { $rk = max(1, $rk - 1); } // came back: finish it first
-                $items[] = ['sk' => $sk, 'r' => $row, 'rk' => $rk];
+                if (!empty($row['reopened'])) { $rk = 0; }
+                $items[] = ['sk' => $sk, 'r' => $row, 'rk' => $rk, 'b' => $b];
             }
         }
         usort($items, fn ($x, $y) => [$x['rk'], -$x['r']['hours']] <=> [$y['rk'], -$y['r']['hours']]);
+        $doneB = array_fill_keys(array_keys($bucketName), 0);
+        foreach ($done as $a) {
+            $title = trim(explode(':', (string) ($a['label'] ?? ''))[0]);
+            $b = $bucketOf[$titleToKey[$title] ?? ''] ?? null;
+            if ($b) { $doneB[$b]++; }
+        }
+        $startB = null;
+        foreach ($bucketName as $b => $nm) { if ($open[$b] > 0) { $startB = $b; break; } }
+        $num = array_fill_keys(array_keys($bucketName), 0);
     @endphp
+    <div class="bk-grid" id="oi-buckets">
+        @foreach($bucketName as $b => $nm)
+            @php $tot = $open[$b] + $doneB[$b]; $pctB = $tot ? (int) round($doneB[$b] * 100 / $tot) : 100; @endphp
+            <button type="button" class="bk {{ $b === $startB ? 'on' : '' }} {{ $open[$b] === 0 ? 'clear' : '' }}" data-b="{{ $b }}">
+                <span class="bk-step">{{ $loop->iteration }}</span>
+                <span class="bk-name">{{ $nm }}</span>
+                <span class="sb-bar {{ $open[$b] === 0 ? 'hit' : '' }}"><span style="width:{{ $pctB }}%"></span></span>
+                <span class="bk-left">{{ $open[$b] === 0 ? 'All done!' : $open[$b] . ' left' }}@if($b === $startB) &middot; <strong>Start here</strong>@endif</span>
+            </button>
+        @endforeach
+        <a class="bk" href="#oi-social"><span class="bk-step">5</span><span class="bk-name">Social post</span><span class="bk-left">1 post at 11am</span></a>
+        <a class="bk" href="#oi-bigger"><span class="bk-step">6</span><span class="bk-name">If you have time</span><span class="bk-left">Bigger jobs</span></a>
+    </div>
+
     <div class="oi-card" id="oi-list">
-        <div class="oi-head"><h2>Your list, most important first <span class="oi-count {{ count($items) === 0 ? 'zero' : '' }}">{{ count($items) }}</span></h2></div>
-        <p class="oi-how">Do #1 first. When it's done, click <strong>Fixed it</strong>.</p>
         @if($failed)<div class="oi-err">Could not load right now: {{ implode(', ', $failed) }}. Click Refresh in a few minutes.</div>@endif
         @if(count($items) === 0)
-            <div class="oi-empty">All done. Amazing work! Now do today's social post below.</div>
+            <div class="oi-empty">All done. Amazing work! Now do the social post.</div>
         @endif
+        @foreach($bucketName as $b => $nm)
+            <div class="oi-empty bk-clear" data-b="{{ $b }}" style="{{ $open[$b] === 0 ? '' : 'display:none' }}">{{ $nm }}: all done! Click the next box above.</div>
+        @endforeach
                 @foreach($items as $n => $it)
-                    @php $key = $it['sk']; $s = $sections[$key]; $r = $it['r']; @endphp
-                    <div class="oi-row">
-                        <div class="oi-who" title="{{ $r['who'] }}"><span class="oi-num">{{ $n + 1 }}.</span> <span class="oi-tag oi-tag-{{ $key }}">{{ $s['title'] }}</span> {{ $r['who'] }}</div>
+                    @php $key = $it['sk']; $s = $sections[$key]; $r = $it['r']; $num[$it['b']]++; @endphp
+                    <div class="oi-row" data-b="{{ $it['b'] }}">
+                        <div class="oi-who" title="{{ $r['who'] }}"><span class="oi-num">{{ $num[$it['b']] }}.</span> <span class="oi-tag oi-tag-{{ $key }}">{{ $s['title'] }}</span> {{ $r['who'] }}</div>
                         <div class="oi-what">{{ $r['what'] }}</div>
                         @if($s['how'])<div class="oi-todo">{{ $s['how'] }}</div>@endif
                         <div class="oi-age {{ ($r['late'] ?? ($r['hours'] >= 72)) ? 'late' : '' }}" title="{{ $r['since'] }}">{{ $r['age'] }}</div>
@@ -235,6 +266,22 @@
     </div>
 </div>
 <script>
+(function () {
+    var tiles = document.querySelectorAll('#oi-buckets button.bk');
+    function pick(b) {
+        tiles.forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-b') === b); });
+        document.querySelectorAll('#oi-list [data-b]').forEach(function (r) {
+            if (r.classList.contains('bk-clear')) { r.style.display = (r.getAttribute('data-b') === b && !document.querySelector('#oi-list .oi-row[data-b="' + b + '"]')) ? '' : 'none'; }
+            else { r.style.display = r.getAttribute('data-b') === b ? '' : 'none'; }
+        });
+        try { sessionStorage.setItem('oiBucket', b); } catch (e) {}
+    }
+    tiles.forEach(function (x) { x.addEventListener('click', function () { pick(x.getAttribute('data-b')); document.getElementById('oi-list').scrollIntoView({behavior: 'smooth', block: 'start'}); }); });
+    var start = document.querySelector('#oi-buckets button.bk.on');
+    var saved = null; try { saved = sessionStorage.getItem('oiBucket'); } catch (e) {}
+    var b = (saved && document.querySelector('#oi-list .oi-row[data-b="' + saved + '"]')) ? saved : (start ? start.getAttribute('data-b') : 'customers');
+    pick(b);
+})();
 (function () {
     var side = document.getElementById('oi-side');
     if (!side) return;
