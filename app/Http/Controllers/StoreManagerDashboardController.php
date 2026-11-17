@@ -197,6 +197,11 @@ class StoreManagerDashboardController extends Controller
             return $this->medianPrices($business_id, $loc, $roster, $fromStr);
         }, ['people' => [], 'team' => []]);
 
+        // 9c. What the items they priced in the window have sold for so far.
+        $revenue = $safe('revenue', function () use ($business_id, $loc, $roster, $fromStr) {
+            return $this->revenueFromPriced($business_id, $loc, $roster, $fromStr);
+        }, null);
+
         // 10. Items whose stock a shelf count changed, per person.
         $shelf = $safe('shelf', function () use ($business_id, $location, $roster, $fromStr) {
             return $this->shelfCountChanges($business_id, $location, $roster, $fromStr);
@@ -256,6 +261,8 @@ class StoreManagerDashboardController extends Controller
                 'said_not_done' => (int) ($checkins['by_user'][$uid]['not_done'] ?? 0),
                 'value_all' => (float) ($priced['people'][$uid]['value'] ?? 0),
                 'value' => (float) ($valueListed[$uid] ?? 0),
+                'revenue' => $revenue === null ? null : (float) ($revenue[$uid]['revenue'] ?? 0),
+                'sold' => $revenue === null ? null : (int) ($revenue[$uid]['sold'] ?? 0),
                 'shelf_changed' => (int) ($shelf[$uid] ?? 0),
                 'shipped_web' => $shipped === null ? null : (int) ($shipped[$uid]['web'] ?? 0),
                 'shipped_discogs' => $shipped === null ? null : (int) ($shipped[$uid]['discogs'] ?? 0),
@@ -314,6 +321,40 @@ class StoreManagerDashboardController extends Controller
             ->get();
         foreach ($rows as $r) {
             $out[(int) $r->created_by] = (float) $r->value;
+        }
+        return $out;
+    }
+
+    /**
+     * [user_id => ['revenue' => dollars, 'sold' => items]]: what the items each
+     * person priced at this store since $fromStr have actually sold for
+     * (final sales, any store, returns taken off, price paid inc. tax).
+     */
+    private function revenueFromPriced($business_id, $loc, array $roster, $fromStr)
+    {
+        if (!$roster) {
+            return [];
+        }
+        $out = [];
+        $rows = DB::table('transaction_sell_lines_purchase_lines as tslp')
+            ->join('purchase_lines as pl', 'pl.id', '=', 'tslp.purchase_line_id')
+            ->join('transactions as t', 't.id', '=', 'pl.transaction_id')
+            ->join('transaction_sell_lines as tsl', 'tsl.id', '=', 'tslp.sell_line_id')
+            ->join('transactions as sale', 'sale.id', '=', 'tsl.transaction_id')
+            ->where('t.business_id', $business_id)
+            ->whereIn('t.type', ['purchase', 'opening_stock'])
+            ->where('t.location_id', $loc)
+            ->whereIn('t.created_by', array_keys($roster))
+            ->whereRaw('COALESCE(pl.created_at, t.created_at) >= ?', [$fromStr])
+            ->where('sale.type', 'sell')
+            ->where('sale.status', 'final')
+            ->groupBy('t.created_by')
+            ->select('t.created_by',
+                DB::raw('SUM(GREATEST(tslp.quantity - COALESCE(tslp.qty_returned, 0), 0)) as sold'),
+                DB::raw('SUM(GREATEST(tslp.quantity - COALESCE(tslp.qty_returned, 0), 0) * COALESCE(tsl.unit_price_inc_tax, 0)) as revenue'))
+            ->get();
+        foreach ($rows as $r) {
+            $out[(int) $r->created_by] = ['revenue' => (float) $r->revenue, 'sold' => (int) round((float) $r->sold)];
         }
         return $out;
     }
