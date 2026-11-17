@@ -106,7 +106,7 @@
     {{-- Team, in the picked window --}}
     <div class="md-box">
         <div class="md-h">Your team, last {{ $days }} days</div>
-        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Value listed = what the items they priced here in this window sell for. Sold so far = what the items they priced here in this window have actually sold for (final sales, returns taken off). Median price / item = the middle sale price of what they priced in this window, per category. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
+        <div class="md-note">Shifts are clock-ins at {{ $storeLabel }}. Late = opened the ERP more than {{ $lateMin }} minutes after their scheduled start. Priced = items they put into stock here in this window, clocked in or not. Value listed = what those items sell for. Sold so far = what the items they priced here in this window have actually sold for (final sales, returns taken off). Median price / item = the middle sale price of what they priced in this window, per category. Fixed by shelf count = items whose stock here a shelf count changed. Shipped = items in website and Discogs orders they marked shipped in the ERP; Discogs orders shipped on Discogs.com count for Nick.@if(!$shippedOk) Shipped counts couldn't load from the website.@endif</div>
         <div class="md-scroll">
         <table class="md-t">
             <thead><tr>
