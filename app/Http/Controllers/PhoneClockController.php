@@ -308,6 +308,12 @@ class PhoneClockController extends Controller
                 \Log::warning('time clock schedule check failed: ' . $e->getMessage());
                 $sched = ['ok' => true, 'no_data' => true, 'late_min' => null, 'sched_start' => null];
             }
+            // Nick (Sarah 11/17): may clock in whenever he wants, even before
+            // his Sling shift. Still has to be at the store.
+            if (!$sched['ok'] && !empty($sched['early'])
+                && \App\Services\ShippingShiftNotifier::isShippingStaff($user)) {
+                $sched = ['ok' => true, 'no_data' => false, 'late_min' => null, 'sched_start' => null];
+            }
             if (!$sched['ok'] && !empty($sched['early'])) {
                 TC::logBlocked($userId, 'in', 'Too early for their shift', $where['location_id'] ?? null);
                 return ['ok' => false, 'blocked' => true, 'geo_denied' => false, 'name' => $first,
