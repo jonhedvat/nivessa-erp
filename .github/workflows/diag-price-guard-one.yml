@@ -1,0 +1,103 @@
+# READ-ONLY (2026-11-17): runs products matching a name/artist (with a Discogs
+# id) at one price through the Mass Add price guard - checks the
+# nothing-for-sale $1/want rule. Nothing is saved (only the guard's API cache).
+name: Diag price guard one release
+
+on:
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Product name or artist contains"
+        required: false
+        default: "Positions"
+      price:
+        description: "Price to test"
+        required: false
+        default: "175"
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+
+      - name: Price guard test (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          PG_QUERY: ${{ github.event.inputs.query }}
+          PG_PRICE: ${{ github.event.inputs.price }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 25m
+          envs: PG_QUERY,PG_PRICE
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export PG_QUERY PG_PRICE
+            F=$(mktemp /tmp/pgtest.XXXXXX.php)
+            cat > "$F" <<'PHP'
+            <?php
+            require __DIR__ . '/vendor/autoload.php';
+            PHP
+            sed -i "s#__DIR__ . '/vendor#'$(pwd)/vendor#" "$F"
+            cat >> "$F" <<'PHP'
+            $app = require getcwd() . '/bootstrap/app.php';
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            // Products whose name matches PG_QUERY with a Discogs id, run at PG_PRICE.
+            $q = getenv('PG_QUERY') ?: 'Positions';
+            $price = getenv('PG_PRICE') ?: '175';
+            $rows = DB::table('products as p')
+                ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+                ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+                ->where('p.discogs_release_id', '>', 0)
+                ->where(function ($w) use ($q) { $w->where('p.name', 'like', "%$q%")->orWhere('p.artist', 'like', "%$q%"); })
+                ->select('p.id', 'p.business_id', 'p.name', 'p.artist', 'p.discogs_release_id', 'p.created_by', 'p.created_at', 'c.id as cat_id', 'c.name as cat', 'sc.name as sub')
+                ->orderByDesc('p.id')->limit(12)->get();
+            echo "FOUND " . $rows->count() . "\n";
+            $sess = app('session')->driver();
+            $sess->put('user.business_id', (int) ($rows[0]->business_id ?? 1));
+            foreach ($rows->unique('discogs_release_id') as $j => $r) {
+                $item = ['idx' => (string) $j, 'price' => $price, 'name' => $r->name, 'artist' => $r->artist,
+                    'discogs_release_id' => (string) $r->discogs_release_id, 'condition' => stripos($r->cat . $r->sub, 'seal') !== false ? 'Sealed' : 'Near Mint (NM or M-)',
+                    'category_id' => (string) $r->cat_id, 'category' => trim($r->cat . ' ' . $r->sub)];
+                $req = Illuminate\Http\Request::create('/product/mass-create/price-guard', 'POST', ['items' => [$item]]);
+                $req->setLaravelSession($sess);
+                app()->instance('request', $req);
+                try {
+                    $res = app(App\Http\Controllers\ProductController::class)->massCreatePriceGuard($req)->getData(true)['results'][(string) $j] ?? null;
+                    $err = null;
+                } catch (\Throwable $e) { $res = null; $err = substr($e->getMessage(), 0, 300); }
+                echo 'ROW ' . json_encode(['id' => $r->id, 'rel' => (int) $r->discogs_release_id, 'item' => $r->artist . ' - ' . $r->name,
+                    'cat' => trim($r->cat . ' / ' . $r->sub), 'by' => $r->created_by, 'at' => $r->created_at, 'price' => $price, 'res' => $res, 'err' => $err]) . "\n";
+                usleep(2500000);
+            }
+            PHP
+            php "$F"
+            rm -f "$F"
+            echo "=== done ==="

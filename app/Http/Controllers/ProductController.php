@@ -45,6 +45,10 @@ class ProductController extends Controller
     /** 7" / 45s minimum shelf price (Sarah 2026-11-17). */
     const SEVEN_INCH_MIN_PRICE = 3.00;
     const SEVEN_INCH_CATEGORY = '/7"|7 inch|45 ?rpm|\\b45s\\b/i';
+    // Sarah 2026-11-17: nothing for sale on Discogs = price at $1 per want
+    // (Ariana Grande Positions deluxe went out at $175; 450 wants, 0 listed = $450).
+    const SCARCE_PER_WANT = 1.00;
+    const SCARCE_MIN_WANTS = 25;
 
     /**
      * All Utils instance.
@@ -4260,6 +4264,33 @@ class ProductController extends Controller
             }
         }
 
+        // Nothing for sale on Discogs + lots of wants: non-admins can't save
+        // under 70% of $1/want - raised server-side whatever the page sent.
+        // Uses the lookup the price guard cached moments before the save.
+        $scarceIn = $request->input('products');
+        if (is_array($scarceIn) && !(auth()->check() && $this->productUtil->is_admin(auth()->user()))) {
+            $raised = [];
+            foreach ($scarceIn as $i => $pi) {
+                $rid = (int) ($pi['discogs_release_id'] ?? 0);
+                $pr = isset($pi['single_dsp_inc_tax']) ? (float) preg_replace('/[^0-9.]/', '', (string) $pi['single_dsp_inc_tax']) : 0;
+                if ($rid <= 0 || $pr <= 0) continue;
+                $dg = \Cache::get('massadd-guard-dg3:' . $rid);
+                if (!$dg) continue;
+                $cond = trim((string) ($pi['condition'] ?? ''));
+                $grade = $cond !== '' && $cond !== 'Sealed' ? $cond : null;
+                $sp = self::scarcePrice($dg['for_sale'] ?? null, $dg['want'] ?? null, $grade);
+                if ($sp && $pr < $sp * 0.70) {
+                    $new = max(0.99, ceil($sp) - 0.01);
+                    $scarceIn[$i]['single_dsp_inc_tax'] = number_format($new, 2, '.', '');
+                    $raised[] = ($pi['name'] ?? $rid) . ' $' . $pr . '->$' . $new;
+                }
+            }
+            if ($raised) {
+                $request->merge(['products' => $scarceIn]);
+                \Log::info('mass-add scarce price raised for user ' . auth()->id() . ': ' . implode('; ', $raised));
+            }
+        }
+
         if ($request->filled('price_guard_reason')) {
             \Log::info('mass-add price guard override by user ' . auth()->id() . ': ' . mb_substr((string) $request->input('price_guard_reason'), 0, 1000));
         }
@@ -5313,6 +5344,21 @@ class ProductController extends Controller
      * (and at least $3 under), or under 85% of the cheapest Discogs copy.
      * The page makes staff fix it or type a reason before saving.
      */
+    /**
+     * $1 per Discogs want when nobody is selling a copy (none listed and
+     * 25+ wants). Not for beat-up copies (Good or worse).
+     */
+    public static function scarcePrice($forSale, $want, $grade = null)
+    {
+        if ($forSale === null || (int) $forSale !== 0 || (int) $want < self::SCARCE_MIN_WANTS) {
+            return null;
+        }
+        if ($grade && preg_match('/^(Good|Fair|Poor)\b|\(G\)|\(F\)|\(P\)/i', $grade)) {
+            return null;
+        }
+        return round((int) $want * self::SCARCE_PER_WANT, 2);
+    }
+
     public function massCreatePriceGuard(Request $request)
     {
         $business_id = $request->session()->get('user.business_id');
@@ -5323,6 +5369,7 @@ class ProductController extends Controller
         $token = null;
         $ebay = null;
         $discogsFails = 0; // after 2 failed lookups (rate limit), stop calling Discogs this request
+        $isAdmin = auth()->check() && $this->productUtil->is_admin(auth()->user());
 
         foreach (array_slice($items, 0, 300) as $item) {
             $idx = (string) ($item['idx'] ?? '');
@@ -5340,7 +5387,7 @@ class ProductController extends Controller
             $dg = null;
             $unchecked = false;
             if ($releaseId > 0) {
-                $key = 'massadd-guard-dg2:' . $releaseId;
+                $key = 'massadd-guard-dg3:' . $releaseId;
                 $dg = \Cache::get($key);
                 if ($dg === null && $discogsFails >= 2) {
                     $unchecked = true;
@@ -5355,11 +5402,14 @@ class ProductController extends Controller
                         // Lowest/for-sale usually came with the release fetch when
                         // the row was added (see fetchDiscogsReleaseForMassCreate),
                         // so only the price-suggestions call is needed then.
-                        $low = \Cache::get('massadd-guard-low:' . $releaseId);
+                        // The release fetch also carries the want count (for the
+                        // nothing-for-sale rule).
+                        $low = \Cache::get('massadd-guard-low2:' . $releaseId);
                         $st = $low ? ['data' => (object) [
-                            'lowest_price' => $low['lowest'] !== null ? (object) ['value' => $low['lowest']] : null,
+                            'lowest_price' => $low['lowest'],
                             'num_for_sale' => $low['for_sale'],
-                        ]] : $discogs->callApi('https://api.discogs.com/marketplace/stats/' . $releaseId . '?curr_abbr=USD&token=' . $t);
+                            'community' => (object) ['want' => $low['want']],
+                        ]] : $discogs->callApi('https://api.discogs.com/releases/' . $releaseId . '?curr_abbr=USD&token=' . $t);
                         $sg = $discogs->callApi('https://api.discogs.com/marketplace/price_suggestions/' . $releaseId . '?token=' . $t);
                         $grades = [];
                         foreach ((array) ($sg['data'] ?? []) as $label => $v) {
@@ -5369,8 +5419,9 @@ class ProductController extends Controller
                         }
                         $stData = $st['data'] ?? null;
                         $dg = [
-                            'lowest' => isset($stData->lowest_price->value) ? round((float) $stData->lowest_price->value, 2) : null,
+                            'lowest' => isset($stData->lowest_price) && is_numeric($stData->lowest_price) ? round((float) $stData->lowest_price, 2) : null,
                             'for_sale' => isset($stData->num_for_sale) ? (int) $stData->num_for_sale : null,
+                            'want' => isset($stData->community->want) ? (int) $stData->community->want : null,
                             'grades' => $grades,
                         ];
                         if (empty($st['error']) && empty($sg['error'])) {
@@ -5401,6 +5452,8 @@ class ProductController extends Controller
                     'value' => $val,
                     'lowest' => $dg['lowest'],
                     'for_sale' => $dg['for_sale'],
+                    'want' => $dg['want'] ?? null,
+                    'scarce' => self::scarcePrice($dg['for_sale'], $dg['want'] ?? null, $label),
                 ];
             }
 
@@ -5419,6 +5472,9 @@ class ProductController extends Controller
             $ownTrack = $store && (int) ($store['sales'] ?? 0) >= 5;
             if (!empty($discogsOut['value']) && !$ownTrack) {
                 $refs['Discogs ' . $discogsOut['grade']] = $discogsOut['value'];
+            }
+            if (!empty($discogsOut['scarce'])) {
+                $refs['0 for sale on Discogs, ' . number_format($discogsOut['want']) . ' wants ($1/want)'] = $discogsOut['scarce'];
             }
 
             // eBay, only when there's no Discogs release to go on
@@ -5490,8 +5546,15 @@ class ProductController extends Controller
                 $suggested = max($suggested, self::SEVEN_INCH_MIN_PRICE);
             }
 
+            $scarceLow = !empty($discogsOut['scarce']) && $price < $discogsOut['scarce'] * 0.70;
+            if ($scarceLow && !$reasons) {
+                $reasons[] = '0 for sale on Discogs, ' . number_format($discogsOut['want']) . ' wants';
+                $suggested = max(0.99, ceil($discogsOut['scarce']) - 0.01);
+            }
             $out[$idx] = [
                 'flag' => !empty($reasons) && !$high,
+                // Can't be kept low with a reason - only an admin can.
+                'locked' => $scarceLow && !$high && !$isAdmin,
                 'high' => $high,
                 'unchecked' => $unchecked,
                 'reasons' => $reasons,
@@ -5819,9 +5882,10 @@ class ProductController extends Controller
         // Surface marketplace stats from the Discogs payload so the bulk-add
         // row can show Have/Want/lowest price alongside the sales history.
         if (isset($payload->lowest_price) || isset($payload->num_for_sale)) {
-            \Cache::put('massadd-guard-low:' . $id, [
+            \Cache::put('massadd-guard-low2:' . $id, [
                 'lowest' => isset($payload->lowest_price) ? round((float) $payload->lowest_price, 2) : null,
                 'for_sale' => isset($payload->num_for_sale) ? (int) $payload->num_for_sale : null,
+                'want' => isset($payload->community->want) ? (int) $payload->community->want : null,
             ], now()->addDays(3));
         }
         $stats = [
