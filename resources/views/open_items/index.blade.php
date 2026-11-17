@@ -98,7 +98,7 @@
     <div class="oi-top">
         <div>
             <h1>Open Items</h1>
-            <p>Everything from the last 2 weeks that is ready for you to finish. Updated {{ $asOf }}.</p>
+            <p>Updated {{ $asOf }}.</p>
             <div class="oi-total {{ $total === 0 ? 'zero' : '' }}">{{ $total === 0 ? 'All done. Amazing work!' : $total . ' to do' }}</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -117,18 +117,8 @@
         <h2 style="font-size:20px;font-weight:800;margin:0;color:var(--d-ink)">Today: {{ $sb['today'] }} of {{ $sb['target'] }} fixed</h2>
         <div class="sb-bar {{ $left === 0 ? 'hit' : '' }}" style="height:16px"><span style="width:{{ $pct }}%"></span></div>
         <div style="font-size:15px;font-weight:700;color:var(--d-ink)">{{ $left > 0 ? $left . ' more to hit today\'s goal.' : 'Goal hit!' }} Streak: {{ $sb['streak'] }} {{ $sb['streak'] === 1 ? 'day' : 'days' }} in a row.</div>
-        <div style="font-size:14px;color:var(--d-ink)">Every time you click <strong>Fixed it</strong> on a row below, that is 1. Get to {{ $sb['target'] }} every day you work to keep your streak. If something you marked fixed comes back, it stops counting.</div>
     </div>
 
-    <div class="oi-card" id="oi-start">
-        <div class="oi-head"><h2>How to use this page</h2></div>
-        <div class="oi-done"><strong>1.</strong> Start at number 1 in "Your list" and go down in order. Each one is one thing to finish today.</div>
-        <div class="oi-done"><strong>2.</strong> Click <strong>Open</strong> on the row. Do what the "What to do" line says (reply, ship, call, fix the order). To answer a customer, click <strong>Reply with Claude</strong> on the row: it writes the reply on the right, you check it and send it.</div>
-        <div class="oi-done"><strong>3.</strong> When the problem is gone, click <strong>Fixed it</strong> and write one line about what you did, e.g. "Called her, sent a swap, she is happy". It disappears.</div>
-        <div class="oi-done"><strong>4.</strong> If the ERP is broken or missing something you need, click <strong>ERP bug</strong> and write what happened. Do not leave it sitting.</div>
-        <div class="oi-done"><strong>5.</strong> When the list is done, do today's social post, then "If you have time" below.</div>
-        <p class="oi-how">"Fixed it" means it is really finished. If something comes back within 48 hours, it shows up here again with your note so you can finish it.</p>
-    </div>
 
     <div class="oi-layout"><div class="oi-main">
     @php
@@ -151,7 +141,7 @@
     @endphp
     <div class="oi-card" id="oi-list">
         <div class="oi-head"><h2>Your list, most important first <span class="oi-count {{ count($items) === 0 ? 'zero' : '' }}">{{ count($items) }}</span></h2></div>
-        <p class="oi-how">Start at number 1 and go down in order. The line under each one tells you exactly what to do.</p>
+        <p class="oi-how">Do #1 first. When it's done, click <strong>Fixed it</strong>.</p>
         @if($failed)<div class="oi-err">Could not load right now: {{ implode(', ', $failed) }}. Click Refresh in a few minutes.</div>@endif
         @if(count($items) === 0)
             <div class="oi-empty">All done. Amazing work! Now do today's social post below.</div>
@@ -161,7 +151,7 @@
                     <div class="oi-row">
                         <div class="oi-who" title="{{ $r['who'] }}"><span class="oi-num">{{ $n + 1 }}.</span> <span class="oi-tag oi-tag-{{ $key }}">{{ $s['title'] }}</span> {{ $r['who'] }}</div>
                         <div class="oi-what">{{ $r['what'] }}</div>
-                        @if($s['how'])<div class="oi-todo"><strong>What to do:</strong> {{ $s['how'] }}</div>@endif
+                        @if($s['how'])<div class="oi-todo">{{ $s['how'] }}</div>@endif
                         <div class="oi-age {{ ($r['late'] ?? ($r['hours'] >= 72)) ? 'late' : '' }}" title="{{ $r['since'] }}">{{ $r['age'] }}</div>
                         <div class="oi-open"><a href="{{ $r['link'] }}">Open</a></div>
                         <div class="oi-acts">
@@ -211,8 +201,8 @@
     <aside class="oi-side" id="oi-side">
         <div class="oi-head"><h2>Reply with Claude</h2><button type="button" class="oi-pill" id="oi-side-close" style="display:none">Close</button></div>
         <div class="oi-side-body" id="oi-side-body">
-            <div id="oi-side-empty">Click <strong>Reply with Claude</strong> on any customer row. Claude writes a reply here, you check it, fix anything in [brackets], then send it.</div>
-            @include('open_items.partials.text_tips')
+            <div id="oi-side-empty">Click <strong>Reply with Claude</strong> on a row.</div>
+            <details><summary style="cursor:pointer;font-weight:700">Reply tips</summary>@include('open_items.partials.text_tips')</details>
             <div id="oi-side-work" style="display:none;gap:10px">
                 <div><strong id="oi-side-who"></strong> wrote:</div>
                 <div class="oi-quote" id="oi-side-msg"></div>

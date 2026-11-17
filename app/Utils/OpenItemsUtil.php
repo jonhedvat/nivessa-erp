@@ -39,7 +39,7 @@ class OpenItemsUtil
                 $out[$key] = $fn();
             } catch (\Throwable $e) {
                 \Log::warning('open-items ' . $key . ' failed: ' . $e->getMessage());
-                $names = ['sellers' => 'People who want to sell us records', 'discogs' => 'Discogs orders to ship', 'staff' => 'Get new teammates ready', 'customers' => 'Customers to reply to', 'unhappy' => 'Let\'s make these customers happy', 'orders' => 'Website orders to get out the door', 'contact' => 'Website messages to answer', 'bookings' => 'Venue bookings to finish', 'buys' => 'Buys to finish', 'events' => 'Listening party prep'];
+                $names = ['sellers' => 'People who want to sell us records', 'discogs' => 'Discogs orders to ship', 'staff' => 'Get new teammates ready', 'Set up their login and time clock PIN.' => 'Customers to reply to', 'Answer them today.' => 'Let\'s make these customers happy', 'Call them and make it right.' => 'Website orders to get out the door', 'contact' => 'Website messages to answer', 'bookings' => 'Venue bookings to finish', 'buys' => 'Buys to finish', 'Ask the cashier, then Accept or Reject.' => 'Listening party prep'];
                 $out[$key] = self::section($names[$key] ?? $key, '', '', [], 'Could not load this right now.');
             }
             // Only the last 2 weeks; older ones are counted, not listed.
@@ -161,7 +161,7 @@ class OpenItemsUtil
             $row = self::row(self::whoWithChannel($r), (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
             $out[] = self::replyable($row, 'customers', (string) $r->message, (int) $r->id, (string) $r->channel);
         }
-        return self::section('Customers to reply to', 'Send them a real answer today. If it was already handled another way, click Fixed it and say how.', url('/communications'), self::oldestFirst($out));
+        return self::section('Customers to reply to', 'Answer them today.', url('/communications'), self::oldestFirst($out));
     }
 
     const TRIAGE_SYSTEM = 'You sort open text, call and DM threads for Nivessa Records, a record store with stores on Pico and Hollywood. Each thread shows what the customer sent and what we already replied. Give each ID exactly one label:
@@ -277,7 +277,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             $row = self::row(self::whoWithChannel($r), (string) $r->message, $r->created_at, url('/communications'), 'comm:' . $r->id);
             $out[] = self::replyable($row, 'unhappy', (string) $r->message, (int) $r->id, (string) $r->channel);
         }
-        return self::section('Let\'s make these customers happy', 'Call them today, make it right, then click Fixed it and write what you did.', url('/communications'), self::oldestFirst($out));
+        return self::section('Let\'s make these customers happy', 'Call them and make it right.', url('/communications'), self::oldestFirst($out));
     }
 
     /** Paid website orders still open after 3 days, plus every "can't find" order. */
@@ -305,14 +305,14 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             $name = trim((!empty($o['orderNumber']) ? '#' . $o['orderNumber'] . ' ' : '') . $name);
             if (WebsiteOrdersController::inTab($o, 'cant_find')) {
                 $items = implode(', ', array_filter(array_map(fn ($it) => is_array($it) ? (string) ($it['product_name'] ?? ($it['product_id']['name'] ?? '')) : '', (array) ($o['items'] ?? []))));
-                $row = self::row($name, "Track it down: recheck the bins, and if it is gone, offer a swap", $o['createdAt'] ?? null, url('/website-orders?order=' . $id), 'order:' . $id);
+                $row = self::row($name, "Can't find it: recheck bins or offer a swap", $o['createdAt'] ?? null, url('/website-orders?order=' . $id), 'order:' . $id);
                 $out[] = self::replyable($row, 'cantfind', 'Website order ' . $name . ($items ? ' for: ' . $items : '') . '. We cannot find the record on the shelf right now.');
             } elseif ($created < $cut && WebsiteOrdersController::inTab($o, 'needs_action')) {
                 $how = ($o['fulfillment_method'] ?? '') === 'pickup' ? 'Get the pickup ready' : 'Ready to ship';
                 $out[] = self::row($name, $how . ', ordered ' . intdiv(time() - $created, 86400) . ' days ago', $o['createdAt'] ?? null, url('/website-orders?order=' . $id), 'order:' . $id);
             }
         }
-        return self::section('Website orders to get out the door', 'Text the person on shift with the order link. No answer in 2 hours, call them, then the manager.', url('/website-orders?tab=needs_action'), self::oldestFirst($out));
+        return self::section('Website orders to get out the door', 'Text the cashier on shift the order link.', url('/website-orders?tab=needs_action'), self::oldestFirst($out));
     }
 
     const SELLER_RE = '/\b(for sale|sell(ing)?|collection|bulk|library|estate|records? to sell|lot of)\b/i';
@@ -388,7 +388,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             return self::section('People who want to sell us records', '', url('/website-inbox/messages'), [], 'Could not reach the website right now.');
         }
         $rows = self::contactRows(array_filter($msgs, fn ($m) => $m['_seller']), 'sellers');
-        return self::section('People who want to sell us records', 'Call or email today, get photos and a rough count, and book a time for them to bring it in (or a pickup). Done = a date is booked or they said no.', url('/buy-from-customer'), $rows);
+        return self::section('People who want to sell us records', 'Book a time for them to bring it in.', url('/buy-from-customer'), $rows);
     }
 
     /** Website contact form messages nobody has replied to. */
@@ -399,7 +399,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             return self::section('Website messages to answer', '', url('/website-inbox/messages'), [], 'Could not reach the website right now.');
         }
         $rows = self::contactRows(array_filter($msgs, fn ($m) => !$m['_seller']));
-        return self::section('Website messages to answer', 'Answer it yourself from the Website Inbox with a real answer (stock, price, date).', url('/website-inbox/messages'), $rows);
+        return self::section('Website messages to answer', 'Answer from the Website Inbox.', url('/website-inbox/messages'), $rows);
     }
 
     /** Discogs orders over 30 days old still not shipped, and buyers we owe an answer. */
@@ -428,7 +428,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
                 $out[] = $r;
             }
         }
-        return self::section('Discogs orders to ship', 'Ship it today. Happy Discogs buyers leave great public feedback.', url('/website-orders?tab=discogs_old'), self::oldestFirst($out));
+        return self::section('Discogs orders to ship', 'Ship it today.', url('/website-orders?tab=discogs_old'), self::oldestFirst($out));
     }
 
     /** Venue booking requests that never got paid. */
@@ -450,7 +450,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             }
             $out[] = self::row($b['customerName'] ?: $b['customerEmail'], trim($b['venueName'] . ' ' . $b['title']), $b['createdAt'] ?: null, url('/website-carts?tab=bookings'), 'booking:' . $b['id']);
         }
-        return self::section('Venue bookings to finish', 'Call or email them to finish the booking, or find out what they need.', url('/website-carts?tab=bookings'), self::oldestFirst($out));
+        return self::section('Venue bookings to finish', 'Call or email to finish the booking.', url('/website-carts?tab=bookings'), self::oldestFirst($out));
     }
 
     /** Buys left as drafts for over a day (last 7 days). */
@@ -489,7 +489,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
             }
             $out[] = self::row($r->seller_name ?: $r->seller_phone, $what, $r->created_at, url('/buy-from-customer/' . $r->id . '/edit'), 'buy:' . $r->id);
         }
-        return self::section('Buys to finish', 'Ask the cashier: did we buy it? Then Accept or Reject so the drawer and stock are right.', url('/buy-from-customer/history'), self::oldestFirst($out));
+        return self::section('Buys to finish', 'Ask the cashier, then Accept or Reject.', url('/buy-from-customer/history'), self::oldestFirst($out));
     }
 
     /** Event prep steps past their due day for events in the next 2 weeks. */
@@ -532,7 +532,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
                 $out[] = $r;
             }
         }
-        return self::section('Listening party prep', 'Tick each step on the event page when it is done.', url('/events'), self::oldestFirst($out));
+        return self::section('Listening party prep', 'Tick the step on the event page.', url('/events'), self::oldestFirst($out));
     }
 
     /**
@@ -635,7 +635,7 @@ Reply with only a JSON object mapping each ID to its label, like {"12":"done","4
         }
 
         usort($out, fn ($a, $b) => $b['hours'] <=> $a['hours']);
-        return self::section('Get new teammates ready', 'Every new hire gets an ERP login and a time clock PIN before their first shift. Finish their onboarding checklist the day they are hired.', url('/employee-checklist'), $out);
+        return self::section('Get new teammates ready', 'Set up their login and time clock PIN.', url('/employee-checklist'), $out);
     }
 
     /* ---------- Fixed it / ERP bug ---------- */

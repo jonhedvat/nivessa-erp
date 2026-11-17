@@ -58,33 +58,25 @@
     <div class="oi-head"><h2>Today's social post</h2><a class="oi-btn" href="https://claude.ai/new?q={{ rawurlencode($capPrompt) }}" target="_blank">Write the caption with Claude</a></div>
     <div class="oi-done" style="font-size:16px"><strong>Today: {{ $todayArtist ?: 'a rare find or new arrival (no famous birthday today)' }}</strong></div>
     @if($todayArtist)
-        <div class="oi-done"><strong>1.</strong> Search the artist in <a href="{{ url('/products') }}" style="color:var(--d-accent-text);font-weight:700">Products</a> and see which store has one of their records in stock.</div>
-        <div class="oi-done"><strong>2.</strong> Text the cashier at that store: "Can you send me one clear photo of [record] in the store for today's post?"</div>
+        <div class="oi-done"><strong>1.</strong> Ask the cashier for a photo of their record.</div>
     @else
-        <div class="oi-done"><strong>1.</strong> Text the cashier on shift: "Can you send me one clear photo of the best record that came in today, and what it is?"</div>
-        <div class="oi-done"><strong>2.</strong> Look the record up in Products so the caption has the right title and store.</div>
+        <div class="oi-done"><strong>1.</strong> Ask the cashier for a photo of today's best record.</div>
     @endif
-    <div class="oi-done"><strong>3.</strong> Click <strong>Write the caption with Claude</strong> above, fill in the [brackets], and copy what it writes.</div>
-    <div class="oi-done"><strong>4.</strong> Post the photo and caption on Instagram and TikTok around 11am. One post a day, never several at once.</div>
-    @if($tomorrowArtist)<div class="oi-done"><strong>Tomorrow:</strong> {{ $tomorrowArtist }}. Ask the cashier for the photo today so it is ready.</div>@endif
-    <p class="oi-how">Coming up this week:</p>
-    @foreach(array_slice($week, 2) as $w)
-        <div class="oi-done"><strong>{{ $w[0] }} ({{ $w[1] }}):</strong> {{ $w[2] }}</div>
-    @endforeach
+    <div class="oi-done"><strong>2.</strong> Write the caption with Claude.</div>
+    <div class="oi-done"><strong>3.</strong> Post on Instagram and TikTok at 11am.</div>
+    @if($tomorrowArtist)<div class="oi-done"><strong>Tomorrow:</strong> {{ $tomorrowArtist }}</div>@endif
 </div>
 
 <div class="oi-card" id="oi-bigger">
     <div class="oi-head"><h2>If you have time</h2></div>
-    <p class="oi-how">After your list and today's social post. Most important first: these bring in money and keep customers happy.</p>
     @foreach($jobs as $i => $j)
-        <div class="oi-done"><strong>{{ $i + 1 }}. {{ $j[0] }}.</strong> {{ $j[1] }} @if(isset($jobLinks[$i]))<a href="{{ url($jobLinks[$i]) }}" style="color:var(--d-accent-text);font-weight:700">Open</a>@endif</div>
+        <div class="oi-done"><strong>{{ $i + 1 }}. {{ $j[0] }}</strong> @if(isset($jobLinks[$i]))<a href="{{ url($jobLinks[$i]) }}" style="color:var(--d-accent-text);font-weight:700">Open</a>@endif</div>
     @endforeach
 </div>
 
-<div class="oi-card" id="oi-claude">
-    <div class="oi-head"><h2>Use Claude for every message</h2><a class="oi-btn" href="https://claude.ai" target="_blank">Open Claude</a></div>
-    <p class="oi-how">Every message to a customer, seller or partner goes through Claude first so it sounds warm. Paste the real details, read what it writes, fix anything wrong, then send. Never paste card numbers, passwords or addresses.</p>
+<details class="oi-card" id="oi-claude" style="padding:14px 18px">
+    <summary style="cursor:pointer;font-weight:800;font-size:16px;color:var(--d-ink)">Claude prompts</summary>
     @foreach($prompts as $p)
         <div class="oi-done"><strong>{{ $p[0] }}:</strong> "{{ $p[1] }}"</div>
     @endforeach
-</div>
+</details>
