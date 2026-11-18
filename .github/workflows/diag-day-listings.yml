@@ -70,6 +70,12 @@ jobs:
             $price = \DB::table('variations')->whereIn('product_id',$ids)->groupBy('product_id')->select('product_id', \DB::raw('max(sell_price_inc_tax) pr'))->pluck('pr','product_id');
             $vld = \DB::table('variation_location_details')->whereIn('product_id',$ids)->select('product_id','location_id', \DB::raw('sum(qty_available) q'))->groupBy('product_id','location_id')->get()->groupBy('product_id');
             $pl = \DB::table('purchase_lines as l')->join('transactions as t','t.id','=','l.transaction_id')->whereIn('l.product_id',$ids)->select('l.product_id','t.location_id','t.type')->get()->groupBy('product_id');
+            if ($s !== '') {
+              $q = \DB::table('transaction_sell_lines as l')->join('transactions as t','t.id','=','l.transaction_id')->leftJoin('products as p','p.id','=','l.product_id')
+                ->where('t.type','sell')->where(function ($w) use ($s) { $w->where('p.name','like',"%$s%")->orWhere('p.artist','like',"%$s%"); if (\Schema::hasColumn('transaction_sell_lines','legacy_artist')) { $w->orWhere('l.legacy_artist','like',"%$s%")->orWhere('l.legacy_title','like',"%$s%"); } })
+                ->select('t.id as tx','t.invoice_no','t.transaction_date','t.status','t.payment_status','t.location_id','l.product_id','p.name','l.quantity','l.quantity_returned','l.unit_price_inc_tax','t.created_by');
+              foreach ($q->orderBy('t.transaction_date')->get() as $r) echo '[SALE] ' . json_encode($r) . "\n";
+            }
             foreach (\DB::table('products')->whereIn('id',$ids)->orderBy('created_at')->get() as $p) {
               $u = $users[$p->created_by] ?? null;
               echo '[P] ' . json_encode(['id'=>$p->id,'name'=>$p->name,'artist'=>$p->artist ?? null,'at'=>$p->created_at,'cat'=>$cats[$p->category_id] ?? null,'genre'=>$cats[$p->sub_category_id] ?? null,'price'=>$price[$p->id] ?? null,'by'=>$p->created_by,'who'=>$u ? trim($u->first_name.' '.$u->last_name).' ('.$u->username.')' : null,'vld'=>$vld[$p->id] ?? [],'purch'=>$pl[$p->id] ?? []]) . "\n";
