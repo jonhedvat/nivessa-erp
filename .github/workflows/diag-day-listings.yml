@@ -1,0 +1,88 @@
+# READ-ONLY (2026-11-18): what was listed (products created) on a given day,
+# grouped by genre (sub_category) and category, with price + lister.
+# Optional search finds a specific item (e.g. "judee sill") across all dates.
+name: Diag day listings by genre
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date YYYY-MM-DD (app timezone)"
+        required: true
+      search:
+        description: "Optional product name fragment to locate"
+        required: false
+        default: ""
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+
+      - name: Day listings (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DIAG_DATE: ${{ github.event.inputs.date }}
+          DIAG_SEARCH: ${{ github.event.inputs.search }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          envs: DIAG_DATE,DIAG_SEARCH
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export DIAG_DATE DIAG_SEARCH
+            php artisan tinker --no-ansi <<'PHP'
+            $day = getenv('DIAG_DATE'); $s = trim((string) getenv('DIAG_SEARCH'));
+            echo 'TZ app=' . config('app.timezone') . "\n";
+            $base = fn () => \DB::table('products as p')
+              ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+              ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
+              ->leftJoin('users as u', 'u.id', '=', 'p.created_by')
+              ->leftJoin('variations as v', 'v.product_id', '=', 'p.id')
+              ->select('p.id', 'p.name', 'p.created_at', 'c.name as cat', 'sc.name as genre',
+                \DB::raw("concat_ws(' ', u.first_name, u.last_name) as who"),
+                \DB::raw('max(v.sell_price_inc_tax) as price'))
+              ->groupBy('p.id', 'p.name', 'p.created_at', 'c.name', 'sc.name', 'u.first_name', 'u.last_name');
+            if ($s !== '') {
+              echo "=== SEARCH '$s' (all dates) ===\n";
+              foreach ($base()->where('p.name', 'like', "%$s%")->orderBy('p.created_at')->get() as $r) echo "[S] " . json_encode($r) . "\n";
+            }
+            $rows = $base()->whereBetween('p.created_at', ["$day 00:00:00", "$day 23:59:59"])->orderBy('p.created_at')->get();
+            echo "=== COUNT listed $day: " . $rows->count() . " ===\n";
+            echo "=== BY GENRE ===\n";
+            foreach ($rows->groupBy(fn ($r) => $r->genre ?: '(none)')->sortByDesc(fn ($g) => $g->count()) as $g => $grp) echo "[G] $g | " . $grp->count() . "\n";
+            echo "=== BY CATEGORY x GENRE ===\n";
+            foreach ($rows->groupBy(fn ($r) => ($r->cat ?: '(none)') . ' / ' . ($r->genre ?: '(none)'))->sortByDesc(fn ($g) => $g->count()) as $g => $grp) echo "[CG] $g | " . $grp->count() . "\n";
+            echo "=== BY LISTER x GENRE ===\n";
+            foreach ($rows->groupBy(fn ($r) => ($r->who ?: '?') . ' / ' . ($r->genre ?: '(none)'))->sortKeys() as $g => $grp) echo "[LG] $g | " . $grp->count() . "\n";
+            echo "=== ROWS ===\n";
+            foreach ($rows as $r) echo "[R] " . json_encode($r) . "\n";
+            PHP
