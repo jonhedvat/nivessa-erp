@@ -294,6 +294,24 @@ class SlingClient
     /** Sarah's Slack ID: Sling connection alerts are DMed to her. */
     const ALERT_SLACK_ID = 'U07D33PMQLA';
 
+    /** Full link for Slack (url() gives http://localhost from cron). */
+    const LOGIN_URL = 'https://playlist.nivessa.com/admin/sling/login';
+
+    /**
+     * True at most once per $hours for $key. Kept in the system table: the
+     * file cache didn't hold between web and cron, and Sarah got a DM every
+     * ~20 minutes (11/17-11/18).
+     */
+    private static function onceEvery(string $key, int $hours): bool
+    {
+        $last = (string) (System::getProperty($key) ?? '');
+        if ($last !== '' && strtotime($last) > time() - $hours * 3600) {
+            return false;
+        }
+        System::addProperty($key, date('Y-m-d H:i:s'));
+        return true;
+    }
+
     /**
      * Swap a Sling email + password for an Authorization token via
      * /account/login (no /v1: that one is captcha-gated).
@@ -363,10 +381,10 @@ class SlingClient
     {
         $secret = (string) (System::getProperty('sling_login_secret') ?? '');
         if ($secret === '') {
-            self::alertBroken('Sling stopped accepting the ERP\'s token, so shifts are not updating (the time clock lets everyone in meanwhile). Please save a fresh token with the "Copy as cURL" box at ' . url('/admin/sling/login') . '.');
+            self::alertBroken('Sling stopped accepting the ERP\'s token, so shifts are not updating (the time clock lets everyone in meanwhile). Please save a fresh token with the "Copy as cURL" box at ' . self::LOGIN_URL . '.');
             return false;
         }
-        if (!\Cache::add('sling_relogin_try', 1, 600)) {
+        if (!self::onceEvery('sling_relogin_try_at', 1)) {
             return false;
         }
         try {
@@ -380,7 +398,7 @@ class SlingClient
         $r = self::loginWith((string) $cred['e'], (string) $cred['p']);
         if (!$r['ok']) {
             \Log::error('Sling auto re-login failed: ' . $r['error']);
-            self::alertBroken('The ERP could not log back in to Sling (' . $r['error'] . '), so shifts are not updating (the time clock lets everyone in meanwhile). Please save a fresh token with the "Copy as cURL" box at ' . url('/admin/sling/login') . '.');
+            self::alertBroken('The ERP could not log back in to Sling (' . $r['error'] . '), so shifts are not updating (the time clock lets everyone in meanwhile). Please save a fresh token with the "Copy as cURL" box at ' . self::LOGIN_URL . '.');
             return false;
         }
         $this->token = $r['token'];
@@ -409,22 +427,22 @@ class SlingClient
     public static function remindIfExpiringSoon(): void
     {
         $exp = self::tokenExpiresAt();
-        if (!$exp || $exp->gt(now()->addDays(10)) || !\Cache::add('sling_renew_reminder', 1, 20 * 3600)) {
+        if (!$exp || $exp->gt(now()->addDays(10)) || !self::onceEvery('sling_renew_reminder_at', 20)) {
             return;
         }
         $text = 'The ERP\'s Sling token runs out on ' . $exp->format('m/d/y') . '. Please save a fresh one with the "Copy as cURL" box at '
-            . url('/admin/sling/login') . ' so the time clock and shift reports keep working.';
+            . self::LOGIN_URL . ' so the time clock and shift reports keep working.';
         $r = \App\Services\TimeClockService::slackDm(self::ALERT_SLACK_ID, $text);
         if (empty($r['ok'])) {
             \Log::warning('Sling renew reminder DM failed: ' . ($r['error'] ?? ''));
         }
     }
 
-    /** DM Sarah on Slack, at most once every 6 hours. */
+    /** DM Sarah on Slack, at most once a day. */
     public static function alertBroken(string $text): void
     {
         try {
-            if (!\Cache::add('sling_broken_alert', 1, 6 * 3600)) {
+            if (!self::onceEvery('sling_broken_alert_at', 24)) {
                 return;
             }
             \Log::error('Sling connection: ' . $text);

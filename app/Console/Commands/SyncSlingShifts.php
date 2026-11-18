@@ -52,7 +52,7 @@ class SyncSlingShifts extends Command
             // Sling refused us (token dead and no re-login): say so loudly
             // instead of "Fetched 0" (11/5-11/17 went unnoticed).
             $this->error('Sling returned no users (login expired?).');
-            SlingClient::alertBroken('Sling shift sync failed: Sling returned no staff, so shifts are not updating (the time clock lets everyone in meanwhile). Save a fresh token with the "Copy as cURL" box at ' . url('/admin/sling/login') . '.');
+            SlingClient::alertBroken('Sling shift sync failed: Sling returned no staff, so shifts are not updating (the time clock lets everyone in meanwhile). Save a fresh token with the "Copy as cURL" box at ' . SlingClient::LOGIN_URL . '.');
             return 1;
         }
         SlingClient::remindIfExpiringSoon();
