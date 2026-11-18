@@ -1,0 +1,35 @@
+# One-off WRITE (2026-11-18): product 169189 price $20 -> $8, only if still $20.
+# conversion by list-price bucket for items added 90-450 days ago, plus the
+# "price floor" where going cheaper stops selling better. SELECTs + temp tables only.
+
+name: One-off: set Peter Gabriel CD 169189 to $8
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHBpZCA9IDE2OTE4OTsKJGJlZm9yZSA9IERCOjp0YWJsZSgndmFyaWF0aW9ucycpLT53aGVyZSgncHJvZHVjdF9pZCcsJHBpZCktPndoZXJlTnVsbCgnZGVsZXRlZF9hdCcpLT5nZXQoWydpZCcsJ2RlZmF1bHRfc2VsbF9wcmljZScsJ3NlbGxfcHJpY2VfaW5jX3RheCddKTsKZWNobyAiQkVGT1JFICIuanNvbl9lbmNvZGUoJGJlZm9yZSkuIlxuIjsKLy8gT25seSBjaGFuZ2UgaXQgaWYgaXQgaXMgc3RpbGwgdGhlICQyMCB3ZSBmb3VuZCAoZG9uJ3QgY2xvYmJlciBhIG5ld2VyIGVkaXQpLgokbiA9IERCOjp0YWJsZSgndmFyaWF0aW9ucycpLT53aGVyZSgncHJvZHVjdF9pZCcsJHBpZCktPndoZXJlTnVsbCgnZGVsZXRlZF9hdCcpLT53aGVyZSgnZGVmYXVsdF9zZWxsX3ByaWNlJywyMCkKICAtPnVwZGF0ZShbJ2RlZmF1bHRfc2VsbF9wcmljZSc9PjgsJ3NlbGxfcHJpY2VfaW5jX3RheCc9PjgsJ3VwZGF0ZWRfYXQnPT5ub3coKV0pOwplY2hvICJVUERBVEVEICRuXG4iOwppZiAoJG4pIHsKICBcTG9nOjppbmZvKCJvbmUtb2ZmOiBwcm9kdWN0ICRwaWQgKFBldGVyIEdhYnJpZWwgQ0QsIERpc2NvZ3MgNjYzNjYxMykgcHJpY2UgXCQyMCAtPiBcJDggKHdyb25nbHkgcmFpc2VkIGZyb20gdmlueWwgc2FsZXMpLCByZXF1ZXN0ZWQgYnkgU2FyYWggMjAyNi0xMS0xOCIpOwogIHRyeSB7IChuZXcgXEFwcFxTZXJ2aWNlc1xOaXZlc3NhU3RvY2tOb3RpZmllcigpKS0+cHVzaFByb2R1Y3RDaGFuZ2VkKFskcGlkXSk7IGVjaG8gIlBVU0hFRCB3ZWJzaXRlXG4iOyB9IGNhdGNoIChcVGhyb3dhYmxlICRlKSB7IGVjaG8gIlBVU0ggRVJSICIuJGUtPmdldE1lc3NhZ2UoKS4iXG4iOyB9Cn0KZWNobyAiQUZURVIgIi5qc29uX2VuY29kZShEQjo6dGFibGUoJ3ZhcmlhdGlvbnMnKS0+d2hlcmUoJ3Byb2R1Y3RfaWQnLCRwaWQpLT53aGVyZU51bGwoJ2RlbGV0ZWRfYXQnKS0+Z2V0KFsnaWQnLCdkZWZhdWx0X3NlbGxfcHJpY2UnLCdzZWxsX3ByaWNlX2luY190YXgnXSkpLiJcbiI7Cg==' | base64 -d > /tmp/set_price.php
+            php -l /tmp/set_price.php
+            php /tmp/set_price.php
+            rm -f /tmp/set_price.php
