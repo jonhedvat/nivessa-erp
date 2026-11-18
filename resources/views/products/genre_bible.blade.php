@@ -58,7 +58,7 @@
     </p>
     <div class="gb-help">
         <b>File under</b>: where an artist's records go in the bins when it isn't the obvious letter.
-        Pink Floyd → their own <span class="gb-futag">Pink Floyd</span> tab (not F). Click <b>Own tab</b> (or type a tab name) and it saves;
+        Pink Floyd → their own <span class="gb-futag">Pink Floyd</span> tab (not F). Click <b>Make tab</b> (or type a tab name) and it saves;
         every label printed for that artist then says <span class="gb-futag">File under: Pink Floyd</span>.
         Tick <b>Pico tab</b> / <b>Hollywood tab</b> once that store has the divider; red means records are there but no tab yet
         (see <a href="/genre-bible?tab=tabs">Tabs to make</a>).
@@ -133,7 +133,7 @@
                 <td class="gb-fu">
                     @if ($canEdit)
                         <input type="text" maxlength="64" value="{{ $r['fileUnder'] }}" data-was="{{ $r['fileUnder'] }}" placeholder="—" aria-label="File {{ $r['name'] }} under" title="Where {{ $r['name'] }} goes in the bins. Prints on the label. Enter to save, blank to clear.">
-                        <button type="button" class="gb-undo gb-own" style="{{ $r['fileUnder'] ? 'display:none' : '' }}">Own tab</button>
+                        <button type="button" class="gb-undo gb-own" style="{{ $r['fileUnder'] ? 'display:none' : '' }}">Make tab</button>
                         <div class="gb-tabboxes" style="{{ $r['fileUnder'] ? '' : 'display:none' }}">
                             @foreach ($stores as $st => $label)
                                 <label class="gb-tabck {{ !$r['tabs'][$st] && $r['stock'][$st] > 0 ? 'need' : '' }}"><input type="checkbox" class="gb-tab" data-s="{{ $st }}" {{ $r['tabs'][$st] ? 'checked' : '' }}>{{ $label }} tab <span class="n">({{ $r['stock'][$st] }} in stock)</span></label>

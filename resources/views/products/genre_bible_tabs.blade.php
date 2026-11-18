@@ -63,7 +63,7 @@
         <h2>Suggested: give them their own tab</h2>
         <p class="gb-intro">
             Artists that sell: {{ $suggestMin }}+ records sold at that store in the last 12 months, with records still in stock,
-            and no File under yet. Slow sellers are left out. <b>Own tab</b> sets their File under to their name, so their labels say
+            and no File under yet. Slow sellers are left out. <b>Make tab</b> sets their File under to their name, so their labels say
             <span class="gb-futag">File under: Artist</span>, and moves them to Tabs to make.
         </p>
         @if (count($suggest))
@@ -76,7 +76,7 @@
                         <td><a href="/genre-bible?q={{ urlencode($r['name']) }}">{{ $r['name'] }}</a></td>
                         <td><b>{{ $r['sold'] }}</b></td>
                         <td>{{ $r['stock'] }}</td>
-                        <td style="white-space:nowrap"><button type="button" class="gb-btn gb-own">Own tab</button> <button type="button" class="gb-btn gb-has" style="background:#8E8273">Already has one</button></td>
+                        <td style="white-space:nowrap"><button type="button" class="gb-btn gb-own">Make tab</button> <button type="button" class="gb-btn gb-has" style="background:#8E8273">Already has one</button></td>
                     </tr>
                 @endforeach
                 </tbody>
