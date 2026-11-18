@@ -84,7 +84,9 @@ class SellQuoteController extends StoreOrDiscogsController
         ['Books & magazines', '/^(book|magazine|coffee_table)/'],
         ['Clothing', '/^(hat_|tshirt|tanktop|sweatshirt)/'],
         ['Turntables & audio gear', '/^(turntable|receiver|dvd_player|cd_player|cassette_player|camcorder|flatscreen)/'],
-        ['Toys & collectibles', '/^(toy_|funko|furry|mask|board_game|pin$)/'],
+        // Sarah 11/17: Funko gets its own entry (was buried under Toys).
+        ['Funko Pops', '/^funko/'],
+        ['Toys & collectibles', '/^(toy_|furry|mask|board_game|pin$)/'],
         ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', '/^(pokemon|sports_card)/'],
         ['Posters & art', '/^(poster_2x3|framed_art)/'],
         ['Autographs & signed items', '/(?!)/'],
@@ -194,7 +196,7 @@ class SellQuoteController extends StoreOrDiscogsController
     /** GET /sell-quote/options */
     public function options()
     {
-        $data = Cache::remember('sellquote:options7', 600, function () {
+        $data = Cache::remember('sellquote:options8', 600, function () {
             $grades = [];
             foreach (array_reverse($this->calculator->getGradesForDropdown()) as $g) {
                 $grades[] = ['key' => $g, 'help' => self::GRADE_HELP[$g] ?? ''];
