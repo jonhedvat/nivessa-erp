@@ -935,8 +935,8 @@ class SellQuoteController extends StoreOrDiscogsController
                     $svc = app(CollectiblePriceService::class);
                     $cv = !empty($g['pick']) ? $svc->lookupById($game, $g['pick']) : null;
                     $cv = $cv ?: $svc->lookup($game, $desc, !$live, $this->businessId());
-                    $cap = (float) BuyOfferCalculatorService::VALUE_CAP;
-                    if (!empty($cv['ok']) && $cv['value'] >= CollectiblePriceService::MIN_VALUE && $cv['value'] <= $cap) {
+                    // No $350 cap here: a $955 card is offered 20% of $955 (Sarah 11/18).
+                    if (!empty($cv['ok']) && $cv['value'] >= CollectiblePriceService::MIN_VALUE) {
                         $lines[] = [
                             'item_type' => $g['type'],
                             'quantity' => $g['quantity'],
@@ -956,9 +956,7 @@ class SellQuoteController extends StoreOrDiscogsController
                         continue;
                     }
                     if (!empty($cv['ok'])) {
-                        $note = $cv['value'] > $cap
-                            ? 'worth $' . number_format($cv['value'], 0) . '+, we make you an offer in store'
-                            : 'worth about $' . number_format($cv['value'], 2) . ', under $10: counts as bulk, priced in store';
+                        $note = 'worth about $' . number_format($cv['value'], 2) . ', under $10: counts as bulk, priced in store';
                     } else {
                         $note = !empty($cv['pending']) ? 'we look up the price when you get your quote' : $cv['msg'];
                     }

@@ -449,7 +449,8 @@ class BuyOfferCalculatorService
             $standardMultiplier = (float) ($line['standard_multiplier'] ?? $rules['individual_vinyl_standard_multiplier']);
             $discogsMedian = (float) ($line['discogs_median_price'] ?? 0);
             // Priced on at most VALUE_CAP per item; the typed value is still saved.
-            $payValue = min($discogsMedian, (float) self::VALUE_CAP);
+            // $10+ cards / Funkos (pay_fraction types) have no cap (Sarah 11/18).
+            $payValue = isset($cfg['pay_fraction']) ? $discogsMedian : min($discogsMedian, (float) self::VALUE_CAP);
             if ($discogsMedian > self::VALUE_CAP && $cfg['mode'] === 'individual_discogs') {
                 // The form's 31% tier starts at $375, above the cap.
                 $standardMultiplier = min($standardMultiplier, 0.27);
