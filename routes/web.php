@@ -114,6 +114,7 @@ Route::middleware(['setData'])->group(function () {
     Route::post('/sell-quote/estimate', 'SellQuoteController@estimate')->middleware('throttle:150,1');
     // Card name suggestions while the seller types (Sarah 11/17).
     Route::get('/sell-quote/card-search', 'SellQuoteController@cardSearch')->middleware('throttle:240,1');
+    Route::get('/sell-quote/artist-search', 'SellQuoteController@artistSearch')->middleware('throttle:240,1');
     Route::middleware('throttle:60,1')->group(function () {
         Route::get('/sell-quote/options', 'SellQuoteController@options');
         Route::post('/sell-quote/start', 'SellQuoteController@start');

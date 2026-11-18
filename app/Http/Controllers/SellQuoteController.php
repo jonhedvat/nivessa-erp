@@ -414,6 +414,50 @@ class SellQuoteController extends StoreOrDiscogsController
         return $this->json(['results' => app(CollectiblePriceService::class)->suggest($game, $q)]);
     }
 
+    /**
+     * GET /sell-quote/artist-search?q=pri: artist names for autograph lines
+     * (Genre Bible sheet + staff additions), Sarah 11/17. Only the part before
+     * " - " is the artist; once they're typing the title we stop suggesting.
+     */
+    public function artistSearch(Request $request)
+    {
+        $q = (string) $request->query('q');
+        if (strpos($q, ' - ') !== false) {
+            return $this->json(['results' => []]);
+        }
+        $q = CollectiblePriceService::norm($q);
+        if (mb_strlen($q) < 2) {
+            return $this->json(['results' => []]);
+        }
+        $names = Cache::remember('sellquote:artists1', 3600, function () {
+            $lookup = app(\App\Services\ArtistGenreLookup::class);
+            $out = [];
+            foreach (array_keys($lookup->allArtists() + $lookup->added()) as $key) {
+                $display = $lookup->displayName((string) $key);
+                $out[CollectiblePriceService::norm($display)] = $display;
+            }
+            return $out;
+        });
+        $starts = [];
+        $words = [];
+        foreach ($names as $norm => $display) {
+            $n = (string) $norm;
+            if (strpos($n, $q) === 0 || strpos($n, 'the ' . $q) === 0) {
+                $starts[] = $display;
+            } elseif (strpos($n, ' ' . $q) !== false) {
+                $words[] = $display;
+            }
+        }
+        $byLen = function ($a, $b) { return mb_strlen($a) <=> mb_strlen($b) ?: strcasecmp($a, $b); };
+        usort($starts, $byLen);
+        usort($words, $byLen);
+        $results = [];
+        foreach (array_slice(array_merge($starts, $words), 0, 10) as $i => $name) {
+            $results[] = ['id' => $i + 1, 'label' => $name];
+        }
+        return $this->json(['results' => $results]);
+    }
+
     public function discogsCollection(Request $request)
     {
         $user = self::discogsUsername($request->input('user'));
