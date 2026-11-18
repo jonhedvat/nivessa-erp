@@ -2174,21 +2174,33 @@
     // from ProductController::CATEGORY_PRICE_FLOORS (e.g. DVD > Horror $8).
     // Keyed by combo value "catId_subId". The server enforces the same on save.
     const PRICE_FLOORS = @json((object) ($price_floors ?? []));
+    // Raised once; if staff then type a different price themselves, theirs
+    // stays (Sarah 2026-11-18) and the row tells the server not to raise it.
     window.applyPriceFloor = function ($row) {
         const $p = $row.find('input[name*="[single_dsp_inc_tax]"]');
+        if ($p.data('floorOverride')) return;
         const v = parseFloat($p.val());
         const $combo = $row.find('.category-combo-select');
         const min = parseFloat(PRICE_FLOORS[$combo.val() || ''] || 0);
         if (v > 0 && min > 0 && v < min - 0.011) {
             const was = $p.val();
             const label = $.trim($combo.find('option:selected').text() || '');
-            $p.val(min.toFixed(2));
+            $p.val(min.toFixed(2)).data('floorRaised', true);
             if (typeof markStorePriceRaised === 'function') {
-                markStorePriceRaised($p, was, min.toFixed(2), label + ' has a $' + min.toFixed(2) + ' minimum (lower prices don\'t sell faster)');
+                markStorePriceRaised($p, was, min.toFixed(2), label + ' has a $' + min.toFixed(2) + ' minimum (lower prices don\'t sell faster). Type a price again to keep your own.');
             }
-            toastr.info('Raised ' + (label || 'item') + ' from $' + was + ' to the $' + min.toFixed(2) + ' minimum.');
+            toastr.info('Raised ' + (label || 'item') + ' from $' + was + ' to the $' + min.toFixed(2) + ' minimum. To use a lower price, just type it again.');
         }
     };
+    // Typing in the price box after a raise = staff's own price wins.
+    $(document).on('input', 'input[name*="[single_dsp_inc_tax]"]', function () {
+        const $p = $(this);
+        if (!$p.data('floorRaised') || $p.data('floorOverride')) return;
+        $p.data('floorOverride', true);
+        const m = ($p.attr('name') || '').match(/^products\[([^\]]+)\]/);
+        if (m) $('<input type="hidden" value="1">').attr('name', 'products[' + m[1] + '][floor_override]').insertAfter($p);
+        $p.siblings('.store-price-raised').text('your price (minimum skipped)');
+    });
     function applySevenInchFloor($row) { window.applyPriceFloor($row); }
 
     function priceGuardItem($row) {

@@ -4321,6 +4321,13 @@ class ProductController extends Controller
                 $pr = isset($pi['single_dsp_inc_tax']) && $pi['single_dsp_inc_tax'] !== '' ? (float) preg_replace('/[^0-9.]/', '', (string) $pi['single_dsp_inc_tax']) : null;
                 // Category floors too (Sarah 2026-11-17); $X.99 under a floor counts as meeting it.
                 $min = self::massAddMinPrice($catName, $subName);
+                // Staff retyped a lower price after the page raised it (Sarah 2026-11-18): keep theirs.
+                if (!empty($pi['floor_override'])) {
+                    if ($pr !== null && $pr > 0 && $min && $pr < $min - 0.011) {
+                        \Log::info('mass-add price floor overridden by user ' . auth()->id() . ': ' . ($pi['name'] ?? '?') . ' (' . $catName . ' > ' . $subName . ') kept $' . $pr . ' under $' . $min);
+                    }
+                    continue;
+                }
                 if ($pr !== null && $pr > 0 && $min && $pr < $min - 0.011) {
                     $floorInput[$i]['single_dsp_inc_tax'] = number_format($min, 2, '.', '');
                     $raisedLog[] = ($pi['name'] ?? '?') . ' (' . $catName . ' > ' . $subName . ') $' . $pr . '->$' . $min;
