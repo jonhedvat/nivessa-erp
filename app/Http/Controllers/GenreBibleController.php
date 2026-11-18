@@ -23,6 +23,9 @@ use Illuminate\Support\Facades\DB;
  */
 class GenreBibleController extends Controller
 {
+    /** Stores that get divider tabs: key => label. */
+    const STORES = ['pico' => 'Pico', 'hollywood' => 'Hollywood'];
+
     /** Display order, same as the sheet / website. */
     const GENRES = [
         'Rock', 'Hip-Hop / Rap', 'Alternative / Indie', 'Metal', 'R&B/Funk/Soul',
@@ -39,9 +42,13 @@ class GenreBibleController extends Controller
         $decide = array_values(array_filter($rows, function ($r) {
             return $r['differs'] || $r['toMove'] > 0;
         }));
+        $businessId = (int) $request->session()->get('user.business_id');
+        $toMake = $this->addTabInfo($rows, $lookup, $businessId);
         $common = [
             'genres' => self::GENRES,
+            'stores' => self::STORES,
             'decideCount' => count($decide),
+            'toMakeCount' => count($toMake),
             'canEdit' => auth()->user()->can('product.update'),
             'minProducts' => NivessaGenreBibleController::MIN_PRODUCTS,
         ];
@@ -52,6 +59,13 @@ class GenreBibleController extends Controller
                 return [$b['toMove'], $b['differs'], array_sum($b['counts'])] <=> [$a['toMove'], $a['differs'], array_sum($a['counts'])];
             });
             return view('products.genre_bible_decide', $common + ['rows' => $decide]);
+        }
+        if ($request->query('tab') === 'tabs') {
+            return view('products.genre_bible_tabs', $common + [
+                'rows' => $toMake,
+                'suggest' => $this->suggestTabs($rows, $lookup, $businessId),
+                'suggestMin' => self::SUGGEST_MIN,
+            ]);
         }
 
         return view('products.genre_bible', $common + [
@@ -107,6 +121,199 @@ class GenreBibleController extends Controller
         });
 
         return $rows;
+    }
+
+    /**
+     * For artists with a File under: which stores have their tab
+     * ($row['tabs'][store] = bool) and how many of their records are in stock
+     * there ($row['stock'][store]). Returns the "Tabs to make" list: one entry
+     * per artist + store with records in stock but no tab, most records first.
+     */
+    private function addTabInfo(array &$rows, ArtistGenreLookup $lookup, int $businessId): array
+    {
+        $strip = function ($k) {
+            return strpos($k, 'the ') === 0 ? substr($k, 4) : $k;
+        };
+        $want = [];
+        foreach ($rows as $r) {
+            if ($r['fileUnder']) {
+                $want[$strip($lookup->normalizeArtist($r['name']))] = true;
+            }
+        }
+        $tabs = [];
+        $stock = [];
+        if ($want) {
+            try {
+                foreach (DB::table('artist_tabs')->get(['artist_key', 'store']) as $t) {
+                    $tabs[$strip((string) $t->artist_key)][$t->store] = true;
+                }
+            } catch (\Throwable $e) {
+                // Table not migrated yet.
+            }
+            $storeOf = [];
+            foreach (DB::table('business_locations')->where('business_id', $businessId)->pluck('name', 'id') as $id => $name) {
+                $n = mb_strtolower((string) $name);
+                $s = strpos($n, 'hollywood') !== false ? 'hollywood' : (strpos($n, 'pico') !== false ? 'pico' : null);
+                if ($s) {
+                    $storeOf[(int) $id] = $s;
+                }
+            }
+            $spellings = [];
+            foreach (array_keys($want) as $k) {
+                $spellings[] = $k;
+                $spellings[] = 'the ' . $k;
+            }
+            foreach (array_chunk($spellings, 500) as $chunk) {
+                $q = DB::table('products as p')
+                    ->join('variation_location_details as vld', 'vld.product_id', '=', 'p.id')
+                    ->where('p.business_id', $businessId)
+                    ->whereIn('p.artist', $chunk)
+                    ->where('vld.qty_available', '>', 0)
+                    ->whereIn('vld.location_id', array_keys($storeOf) ?: [0])
+                    ->groupBy('p.artist', 'vld.location_id')
+                    ->selectRaw('p.artist, vld.location_id, SUM(vld.qty_available) as n')
+                    ->get();
+                foreach ($q as $x) {
+                    $k = $strip($lookup->normalizeArtist((string) $x->artist));
+                    $st = $storeOf[(int) $x->location_id];
+                    $stock[$k][$st] = ($stock[$k][$st] ?? 0) + (int) $x->n;
+                }
+            }
+        }
+
+        $toMake = [];
+        foreach ($rows as &$r) {
+            $k = $strip($lookup->normalizeArtist($r['name']));
+            $r['tabs'] = [];
+            $r['stock'] = [];
+            foreach (self::STORES as $st => $label) {
+                $r['tabs'][$st] = !empty($tabs[$k][$st]);
+                $r['stock'][$st] = (int) ($stock[$k][$st] ?? 0);
+                if ($r['fileUnder'] && !$r['tabs'][$st] && $r['stock'][$st] > 0) {
+                    $toMake[] = ['name' => $r['name'], 'fileUnder' => $r['fileUnder'], 'genre' => $r['genre'],
+                        'store' => $st, 'storeLabel' => $label, 'stock' => $r['stock'][$st]];
+                }
+            }
+        }
+        unset($r);
+        usort($toMake, function ($a, $b) {
+            return $b['stock'] <=> $a['stock'];
+        });
+        return $toMake;
+    }
+
+    /** Records sold at one store in the last 12 months before we suggest an artist gets their own tab. */
+    const SUGGEST_MIN = 12;
+
+    /**
+     * Artists with no File under yet that sell (SUGGEST_MIN+ sold at a store in
+     * the last 12 months) and still have records there: candidates for their
+     * own divider tab ("Pink Floyd" tab), best sellers first. Slow artists are
+     * never suggested (Sarah 2026-11-18).
+     */
+    private function suggestTabs(array $rows, ArtistGenreLookup $lookup, int $businessId): array
+    {
+        $strip = function ($k) {
+            return strpos($k, 'the ') === 0 ? substr($k, 4) : $k;
+        };
+        $set = [];
+        foreach ($rows as $r) {
+            if ($r['fileUnder']) {
+                $set[$strip($lookup->normalizeArtist($r['name']))] = true;
+            }
+        }
+        $byStore = Cache::remember('genre-bible-tab-suggest:' . $businessId, now()->addHour(), function () use ($businessId, $lookup, $strip) {
+            $storeOf = [];
+            foreach (DB::table('business_locations')->where('business_id', $businessId)->pluck('name', 'id') as $id => $name) {
+                $n = mb_strtolower((string) $name);
+                $s = strpos($n, 'hollywood') !== false ? 'hollywood' : (strpos($n, 'pico') !== false ? 'pico' : null);
+                if ($s) {
+                    $storeOf[(int) $id] = $s;
+                }
+            }
+            if (!$storeOf) {
+                return [];
+            }
+            $q = DB::table('products as p')
+                ->join('variation_location_details as vld', 'vld.product_id', '=', 'p.id')
+                ->join('categories as pc', 'pc.id', '=', 'p.category_id')
+                ->where('p.business_id', $businessId)
+                ->whereNotNull('p.artist')->where('p.artist', '<>', '')
+                ->where('vld.qty_available', '>', 0)
+                ->whereIn('vld.location_id', array_keys($storeOf))
+                ->whereRaw('LOWER(pc.name) REGEXP ?', [NivessaGenreBibleController::MUSIC_PARENT_REGEXP])
+                ->groupBy('p.artist', 'vld.location_id')
+                ->havingRaw('SUM(vld.qty_available) >= ?', [3])
+                ->selectRaw('p.artist, vld.location_id, SUM(vld.qty_available) as n')
+                ->get();
+            $out = [];
+            foreach ($q as $x) {
+                $k = $strip($lookup->normalizeArtist((string) $x->artist));
+                $st = $storeOf[(int) $x->location_id];
+                if (!isset($out[$st][$k])) {
+                    $out[$st][$k] = ['name' => trim((string) $x->artist), 'n' => 0, 'sold' => 0];
+                }
+                $out[$st][$k]['n'] += (int) $x->n;
+            }
+            // Units sold per artist + store, last 12 months.
+            $sold = DB::table('transaction_sell_lines as tsl')
+                ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
+                ->join('products as p', 'p.id', '=', 'tsl.product_id')
+                ->where('t.business_id', $businessId)
+                ->where('t.type', 'sell')->where('t.status', 'final')
+                ->where('t.transaction_date', '>=', now()->subYear())
+                ->whereIn('t.location_id', array_keys($storeOf))
+                ->whereNotNull('p.artist')->where('p.artist', '<>', '')
+                ->groupBy('p.artist', 't.location_id')
+                ->havingRaw('SUM(tsl.quantity - tsl.quantity_returned) >= ?', [3])
+                ->selectRaw('p.artist, t.location_id, SUM(tsl.quantity - tsl.quantity_returned) as n')
+                ->get();
+            foreach ($sold as $x) {
+                $k = $strip($lookup->normalizeArtist((string) $x->artist));
+                $st = $storeOf[(int) $x->location_id];
+                if (isset($out[$st][$k])) {
+                    $out[$st][$k]['sold'] += (int) $x->n;
+                }
+            }
+            return $out;
+        });
+        $list = [];
+        foreach ($byStore as $st => $artists) {
+            foreach ($artists as $k => $a) {
+                if ($a['sold'] >= self::SUGGEST_MIN && !isset($set[$k]) && !in_array($k, ['various', 'various artists'], true)) {
+                    $list[] = ['name' => $a['name'], 'store' => $st, 'storeLabel' => self::STORES[$st] ?? $st, 'stock' => $a['n'], 'sold' => $a['sold']];
+                }
+            }
+        }
+        usort($list, function ($a, $b) {
+            return $b['sold'] <=> $a['sold'];
+        });
+        return array_slice($list, 0, 150);
+    }
+
+    /** POST /genre-bible/tab {name, store, has}: tick / untick "this store has the tab". */
+    public function tab(Request $request, ArtistGenreLookup $lookup)
+    {
+        if (!auth()->user()->can('product.update') && !auth()->user()->can('sell.create')) {
+            abort(403);
+        }
+        $key = $lookup->normalizeArtist((string) $request->input('name'));
+        $store = (string) $request->input('store');
+        if ($key === '' || !isset(self::STORES[$store])) {
+            return response()->json(['error' => 'Pick an artist and a store.'], 422);
+        }
+        $spell = self::spellings($key);
+        if (filter_var($request->input('has'), FILTER_VALIDATE_BOOLEAN)) {
+            if (!DB::table('artist_tabs')->whereIn('artist_key', $spell)->where('store', $store)->exists()) {
+                DB::table('artist_tabs')->insert([
+                    'artist_key' => $key, 'store' => $store, 'created_by' => auth()->id(),
+                    'created_at' => now(), 'updated_at' => now(),
+                ]);
+            }
+        } else {
+            DB::table('artist_tabs')->whereIn('artist_key', $spell)->where('store', $store)->delete();
+        }
+        return response()->json(['ok' => true]);
     }
 
     /** "the carpenters" => ["the carpenters", "carpenters"] (and the reverse). */

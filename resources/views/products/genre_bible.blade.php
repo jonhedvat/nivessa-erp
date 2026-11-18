@@ -36,6 +36,10 @@
 .gb-fu input.saved { border-color: #2E7D32; background: #F1F8E9; }
 .gb-fu input.err { border-color: #C62828; }
 .gb-futag { display: inline-block; border: 1px solid #1F1B16; padding: 0 5px; font-weight: 700; text-transform: uppercase; font-size: 13px; }
+.gb-tabck { display: block; font-size: 12px; font-weight: 600; color: #3B2E2A; margin: 3px 0 0; cursor: pointer; }
+.gb-tabck input { margin: 0 4px 0 0; vertical-align: -2px; }
+.gb-tabck .n { color: #8E8273; font-weight: 400; }
+.gb-tabck.need { color: #C62828; }
 .gb-help { background: #FAF6EE; border: 1px solid #E6DCCF; border-radius: 10px; padding: 10px 14px; font-size: 14px; margin: 0 0 14px; }
 </style>
 <div class="gb-wrap">
@@ -43,6 +47,7 @@
     <div class="gb-tabs">
         <a href="/genre-bible" class="on">All artists</a>
         <a href="/genre-bible?tab=decide">Needs a decision ({{ $decideCount }})</a>
+        <a href="/genre-bible?tab=tabs">Tabs to make ({{ $toMakeCount }})</a>
     </div>
     <p class="gb-intro">
         Every artist and the genre section they go in. The genre comes from the artist sheet, unless most of
@@ -53,8 +58,10 @@
     </p>
     <div class="gb-help">
         <b>File under</b>: where an artist's records go in the bins when it isn't the obvious letter.
-        Pink Floyd → <span class="gb-futag">Pink</span> (not F). Type it in the File under column and it saves;
-        every label printed for that artist then says <span class="gb-futag">File under: Pink</span>.
+        Pink Floyd → their own <span class="gb-futag">Pink Floyd</span> tab (not F). Click <b>Own tab</b> (or type a tab name) and it saves;
+        every label printed for that artist then says <span class="gb-futag">File under: Pink Floyd</span>.
+        Tick <b>Pico tab</b> / <b>Hollywood tab</b> once that store has the divider; red means records are there but no tab yet
+        (see <a href="/genre-bible?tab=tabs">Tabs to make</a>).
         Leave it blank for normal filing. Artists not listed? Add them below with a File under.
     </div>
     <div class="gb-controls">
@@ -126,6 +133,12 @@
                 <td class="gb-fu">
                     @if ($canEdit)
                         <input type="text" maxlength="64" value="{{ $r['fileUnder'] }}" data-was="{{ $r['fileUnder'] }}" placeholder="—" aria-label="File {{ $r['name'] }} under" title="Where {{ $r['name'] }} goes in the bins. Prints on the label. Enter to save, blank to clear.">
+                        <button type="button" class="gb-undo gb-own" style="{{ $r['fileUnder'] ? 'display:none' : '' }}">Own tab</button>
+                        <div class="gb-tabboxes" style="{{ $r['fileUnder'] ? '' : 'display:none' }}">
+                            @foreach ($stores as $st => $label)
+                                <label class="gb-tabck {{ !$r['tabs'][$st] && $r['stock'][$st] > 0 ? 'need' : '' }}"><input type="checkbox" class="gb-tab" data-s="{{ $st }}" {{ $r['tabs'][$st] ? 'checked' : '' }}>{{ $label }} tab <span class="n">({{ $r['stock'][$st] }} in stock)</span></label>
+                            @endforeach
+                        </div>
                     @elseif ($r['fileUnder'])
                         <span class="gb-futag">{{ $r['fileUnder'] }}</span>
                     @endif
@@ -220,6 +233,12 @@
     }
     document.getElementById('gbBody').addEventListener('click', function (e) {
         var row = e.target.closest('tr');
+        if (e.target.classList.contains('gb-own')) {
+            var fi = row.querySelector('.gb-fu input');
+            fi.value = row.getAttribute('data-a');
+            saveFu(fi);
+            return;
+        }
         if (e.target.classList.contains('gb-one')) {
             var genre = row.querySelector('.gb-fix select').value;
             if (!confirm('Move every ' + row.getAttribute('data-a') + ' product to ' + genre + '?')) return;
@@ -240,6 +259,9 @@
             inp.value = j.file_under || '';
             inp.setAttribute('data-was', inp.value);
             row.setAttribute('data-f', inp.value ? '1' : '0');
+            var boxes = row.querySelector('.gb-tabboxes'), own = row.querySelector('.gb-own');
+            if (boxes) boxes.style.display = inp.value ? '' : 'none';
+            if (own) own.style.display = inp.value ? 'none' : '';
             inp.classList.add('saved');
             inp.title = inp.value ? 'Saved. Labels will say File under: ' + inp.value.toUpperCase() : 'Cleared.';
             var c = 0;
@@ -247,6 +269,15 @@
             document.getElementById('gbFN').textContent = c;
         }).catch(function (e) { inp.classList.add('err'); inp.title = e.message; });
     }
+    document.getElementById('gbBody').addEventListener('change', function (e) {
+        if (!e.target.classList.contains('gb-tab')) return;
+        var cb = e.target, lab = cb.parentNode;
+        cb.disabled = true;
+        post('/genre-bible/tab', { name: cb.closest('tr').getAttribute('data-a'), store: cb.getAttribute('data-s'), has: cb.checked })
+            .then(function () { if (cb.checked) lab.classList.remove('need'); })
+            .catch(function (err) { cb.checked = !cb.checked; alert(err.message); })
+            .then(function () { cb.disabled = false; });
+    });
     document.getElementById('gbBody').addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && e.target.closest('.gb-fu')) { e.preventDefault(); e.target.blur(); }
     });

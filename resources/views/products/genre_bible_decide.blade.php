@@ -38,6 +38,7 @@
     <div class="gb-tabs">
         <a href="/genre-bible">All artists</a>
         <a href="/genre-bible?tab=decide" class="on">Needs a decision ({{ $decideCount }})</a>
+        <a href="/genre-bible?tab=tabs">Tabs to make ({{ $toMakeCount }})</a>
     </div>
     <p class="gb-intro">
         Artists where things don't line up: the sheet says one genre but most of their products are filed in
