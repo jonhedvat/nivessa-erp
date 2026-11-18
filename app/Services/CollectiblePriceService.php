@@ -163,6 +163,42 @@ class CollectiblePriceService
         return $out;
     }
 
+    /**
+     * Type-ahead: card versions whose name starts with what they typed (or the
+     * first words of it; the rest narrow by set / code / number). Most
+     * valuable first, since these lines are for $10+ cards.
+     */
+    public function suggest($game, $q, $limit = 20)
+    {
+        $words = array_slice(array_filter(explode(' ', self::norm($q)), 'strlen'), 0, 8);
+        if (!$words || mb_strlen(implode(' ', $words)) < 2) {
+            return [];
+        }
+        for ($n = count($words); $n >= 1; $n--) {
+            $name = implode(' ', array_slice($words, 0, $n));
+            $rest = array_slice($words, $n);
+            $query = DB::table('collectible_prices')->where('game', $game)->where('price', '>', 0)
+                ->where('name_norm', 'like', str_replace(['%', '_'], ['\\%', '\\_'], $name) . '%');
+            foreach ($rest as $w) {
+                $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $w) . '%';
+                $query->where(function ($q2) use ($like) {
+                    $q2->where('set_name', 'like', $like)->orWhere('set_code', 'like', $like)
+                        ->orWhere('number', 'like', $like)->orWhere('variant', 'like', $like);
+                });
+            }
+            $rows = $query->orderByRaw('name_norm = ? desc', [$name])->orderBy('price', 'desc')->limit($limit)->get()->all();
+            if ($rows) {
+                return array_map(function ($r) {
+                    return ['id' => (int) $r->id, 'label' => self::rowLabel($r), 'price' => round((float) $r->price, 2)];
+                }, $rows);
+            }
+            if ($n === 1 || mb_strlen($name) < 3) {
+                break;
+            }
+        }
+        return [];
+    }
+
     /** Versions for the seller to pick from (newest set names first, max 60). */
     protected function options(array $rows)
     {

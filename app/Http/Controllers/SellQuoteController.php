@@ -403,6 +403,17 @@ class SellQuoteController extends StoreOrDiscogsController
      * back as records (priced like looked-up ones); CDs, tapes and 7-inches
      * come back as per-piece counts by genre. Collection must be public.
      */
+    /** GET /sell-quote/card-search?type=rare_pokemon&q=chari: versions to pick while typing. */
+    public function cardSearch(Request $request)
+    {
+        $game = self::COLLECTIBLE_GAMES[(string) $request->query('type')] ?? null;
+        if ($game === null || $game === 'funko') {
+            return $this->json(['results' => []]);
+        }
+        $q = mb_substr((string) $request->query('q'), 0, 80);
+        return $this->json(['results' => app(CollectiblePriceService::class)->suggest($game, $q)]);
+    }
+
     public function discogsCollection(Request $request)
     {
         $user = self::discogsUsername($request->input('user'));
