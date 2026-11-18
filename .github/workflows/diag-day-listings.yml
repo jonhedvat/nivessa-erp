@@ -73,7 +73,7 @@ jobs:
             if ($s !== '') {
               $q = \DB::table('transaction_sell_lines as l')->join('transactions as t','t.id','=','l.transaction_id')->leftJoin('products as p','p.id','=','l.product_id')
                 ->where('t.type','sell')->where(function ($w) use ($s) { $w->where('p.name','like',"%$s%")->orWhere('p.artist','like',"%$s%"); if (\Schema::hasColumn('transaction_sell_lines','legacy_artist')) { $w->orWhere('l.legacy_artist','like',"%$s%")->orWhere('l.legacy_title','like',"%$s%"); } })
-                ->select('t.id as tx','t.invoice_no','t.transaction_date','t.status','t.payment_status','t.location_id','l.product_id','p.name','l.quantity','l.quantity_returned','l.unit_price_inc_tax','t.created_by');
+                ->select('t.id as tx','t.invoice_no','t.transaction_date','t.status','t.payment_status','t.location_id','l.product_id','p.name','l.quantity','l.quantity_returned','l.unit_price_inc_tax','t.created_by','t.import_source as tsrc','l.legacy_artist','l.legacy_title','l.legacy_format','l.import_source as lsrc');
               foreach ($q->orderBy('t.transaction_date')->get() as $r) echo '[SALE] ' . json_encode($r) . "\n";
             }
             foreach (\DB::table('products')->whereIn('id',$ids)->orderBy('created_at')->get() as $p) {
