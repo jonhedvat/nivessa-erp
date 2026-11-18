@@ -1169,7 +1169,11 @@
                 // advance row if one was applied) and submit the normal form.
                 function splitTaxRate() {
                     var r = parseFloat(String($('#tax_calculation_amount').val() || '0').replace(/[^0-9.]/g, ''));
-                    return isNaN(r) ? 0 : r;
+                    if (!isNaN(r) && r > 0) { return r; }
+                    // Fallback: infer from this cart's pre-tax vs invoice total.
+                    var pre = readPreTax();
+                    var fin = __read_number($('input#final_total_input'));
+                    return (pre > 0 && fin > pre) ? (fin / pre - 1) * 100 : 0;
                 }
                 function splitRecalc() {
                     var total = readTotalDue();
