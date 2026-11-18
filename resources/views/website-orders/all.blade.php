@@ -24,6 +24,9 @@
   .ao-pager { display:flex; gap:18px; align-items:center; margin:14px 0; font-size:15px; font-weight:700; }
   .ao-pager a { color:#1e40af; }
   .ao-red { color:#b91c1c; font-weight:700; }
+  .ao-pill { display:inline-block; margin-top:4px; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#000; white-space:nowrap; }
+  .ao-pill.shipped { background:#86efac; }
+  .ao-pill.paid { background:#f5e6c8; }
 </style>
 <div class="ao-wrap">
   <a href="{{ route('website-orders.index') }}" style="color:#000;font-weight:600;">&larr; Back to Orders</a>
@@ -79,7 +82,18 @@
                 <td class="{{ in_array($r['payment'] ?? '', ['failed', 'pending'], true) ? 'ao-red' : '' }}">{{ ucfirst($r['payment'] ?? '') }}@if(!empty($r['method']))<div style="font-size:12px;">{{ ucfirst($r['method']) }}</div>@endif</td>
               @endif
               <td>{{ ucwords(str_replace('_', ' ', $r['status'] ?? '')) }}</td>
-              <td>{{ ucfirst($r['fulfillment'] ?? '') }}</td>
+              @php
+                $aoStatus = strtolower($r['status'] ?? '');
+                $aoShipped = !empty($r['shipped_at']) || in_array($aoStatus, ['shipped', 'delivered'], true);
+                $aoDead = \Illuminate\Support\Str::contains($aoStatus, ['cancel', 'refund']) || in_array($aoStatus, ['new order', 'payment pending', 'invoice sent'], true) || in_array($r['payment'] ?? '', ['failed', 'pending'], true);
+              @endphp
+              <td>{{ ucfirst($r['fulfillment'] ?? '') }}
+                @if(strtolower($r['fulfillment'] ?? '') === 'shipping')
+                  @if($aoShipped)<div><span class="ao-pill shipped">Shipped</span></div>
+                  @elseif(!$aoDead)<div><span class="ao-pill paid">Payment Received</span></div>
+                  @endif
+                @endif
+              </td>
               <td style="white-space:nowrap;">{{ !empty($r['shipped_at']) ? \Carbon\Carbon::parse($r['shipped_at'])->setTimezone('America/Los_Angeles')->format('m/d/y') : '' }}</td>
               <td style="font-size:12px;word-break:break-all;">{{ $r['tracking'] ?? '' }}</td>
             </tr>
