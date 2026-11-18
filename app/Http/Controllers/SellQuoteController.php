@@ -7,6 +7,7 @@ use App\Services\BuyBetaOffers;
 use App\Services\BuyDemandService;
 use App\Services\BuyOfferCalculatorService;
 use App\Services\SignedValueLookupService;
+use App\Services\CollectiblePriceService;
 use App\Services\DiscogsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -107,6 +108,23 @@ class SellQuoteController extends StoreOrDiscogsController
         'mtg_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Magic: The Gathering cards'],
         'yugioh_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Yu-Gi-Oh! cards'],
         'card_collection' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Card collection / binder (any game)'],
+        // Sarah 11/17: one valuable card / Funko per line, priced from our
+        // collectible_prices table (CollectiblePriceService) at 20% of value.
+        'rare_pokemon' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Pokemon card worth $10+ (one per line)'],
+        'rare_mtg' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Magic card worth $10+ (one per line)'],
+        'rare_yugioh' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Yu-Gi-Oh! card worth $10+ (one per line)'],
+        'rare_funko' => ['Funko Pops', 'Funko worth $10+ (one per line)'],
+    ];
+
+    const COLLECTIBLE_GAMES = ['rare_pokemon' => 'pokemon', 'rare_mtg' => 'mtg', 'rare_yugioh' => 'yugioh', 'rare_funko' => 'funko'];
+
+    /** Website names for bulk lines that read like single cards. */
+    const LABEL_OVERRIDES = [
+        'pokemon_regular' => 'Pokemon bulk / commons (pile)',
+        'pokemon_shiny' => 'Pokemon bulk holos (pile)',
+        'sports_card_1980_2010' => 'Sports cards 1980-2010 (pile)',
+        'sports_card_2010_plus' => 'Sports cards 2010+ (pile)',
+        'funko_pop' => 'Funko Pops (common, any)',
     ];
 
     /** @var BuyOfferCalculatorService */
@@ -177,7 +195,7 @@ class SellQuoteController extends StoreOrDiscogsController
             $out[] = [
                 'key' => $key,
                 'group' => $group,
-                'label' => trim($clean),
+                'label' => self::LABEL_OVERRIDES[$key] ?? trim($clean),
                 'graded' => empty($cfg['no_grading']) && !$sealed,
             ];
         }
@@ -196,7 +214,7 @@ class SellQuoteController extends StoreOrDiscogsController
     /** GET /sell-quote/options */
     public function options()
     {
-        $data = Cache::remember('sellquote:options8', 600, function () {
+        $data = Cache::remember('sellquote:options9', 600, function () {
             $grades = [];
             foreach (array_reverse($this->calculator->getGradesForDropdown()) as $g) {
                 $grades[] = ['key' => $g, 'help' => self::GRADE_HELP[$g] ?? ''];
@@ -852,6 +870,57 @@ class SellQuoteController extends StoreOrDiscogsController
                 // get an eBay estimate (same lookup as the buy form's
                 // "Look up eBay value"); no data = still priced in store.
                 $est = null;
+                $game = self::COLLECTIBLE_GAMES[$g['type']] ?? null;
+                if ($game !== null && $desc !== '') {
+                    // Cards: our price table (fast, so live too). Funko: saved
+                    // eBay answers; a new eBay search only on the final press.
+                    $cv = app(CollectiblePriceService::class)->lookup($game, $desc, !$live, $this->businessId());
+                    $cap = (float) BuyOfferCalculatorService::VALUE_CAP;
+                    if (!empty($cv['ok']) && $cv['value'] >= CollectiblePriceService::MIN_VALUE && $cv['value'] <= $cap) {
+                        $lines[] = [
+                            'item_type' => $g['type'],
+                            'quantity' => $g['quantity'],
+                            'title' => $cv['label'],
+                            'discogs_median_price' => (float) $cv['value'],
+                            'discogs_link' => $cv['search_url'],
+                            'genre' => '',
+                        ];
+                        $display[] = [
+                            'label' => $cv['label'],
+                            'quantity' => $g['quantity'],
+                            'grade' => null,
+                            'how' => 'card_value',
+                            'note' => 'worth about $' . number_format($cv['value'], 2) . ' (' . $cv['source'] . '); we check condition in store',
+                            'ref' => $g['ref'] ?? null,
+                        ];
+                        continue;
+                    }
+                    if (!empty($cv['ok'])) {
+                        $note = $cv['value'] > $cap
+                            ? 'worth $' . number_format($cv['value'], 0) . '+, we make you an offer in store'
+                            : 'worth about $' . number_format($cv['value'], 2) . ', under $10: counts as bulk, priced in store';
+                    } else {
+                        $note = !empty($cv['pending']) ? 'we look up the price when you get your quote' : $cv['msg'];
+                    }
+                    $inStoreCount += $g['quantity'];
+                    $lines[] = [
+                        'item_type' => $g['type'],
+                        'quantity' => $g['quantity'],
+                        'title' => !empty($cv['label']) ? $cv['label'] : $desc,
+                        'discogs_median_price' => 0,
+                        'discogs_link' => $cv['search_url'] ?? '',
+                        'genre' => '',
+                    ];
+                    $display[] = [
+                        'label' => (!empty($cv['label']) ? $cv['label'] : $types[$g['type']]['label'] . ': ' . $desc),
+                        'quantity' => $g['quantity'],
+                        'grade' => null,
+                        'how' => 'in_store',
+                        'note' => $note,
+                        'ref' => $g['ref'] ?? null,
+                    ];
+                    continue;
+                }
                 if (!$live && $desc !== '' && array_key_exists($g['type'], SignedValueLookupService::FORMAT_WORDS) && $signedLookups < self::SIGNED_LOOKUP_BUDGET) {
                     $signedLookups++;
                     $est = app(SignedValueLookupService::class)->lookup($this->businessId(), $desc, $g['type']);
@@ -968,6 +1037,9 @@ class SellQuoteController extends StoreOrDiscogsController
                 'cash' => $d['cash'] ?? null,
                 'how' => $d['how'] ?? null,
                 'demand' => $d['demand'] ?? null,
+                // Card / Funko lines: what we matched and why it's priced so.
+                'note' => $d['note'] ?? null,
+                'match' => isset($d['note']) ? ($d['label'] ?? null) : null,
             ];
         }
         return $this->json([

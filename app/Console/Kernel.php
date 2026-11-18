@@ -375,6 +375,13 @@ class Kernel extends ConsoleKernel
             ->dailyAt('08:00')
             ->timezone('America/Los_Angeles')
             ->withoutOverlapping(30);
+
+        // Card prices for the website buy quote (Sarah 11/17): Pokemon /
+        // Magic / Yu-Gi-Oh! from free public price lists, Monday 4 AM.
+        $schedule->command('collectibles:import')
+            ->weeklyOn(1, '04:00')
+            ->timezone('America/Los_Angeles')
+            ->withoutOverlapping(120);
     }
 
     /**

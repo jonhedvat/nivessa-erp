@@ -1,0 +1,75 @@
+# Refresh card prices (Pokemon / Magic / Yu-Gi-Oh!) used by the website buy
+# quote: `php artisan collectibles:import` on production (Sarah 2026-11-17).
+# Also runs weekly from the scheduler (Mon 4 AM PT). Test lookups print after.
+
+name: Import collectible prices
+
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "pokemon, mtg, yugioh, or blank for all"
+        required: false
+        default: ""
+      tests:
+        description: "Lookups to print, ; separated (game:description)"
+        required: false
+        default: "pokemon:charizard base set 4/102;pokemon:pikachu;mtg:sheoldred the apocalypse dominaria united;mtg:sol ring;yugioh:blue-eyes white dragon LOB-001;yugioh:dark magician"
+
+concurrency:
+  group: collectibles-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      # Try up to 3 times to populate known_hosts. ssh-keyscan to the prod
+      # host has been intermittently flaky from GitHub-hosted runners — a
+      # one-shot keyscan was failing the whole workflow before it ever
+      # reached migrate. Sarah 2026-05-08: "never works it always messed
+      # up." continue-on-error means even if all 3 retries fail, we still
+      # try the SSH step — appleboy/ssh-action does its own host-key
+      # handling internally and works without a pre-seeded known_hosts.
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3; do
+            echo "ssh-keyscan attempt $attempt"
+            if ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1; then
+              echo "ssh-keyscan succeeded"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "ssh-keyscan failed after 3 tries — continuing anyway, appleboy/ssh-action will handle host keys"
+          exit 0
+
+      - name: Run collectibles:import
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GAME: ${{ github.event.inputs.game }}
+          TESTS: ${{ github.event.inputs.tests }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          command_timeout: 60m
+          envs: GAME,TESTS
+          script: |
+            cd /www/playlist.nivessa.com/app
+            ARGS=()
+            IFS=';' read -ra T <<< "$TESTS"
+            for t in "${T[@]}"; do [ -n "$t" ] && ARGS+=("--test=$t"); done
+            php -d memory_limit=1536M artisan collectibles:import $GAME "${ARGS[@]}"

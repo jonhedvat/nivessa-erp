@@ -260,7 +260,12 @@ class BuyOfferCalculatorService
                 'rare_mlb' => ['min_value' => self::RARE_MIN_VALUE, 'label' => 'MLB - rare', 'mode' => 'ebay_margin', 'no_grading' => true, 'speed_pay' => true],
                 'rare_nba' => ['min_value' => self::RARE_MIN_VALUE, 'label' => 'NBA - rare', 'mode' => 'ebay_margin', 'no_grading' => true, 'speed_pay' => true],
                 'rare_nfl' => ['min_value' => self::RARE_MIN_VALUE, 'label' => 'NFL - rare', 'mode' => 'ebay_margin', 'no_grading' => true, 'speed_pay' => true],
-                'rare_pokemon' => ['min_value' => self::RARE_MIN_VALUE, 'label' => 'Pokemon - rare', 'mode' => 'ebay_margin', 'no_grading' => true, 'speed_pay' => true],
+                // Sarah 2026-11-17: $10+ single cards and Funkos pay a flat 20% of
+                // market value (CollectiblePriceService::PAY), website quote too.
+                'rare_pokemon' => ['min_value' => 10, 'label' => 'Pokemon card $10+ (pays 20% of value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'pay_fraction' => 0.20],
+                'rare_mtg' => ['min_value' => 10, 'label' => 'Magic card $10+ (pays 20% of value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'pay_fraction' => 0.20],
+                'rare_yugioh' => ['min_value' => 10, 'label' => 'Yu-Gi-Oh! card $10+ (pays 20% of value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'pay_fraction' => 0.20],
+                'rare_funko' => ['min_value' => 10, 'label' => 'Funko Pop $10+ (pays 20% of value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'pay_fraction' => 0.20],
                 'card_pack' => ['label' => 'Sealed Card Packs (enter the eBay sold value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'speed_pay' => true],
                 // Sarah 2026-11-17: other trading card games + whole card collections
                 // (binders, boxes, mixed lots). Priced off the lot's eBay sold value
@@ -497,6 +502,9 @@ class BuyOfferCalculatorService
                 if (!empty($cfg['speed_pay'])) {
                     $speed = $superFast ? 'super_fast' : (string) ($raw['tier'] ?? 'normal');
                     $standardMultiplier = self::RARE_SPEED_PAY[$speed] ?? self::RARE_SPEED_PAY['normal'];
+                }
+                if (isset($cfg['pay_fraction'])) {
+                    $standardMultiplier = (float) $cfg['pay_fraction'];
                 }
                 $cashLine = round($quantity * $payValue * $standardMultiplier, 2);
                 $demandInfo = [
