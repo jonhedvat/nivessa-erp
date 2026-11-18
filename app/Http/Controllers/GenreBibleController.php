@@ -71,6 +71,7 @@ class GenreBibleController extends Controller
 
         $extra = (array) ($data['extra'] ?? []);
         $added = $lookup->added();
+        $fileUnder = $lookup->fileUnderAll();
 
         $rows = [];
         $all = $lookup->allArtists();
@@ -85,6 +86,7 @@ class GenreBibleController extends Controller
                 'sheet' => $sheetBin,
                 'genre' => $genre,
                 'counts' => $counts[$key] ?? [],
+                'fileUnder' => $fileUnder[$key] ?? null,
             ];
             $last = count($rows) - 1;
             $rows[$last]['differs'] = $sheetBin !== null && $genre !== $sheetBin;
@@ -140,9 +142,55 @@ class GenreBibleController extends Controller
                 'created_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now(),
             ]);
         }
+        if (trim((string) $request->input('file_under')) !== '') {
+            self::saveFileUnder($key, $name, (string) $request->input('file_under'));
+        }
         ArtistGenreLookup::flush();
         Cache::forget(NivessaGenreBibleController::CACHE_KEY);
         return response()->json(['ok' => true, 'updated' => (bool) $existing]);
+    }
+
+    /**
+     * POST /genre-bible/file-under {name, file_under}: where this artist goes
+     * in the bins ("Pink Floyd" -> "Pink"), printed on their labels as
+     * "FILE UNDER: PINK". Blank clears it.
+     */
+    public function fileUnder(Request $request, ArtistGenreLookup $lookup)
+    {
+        if (!auth()->user()->can('product.update')) {
+            abort(403);
+        }
+        $name = trim(preg_replace('/\s+/u', ' ', (string) $request->input('name')));
+        $key = $lookup->normalizeArtist($name);
+        if ($key === '' || mb_strlen($name) > 191) {
+            return response()->json(['error' => 'Pick an artist.'], 422);
+        }
+        $value = self::saveFileUnder($key, $name, (string) $request->input('file_under'));
+        ArtistGenreLookup::flush();
+        return response()->json(['ok' => true, 'file_under' => $value]);
+    }
+
+    /** Upsert (or clear, when blank) an artist's "File under". Returns the saved value. */
+    private static function saveFileUnder(string $key, string $name, string $value): ?string
+    {
+        $value = trim(preg_replace('/\s+/u', ' ', $value));
+        $value = mb_substr($value, 0, 64);
+        if ($value === '') {
+            DB::table('artist_file_under')->where('artist_key', $key)->delete();
+            return null;
+        }
+        $exists = DB::table('artist_file_under')->where('artist_key', $key)->exists();
+        if ($exists) {
+            DB::table('artist_file_under')->where('artist_key', $key)->update([
+                'name' => $name, 'file_under' => $value, 'updated_by' => auth()->id(), 'updated_at' => now(),
+            ]);
+        } else {
+            DB::table('artist_file_under')->insert([
+                'artist_key' => $key, 'name' => $name, 'file_under' => $value,
+                'updated_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+        return $value;
     }
 
     /** POST /genre-bible/unify  {artist, genre} */

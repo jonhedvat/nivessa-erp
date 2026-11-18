@@ -23,6 +23,9 @@ class ArtistGenreLookup
     /** @var array<string,array{name:string,genre:string}>|null staff-added artists */
     private static $added = null;
 
+    /** @var array<string,string>|null normalized artist => "File under" divider */
+    private static $fileUnder = null;
+
     /**
      * Each spreadsheet bin -> ordered ERP category search terms. The store's
      * subcategory naming varies (e.g. "Hip-Hop" vs "Hip Hop", "R&B" vs
@@ -137,6 +140,40 @@ class ArtistGenreLookup
     {
         self::$map = null;
         self::$added = null;
+        self::$fileUnder = null;
+    }
+
+    /**
+     * Where staff file each artist in the bins, set on the Genre Bible page
+     * ("pink floyd" => "Pink"). Empty if the table isn't there yet.
+     *
+     * @return array<string,string>
+     */
+    public function fileUnderAll(): array
+    {
+        if (self::$fileUnder === null) {
+            self::$fileUnder = [];
+            try {
+                foreach (\DB::table('artist_file_under')->get(['artist_key', 'file_under']) as $r) {
+                    self::$fileUnder[(string) $r->artist_key] = (string) $r->file_under;
+                }
+            } catch (\Throwable $e) {
+                // Table not migrated yet.
+            }
+        }
+        return self::$fileUnder;
+    }
+
+    /** "File under" for a product's artist; "The Beatles" and "Beatles" match each other. */
+    public function fileUnderFor(?string $artist): ?string
+    {
+        $key = $this->normalizeArtist((string) $artist);
+        if ($key === '') {
+            return null;
+        }
+        $all = $this->fileUnderAll();
+        $alt = strpos($key, 'the ') === 0 ? substr($key, 4) : 'the ' . $key;
+        return $all[$key] ?? $all[$alt] ?? null;
     }
 
     /**

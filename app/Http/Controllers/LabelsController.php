@@ -228,6 +228,14 @@ class LabelsController extends Controller
                 }
                 // Record + sleeve grade on the sticker, e.g. "Record VG+, Sleeve G+" (Sarah, 2026-10-26)
                 $details->condition_label = self::conditionLabel($details->product_id ?? null);
+                // "FILE UNDER: PINK" for artists whose bin divider isn't their
+                // last-name letter (Pink Floyd goes in Pink, not F). Set on the
+                // Genre Bible page (Sarah 2026-11-18).
+                try {
+                    $details->file_under = app(\App\Services\ArtistGenreLookup::class)->fileUnderFor($details->artist ?? null);
+                } catch (\Throwable $e) {
+                    $details->file_under = null;
+                }
 
                 if (!empty($value['price_group_id'])) {
                     $tax_id = $print['price_type'] == 'inclusive' ? : $details->tax_id;

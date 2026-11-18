@@ -31,6 +31,12 @@
 .gb-msg.err { color: #C62828; }
 .gb-undo { background: none; border: 0; padding: 0; color: #1565C0; text-decoration: underline; font-size: 12px; }
 .gb-bulk { margin: 6px 0 10px; font-size: 14px; }
+.gb-fu { white-space: nowrap; }
+.gb-fu input { width: 110px; height: 30px; font-size: 14px; font-weight: 700; text-transform: uppercase; border: 1px solid #E1D7C4; border-radius: 6px; padding: 0 6px; }
+.gb-fu input.saved { border-color: #2E7D32; background: #F1F8E9; }
+.gb-fu input.err { border-color: #C62828; }
+.gb-futag { display: inline-block; border: 1px solid #1F1B16; padding: 0 5px; font-weight: 700; text-transform: uppercase; font-size: 13px; }
+.gb-help { background: #FAF6EE; border: 1px solid #E6DCCF; border-radius: 10px; padding: 10px 14px; font-size: 14px; margin: 0 0 14px; }
 </style>
 <div class="gb-wrap">
     <h1>Genre Bible</h1>
@@ -45,6 +51,12 @@
         sheet ({{ $extraCount }}) are added under the genre most of their products are in. Same list as
         <a href="https://nivessa.com/genre-bible" target="_blank" rel="noopener">nivessa.com/genre-bible</a>.
     </p>
+    <div class="gb-help">
+        <b>File under</b>: where an artist's records go in the bins when it isn't the obvious letter.
+        Pink Floyd → <span class="gb-futag">Pink</span> (not F). Type it in the File under column and it saves;
+        every label printed for that artist then says <span class="gb-futag">File under: Pink</span>.
+        Leave it blank for normal filing. Artists not listed? Add them below with a File under.
+    </div>
     <div class="gb-controls">
         <input class="gb-search" id="gbQ" type="search" placeholder="Search an artist" autofocus>
         <select class="gb-select" id="gbG">
@@ -54,6 +66,7 @@
             @endforeach
         </select>
         <label class="gb-check"><input type="checkbox" id="gbD"> Only where it differs ({{ $differCount }})</label>
+        <label class="gb-check"><input type="checkbox" id="gbF"> Only with a File under (<span id="gbFN">{{ count(array_filter(array_column($rows, 'fileUnder'))) }}</span>)</label>
         @if ($canEdit)
             <label class="gb-check"><input type="checkbox" id="gbS"> Only split across genres ({{ collect($rows)->where('toMove', '>', 0)->count() }})</label>
         @endif
@@ -67,6 +80,7 @@
                     <option value="{{ $g }}">{{ $g }}</option>
                 @endforeach
             </select>
+            <input class="gb-select" id="gbAddFu" placeholder="File under (optional)" maxlength="64" style="width:180px">
             <button type="submit" class="gb-btn gb-btn-lg">Add artist</button>
             <span id="gbAddMsg"></span>
         </form>
@@ -84,10 +98,10 @@
     @endif
     <div class="gb-count" id="gbN"></div>
     <table class="gb-table">
-        <thead><tr>@if ($canEdit)<th><input type="checkbox" id="gbCkAll" title="Check all shown"></th>@endif<th>Artist</th><th>Genre</th><th>How we file it</th>@if ($canEdit)<th>Make all one genre</th>@endif</tr></thead>
+        <thead><tr>@if ($canEdit)<th><input type="checkbox" id="gbCkAll" title="Check all shown"></th>@endif<th>Artist</th><th>Genre</th><th>How we file it</th><th>File under</th>@if ($canEdit)<th>Make all one genre</th>@endif</tr></thead>
         <tbody id="gbBody">
         @foreach ($rows as $r)
-            <tr class="{{ $r['differs'] ? 'gb-diff' : '' }}" data-n="{{ mb_strtolower($r['name']) }}" data-g="{{ $r['genre'] }}" data-d="{{ $r['differs'] ? 1 : 0 }}" data-m="{{ $r['toMove'] }}" data-a="{{ $r['name'] }}">
+            <tr class="{{ $r['differs'] ? 'gb-diff' : '' }}" data-n="{{ mb_strtolower($r['name']) }}" data-g="{{ $r['genre'] }}" data-d="{{ $r['differs'] ? 1 : 0 }}" data-m="{{ $r['toMove'] }}" data-a="{{ $r['name'] }}" data-f="{{ $r['fileUnder'] ? 1 : 0 }}">
                 @if ($canEdit)
                     <td>@if ($r['counts'])<input type="checkbox" class="gb-ck" aria-label="Select {{ $r['name'] }}">@endif</td>
                 @endif
@@ -107,6 +121,13 @@
                         {{ implode(' · ', array_map(function ($bin, $n) { return $bin . ' ' . $n; }, array_keys($r['counts']), $r['counts'])) }}
                     @else
                         No products yet
+                    @endif
+                </td>
+                <td class="gb-fu">
+                    @if ($canEdit)
+                        <input type="text" maxlength="64" value="{{ $r['fileUnder'] }}" data-was="{{ $r['fileUnder'] }}" placeholder="—" aria-label="File {{ $r['name'] }} under" title="Where {{ $r['name'] }} goes in the bins. Prints on the label. Enter to save, blank to clear.">
+                    @elseif ($r['fileUnder'])
+                        <span class="gb-futag">{{ $r['fileUnder'] }}</span>
                     @endif
                 </td>
                 @if ($canEdit)
@@ -131,7 +152,7 @@
 <script>
 (function () {
     var q = document.getElementById('gbQ'), g = document.getElementById('gbG'), d = document.getElementById('gbD'),
-        s = document.getElementById('gbS'),
+        s = document.getElementById('gbS'), f = document.getElementById('gbF'),
         n = document.getElementById('gbN'), rows = document.getElementById('gbBody').rows, timer = null;
     function run() {
         var term = q.value.trim().toLowerCase(), genre = g.value, only = d.checked, split = s && s.checked, shown = 0;
@@ -139,7 +160,8 @@
             var r = rows[i], ok = (!term || r.getAttribute('data-n').indexOf(term) !== -1)
                 && (!genre || r.getAttribute('data-g') === genre)
                 && (!only || r.getAttribute('data-d') === '1')
-                && (!split || r.getAttribute('data-m') !== '0');
+                && (!split || r.getAttribute('data-m') !== '0')
+                && (!f.checked || r.getAttribute('data-f') === '1');
             r.style.display = ok ? '' : 'none';
             if (ok) shown++;
         }
@@ -149,6 +171,7 @@
     g.addEventListener('change', run);
     d.addEventListener('change', run);
     if (s) s.addEventListener('change', run);
+    f.addEventListener('change', run);
     var startQ = new URLSearchParams(location.search).get('q');
     if (startQ) q.value = startQ;
     run();
@@ -208,6 +231,29 @@
             }).catch(function (err) { msg(row, esc(err.message), true); });
         }
     });
+    // ── File under (saves on Enter / leaving the box) ─────────────────
+    function saveFu(inp) {
+        var val = inp.value.trim(), row = inp.closest('tr');
+        if (val === (inp.getAttribute('data-was') || '')) return;
+        inp.classList.remove('saved', 'err');
+        post('/genre-bible/file-under', { name: row.getAttribute('data-a'), file_under: val }).then(function (j) {
+            inp.value = j.file_under || '';
+            inp.setAttribute('data-was', inp.value);
+            row.setAttribute('data-f', inp.value ? '1' : '0');
+            inp.classList.add('saved');
+            inp.title = inp.value ? 'Saved. Labels will say File under: ' + inp.value.toUpperCase() : 'Cleared.';
+            var c = 0;
+            for (var i = 0; i < rows.length; i++) if (rows[i].getAttribute('data-f') === '1') c++;
+            document.getElementById('gbFN').textContent = c;
+        }).catch(function (e) { inp.classList.add('err'); inp.title = e.message; });
+    }
+    document.getElementById('gbBody').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.closest('.gb-fu')) { e.preventDefault(); e.target.blur(); }
+    });
+    document.getElementById('gbBody').addEventListener('focusout', function (e) {
+        if (e.target.closest('.gb-fu') && e.target.tagName === 'INPUT') saveFu(e.target);
+    });
+
     var addForm = document.getElementById('gbAdd');
     if (addForm) addForm.addEventListener('submit', function (e) {
         e.preventDefault();
@@ -215,7 +261,7 @@
             m = document.getElementById('gbAddMsg');
         if (!name || !genre) { m.textContent = 'Type an artist and pick a genre.'; return; }
         m.textContent = 'Saving...';
-        post('/genre-bible/artist', { name: name, genre: genre }).then(function (j) {
+        post('/genre-bible/artist', { name: name, genre: genre, file_under: document.getElementById('gbAddFu').value.trim() }).then(function (j) {
             m.textContent = (j.updated ? 'Updated ' : 'Added ') + name + ' to ' + genre + '. Reloading...';
             location.href = location.pathname + '?q=' + encodeURIComponent(name);
         }).catch(function (err) { m.textContent = err.message; });

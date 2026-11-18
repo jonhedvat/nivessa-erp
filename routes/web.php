@@ -494,6 +494,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::post('/genre-bible/unify', 'GenreBibleController@unify');
     Route::post('/genre-bible/undo', 'GenreBibleController@undo');
     Route::post('/genre-bible/artist', 'GenreBibleController@addArtist');
+    Route::post('/genre-bible/file-under', 'GenreBibleController@fileUnder');
     // Website sell quotes (staff side).
     Route::get('/sell-quotes', 'SellQuoteController@index');
     Route::get('/sell-quotes/lookup', 'SellQuoteController@lookup');

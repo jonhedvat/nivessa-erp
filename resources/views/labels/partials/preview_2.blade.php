@@ -40,6 +40,9 @@
 							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 3, 14) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ trim(($page_product->category ?? '') . (!empty($page_product->category) && !empty($page_product->sub_category) ? ' / ' : '') . ($page_product->sub_category ?? '')) }}</span>
 					@endif
 
+					@if(!empty($page_product->file_under))
+						<span style="display: inline-block !important; margin: 1px 0; padding: 0 4px; border: 1.5px solid #000; font-weight: bold; text-transform: uppercase; font-size: {{ max((int)($print['name_size'] ?? 10) + 3, 14) }}px; white-space: nowrap; overflow: hidden; max-width: 96%;">File under: {{ $page_product->file_under }}</span>
+					@endif
 					@if(!empty($print['variations']) && $page_product->is_dummy != 1)
 						<span style="display: block !important; font-size: {{$print['variations_size']}}px;">{{$page_product->product_variation_name}}:<b>{{$page_product->variation_name}}</b></span>
 					@endif
@@ -105,6 +108,9 @@
 					@if(!empty($print['price']))
 						<span style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
 							Genre:<b>{{$page_product->sub_category}}</b>
+							@if(!empty($page_product->file_under))
+								<b style="display: inline-block; margin-left: 3px; padding: 0 3px; border: 1px solid #000; text-transform: uppercase; line-height: 1.1; white-space: nowrap;">File under: {{ $page_product->file_under }}</b>
+							@endif
 						</span>
 
 					{{-- Artist --}}
@@ -113,6 +119,9 @@
 							Artist:<b>{{ $is_2x1 ? \Illuminate\Support\Str::limit($page_product->artist, 30, '') : $page_product->artist }}</b>
 						</span>
 					@endif
+				@endif
+				@if(empty($print['price']) && !empty($page_product->file_under))
+					<b style="display: inline-block; padding: 0 3px; border: 1px solid #000; text-transform: uppercase; line-height: 1.1; white-space: nowrap; font-size: {{ round(($print['name_size'] ?? 12)*$txt) }}px;">File under: {{ $page_product->file_under }}</b><br>
 				@endif
 
 				{{-- Bin Position --}}
