@@ -1,0 +1,35 @@
+# One-off, read-only: per category > subcategory (and per store), 90-day
+# conversion by list-price bucket for items added 90-450 days ago, plus the
+# "price floor" where going cheaper stops selling better. SELECTs + temp tables only.
+
+name: Diag one Discogs release pricing (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHJpZCA9IDY2MzY2MTM7CiRwcyA9IERCOjpzZWxlY3QoIlNFTEVDVCBwLmlkLHAubmFtZSxwLnNrdSxwLmNyZWF0ZWRfYXQscC51cGRhdGVkX2F0LHAuY3JlYXRlZF9ieSxDT05DQVQodS5maXJzdF9uYW1lLCcgJyxDT0FMRVNDRSh1Lmxhc3RfbmFtZSwnJykpIGNyZWF0b3IsYy5uYW1lIGNhdCxzYy5uYW1lIHN1Yix2LmRlZmF1bHRfc2VsbF9wcmljZSx2LnNlbGxfcHJpY2VfaW5jX3RheCx2LmRlZmF1bHRfcHVyY2hhc2VfcHJpY2Usdi51cGRhdGVkX2F0IHZ1cGQgRlJPTSBwcm9kdWN0cyBwIExFRlQgSk9JTiB1c2VycyB1IE9OIHUuaWQ9cC5jcmVhdGVkX2J5IExFRlQgSk9JTiBjYXRlZ29yaWVzIGMgT04gYy5pZD1wLmNhdGVnb3J5X2lkIExFRlQgSk9JTiBjYXRlZ29yaWVzIHNjIE9OIHNjLmlkPXAuc3ViX2NhdGVnb3J5X2lkIExFRlQgSk9JTiB2YXJpYXRpb25zIHYgT04gdi5wcm9kdWN0X2lkPXAuaWQgV0hFUkUgcC5kaXNjb2dzX3JlbGVhc2VfaWQ9PyBPUiBwLm5hbWUgTElLRSAnJVBldGVyIEdhYnJpZWwlJyBBTkQgcC5jcmVhdGVkX2F0ID4gTk9XKCktSU5URVJWQUwgMzAgREFZIE9SREVSIEJZIHAuY3JlYXRlZF9hdCBERVNDIExJTUlUIDIwIiwgWyRyaWRdKTsKZm9yZWFjaCAoJHBzIGFzICRwKSBlY2hvICJQUk9EICIuanNvbl9lbmNvZGUoJHApLiJcbiI7CiRpZHMgPSBhcnJheV9tYXAoZm4oJHApPT4kcC0+aWQsICRwcyk7CmlmICgkaWRzKSB7CiAgJGluID0gaW1wbG9kZSgnLCcsICRpZHMpOwogIGZvcmVhY2ggKERCOjpzZWxlY3QoIlNFTEVDVCBzdWJqZWN0X2lkLGRlc2NyaXB0aW9uLGNhdXNlcl9pZCxjcmVhdGVkX2F0LExFRlQocHJvcGVydGllcyw2MDApIHByb3BzIEZST00gYWN0aXZpdHlfbG9nIFdIRVJFIHN1YmplY3RfdHlwZSBMSUtFICclUHJvZHVjdCUnIEFORCBzdWJqZWN0X2lkIElOICgkaW4pIE9SREVSIEJZIGNyZWF0ZWRfYXQiKSBhcyAkYSkgZWNobyAiQUNUICIuanNvbl9lbmNvZGUoJGEpLiJcbiI7CiAgZm9yZWFjaCAoREI6OnNlbGVjdCgiU0VMRUNUIGwucHJvZHVjdF9pZCx0LnRyYW5zYWN0aW9uX2RhdGUsdC5sb2NhdGlvbl9pZCxsLnVuaXRfcHJpY2VfaW5jX3RheCBGUk9NIHRyYW5zYWN0aW9uX3NlbGxfbGluZXMgbCBKT0lOIHRyYW5zYWN0aW9ucyB0IE9OIHQuaWQ9bC50cmFuc2FjdGlvbl9pZCBXSEVSRSBsLnByb2R1Y3RfaWQgSU4gKCRpbikgQU5EIHQudHlwZT0nc2VsbCciKSBhcyAkYSkgZWNobyAiU0FMRSAiLmpzb25fZW5jb2RlKCRhKS4iXG4iOwogIGZvcmVhY2ggKERCOjpzZWxlY3QoIlNFTEVDVCBwcm9kdWN0X2lkLGxvY2F0aW9uX2lkLHF0eV9hdmFpbGFibGUgRlJPTSB2YXJpYXRpb25fbG9jYXRpb25fZGV0YWlscyBXSEVSRSBwcm9kdWN0X2lkIElOICgkaW4pIikgYXMgJGEpIGVjaG8gIlNUT0NLICIuanNvbl9lbmNvZGUoJGEpLiJcbiI7Cn0KLy8gb3VyIHBhc3Qgc2FsZXMgb2YgdGhpcyB0aXRsZSAod2hhdCBzdG9yZSBoaXN0b3J5IHdvdWxkIHNheSkKZm9yZWFjaCAoREI6OnNlbGVjdCgiU0VMRUNUIHAubmFtZSxjLm5hbWUgY2F0LHNjLm5hbWUgc3ViLHQudHJhbnNhY3Rpb25fZGF0ZSBkLGwudW5pdF9wcmljZV9pbmNfdGF4IHByaWNlIEZST00gdHJhbnNhY3Rpb25fc2VsbF9saW5lcyBsIEpPSU4gdHJhbnNhY3Rpb25zIHQgT04gdC5pZD1sLnRyYW5zYWN0aW9uX2lkIEpPSU4gcHJvZHVjdHMgcCBPTiBwLmlkPWwucHJvZHVjdF9pZCBMRUZUIEpPSU4gY2F0ZWdvcmllcyBjIE9OIGMuaWQ9cC5jYXRlZ29yeV9pZCBMRUZUIEpPSU4gY2F0ZWdvcmllcyBzYyBPTiBzYy5pZD1wLnN1Yl9jYXRlZ29yeV9pZCBXSEVSRSB0LnR5cGU9J3NlbGwnIEFORCB0LnN0YXR1cz0nZmluYWwnIEFORCBwLm5hbWUgTElLRSAnJUdhYnJpZWwlJyBBTkQgKHAubmFtZSBMSUtFICclUGV0ZXIgR2FicmllbCUnKSBPUkRFUiBCWSB0LnRyYW5zYWN0aW9uX2RhdGUgREVTQyBMSU1JVCA0MCIpIGFzICRhKSBlY2hvICJISVNUICIuanNvbl9lbmNvZGUoJGEpLiJcbiI7Ci8vIGNhY2hlZCBndWFyZCBsb29rdXAKJGRnID0gXENhY2hlOjpnZXQoJ21hc3NhZGQtZ3VhcmQtZGczOicuJHJpZCk7IGVjaG8gIkNBQ0hFICIuanNvbl9lbmNvZGUoJGRnKS4iXG4iOwovLyBsb2dzCmZvcmVhY2ggKGdsb2Ioc3RvcmFnZV9wYXRoKCdsb2dzL2xhcmF2ZWwqLmxvZycpKSBhcyAkZikgeyBpZiAoZmlsZW10aW1lKCRmKSA8IHRpbWUoKS0zMCo4NjQwMCkgY29udGludWU7ICRoPWZvcGVuKCRmLCdyJyk7IHdoaWxlKCgkbGluZT1mZ2V0cygkaCkpIT09ZmFsc2UpeyBpZiAoc3RycG9zKCRsaW5lLCc2NjM2NjEzJykhPT1mYWxzZSB8fCBzdHJpcG9zKCRsaW5lLCdQZXRlciBHYWJyaWVsJykhPT1mYWxzZSkgZWNobyAiTE9HICIuYmFzZW5hbWUoJGYpLiI6ICIuc3Vic3RyKHRyaW0oJGxpbmUpLDAsNzAwKS4iXG4iOyB9IGZjbG9zZSgkaCk7IH0K' | base64 -d > /tmp/rel_check.php
+            php -l /tmp/rel_check.php
+            php /tmp/rel_check.php
+            rm -f /tmp/rel_check.php
