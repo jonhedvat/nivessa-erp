@@ -708,9 +708,20 @@
                     <i class="fa fa-ellipsis-h"></i> More <span class="caret"></span>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-right">
+                    {{-- Split Cash + Card (2026-11-18): the old "Multiple Pay"
+                         modal confused staff on the everyday split (some cash,
+                         rest on card). This opens a 1-box prompt: type the cash,
+                         the card amount fills in. --}}
+                    @if(array_key_exists('cash', $payment_types) && array_key_exists('card', $payment_types))
+                    <li style="list-style:none;">
+                        <button type="button" class="btn btn-link" id="pos-split-cash-card" title="Customer pays part cash, rest on card">
+                            <i class="fas fa-random text-success"></i> <strong>Split: Cash + Card</strong>
+                        </button>
+                    </li>
+                    @endif
                     <li style="list-style:none;">
                         <button type="button" class="btn btn-link" id="pos-finalize" title="@lang('lang_v1.tooltip_checkout_multi_pay')">
-                            <i class="fas fa-money-check-alt text-primary"></i> @lang('lang_v1.checkout_multi_pay')
+                            <i class="fas fa-money-check-alt text-primary"></i> Other split (advanced)
                         </button>
                     </li>
                     @if(empty($pos_settings['disable_credit_sale_button']))
@@ -1151,6 +1162,133 @@
                     }
                 });
 
+                // ---- Split: Cash + Card (2026-11-18) ----------------------
+                // Cashier types the cash part; the card part is the rest.
+                // On finish we write the same payment rows the old Multiple
+                // Pay modal would (cash row + card row, plus the store-credit
+                // advance row if one was applied) and submit the normal form.
+                function splitTaxRate() {
+                    var r = parseFloat(String($('#tax_calculation_amount').val() || '0').replace(/[^0-9.]/g, ''));
+                    return isNaN(r) ? 0 : r;
+                }
+                function splitRecalc() {
+                    var total = readTotalDue();
+                    var raw = $('#split_cash_amt').val();
+                    var cash = parseFloat(raw);
+                    var $ok = $('#split_confirm');
+                    var $err = $('#split_error');
+                    if (raw === '' || isNaN(cash)) {
+                        $('#split_card_amt, #split_card_pretax').text('$0.00');
+                        $('#split_summary').text('');
+                        $err.text('');
+                        $ok.prop('disabled', true);
+                        return;
+                    }
+                    cash = Math.round(cash * 100) / 100;
+                    var card = Math.round((total - cash) * 100) / 100;
+                    if (cash <= 0 || card <= 0) {
+                        $('#split_card_amt, #split_card_pretax').text('$0.00');
+                        $('#split_summary').text('');
+                        $err.text(cash <= 0 ? 'Enter the cash amount.' : 'Cash covers it all. Use the Cash button instead.');
+                        $ok.prop('disabled', true);
+                        return;
+                    }
+                    var rate = splitTaxRate();
+                    var pre = rate > 0 ? Math.round(card / (1 + rate / 100) * 100) / 100 : card;
+                    $('#split_card_amt').text(fmtMoney(card));
+                    $('#split_card_pretax').text(fmtMoney(pre));
+                    $('#split_summary').text(fmtMoney(cash) + ' cash + ' + fmtMoney(card) + ' card = ' + fmtMoney(total));
+                    $err.text('');
+                    $ok.prop('disabled', false);
+                }
+                function splitAddRow(method, amount, done) {
+                    var idx = parseInt($('#payment_row_index').val(), 10);
+                    $.ajax({
+                        method: 'POST',
+                        url: '/sells/pos/get_payment_row',
+                        data: { row_index: idx, location_id: $('input#location_id').val() },
+                        dataType: 'html'
+                    }).done(function (html) {
+                        if (!html) { done(false); return; }
+                        $('#payment_rows_div').append(html);
+                        try { __select2($('#payment_rows_div').find('.select2')); } catch (e) {}
+                        $('#method_' + idx).val(method).change();
+                        __write_number($('#amount_' + idx), amount);
+                        $('#payment_row_index').val(idx + 1);
+                        done(true);
+                    }).fail(function () { done(false); });
+                }
+                function splitFinish() {
+                    var total = readTotalDue();
+                    var cash = Math.round(parseFloat($('#split_cash_amt').val()) * 100) / 100;
+                    var card = Math.round((total - cash) * 100) / 100;
+                    if (!(cash > 0) || !(card > 0)) { return; }
+                    $('#split_confirm').prop('disabled', true).text('Finishing...');
+
+                    // Start from one payment row.
+                    $('#payment_rows_div').find('.payment_row').slice(1).each(function () {
+                        var $wrap = $(this).closest('#payment_rows_div > div');
+                        ($wrap.length ? $wrap : $(this)).remove();
+                    });
+                    var $first = $('#payment_rows_div').find('.payment_row').first();
+                    var $m0 = $first.find('select.payment_types_dropdown').first();
+                    var sc = parseFloat($('#store_credit_used_amount').val() || 0) || 0;
+                    var queue = [];
+                    if (sc > 0 && $m0.val() === 'advance') {
+                        queue = [['cash', cash], ['card', card]];
+                    } else {
+                        $m0.val('cash').change();
+                        __write_number($first.find('input.payment-amount').first(), cash);
+                        queue = [['card', card]];
+                    }
+                    var $note = $first.find('textarea[id^="note_"]').first();
+                    if ($note.length) {
+                        var n = 'Split: ' + fmtMoney(cash) + ' cash + ' + fmtMoney(card) + ' card';
+                        if (sc > 0) { n += ' | Store credit used: ' + fmtMoney(sc); }
+                        $note.val(n);
+                    }
+                    if ($('#is_credit_sale').length) { $('#is_credit_sale').val(0); }
+
+                    (function next() {
+                        if (!queue.length) {
+                            $('#split_prompt_modal').modal('hide');
+                            window.pos_submit_in_progress = false;
+                            calculate_balance_due();
+                            pos_form_obj.submit();
+                            setTimeout(function () { $('#split_confirm').text('Card approved — finish sale'); }, 800);
+                            return;
+                        }
+                        var item = queue.shift();
+                        splitAddRow(item[0], item[1], function (ok) {
+                            if (!ok) {
+                                toastr.error('Could not set up the split. Try again.');
+                                $('#split_confirm').prop('disabled', false).text('Card approved — finish sale');
+                                return;
+                            }
+                            next();
+                        });
+                    })();
+                }
+                $(document).on('click', '#pos-split-cash-card', function (e) {
+                    e.preventDefault();
+                    if (!hasItemsInCart()) { toastr.warning(LANG.no_products_added); return; }
+                    if ($('#reward_point_enabled').length && typeof isValidatRewardPoint === 'function') {
+                        var rp = isValidatRewardPoint();
+                        if (!rp['is_valid']) { toastr.error(rp['msg']); return; }
+                    }
+                    $('#split_total').text(fmtMoney(readTotalDue()));
+                    $('#split_cash_amt').val('');
+                    $('#split_confirm').text('Card approved — finish sale');
+                    splitRecalc();
+                    $('#split_prompt_modal').modal('show');
+                    setTimeout(function () { $('#split_cash_amt').trigger('focus'); }, 250);
+                });
+                $(document).on('input change', '#split_cash_amt', splitRecalc);
+                $(document).on('click', '#split_confirm', splitFinish);
+                $(document).on('keydown', '#split_cash_amt', function (e) {
+                    if (e.which === 13) { e.preventDefault(); if (!$('#split_confirm').prop('disabled')) { $('#split_confirm').click(); } }
+                });
+
                 function bindCashierIntercept() {
                     var els = document.querySelectorAll(
                         '.pos-pay-btn.pos-express-finalize[data-pay_method="cash"],' +
@@ -1236,6 +1374,48 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-link" data-dismiss="modal">Cancel</button>
                         <button type="button" class="btn btn-primary" id="cash_prompt_confirm" disabled>Confirm sale</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Split: Cash + Card modal (2026-11-18) --}}
+        <div class="modal fade pos-cashier-modal" id="split_prompt_modal" tabindex="-1" role="dialog" aria-labelledby="split_prompt_title" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+                        <h4 class="modal-title" id="split_prompt_title"><i class="fas fa-random"></i> Split: Cash + Card</h4>
+                    </div>
+                    <div class="modal-body cash-prompt-body card-prompt-body" style="text-align:left;">
+                        <div class="cash-row">
+                            <span class="cash-label">Total due</span>
+                            <span class="cash-amt" id="split_total">$0.00</span>
+                        </div>
+                        <label for="split_cash_amt" class="cash-input-label">1. How much is the customer paying in <u>cash</u>?</label>
+                        <div class="cash-input-wrap">
+                            <span class="cash-currency">$</span>
+                            <input type="number" inputmode="decimal" step="0.01" min="0" id="split_cash_amt" autocomplete="off"
+                                style="width:100%;padding:12px 14px 12px 32px;font-size:26px;font-weight:700;border:1px solid #DFD2B3;border-radius:8px;background:#fff;color:#1F1B16;" />
+                        </div>
+                        <div id="split_error" style="color:#8A3A2E;font-weight:600;min-height:18px;margin-bottom:8px;"></div>
+                        <div class="cash-input-label">2. Put the rest on the card</div>
+                        <div class="card-clover-row" style="text-align:center;">
+                            <div class="card-instr">Key this into Clover</div>
+                            <div class="card-amt" id="split_card_pretax">$0.00</div>
+                            <div class="card-amt-tag">pre-tax</div>
+                        </div>
+                        <div class="card-verify-row" style="text-align:center;">
+                            <div class="card-verify-instr">Clover should charge</div>
+                            <div class="card-verify-amt" id="split_card_amt">$0.00</div>
+                            <div class="card-amt-tag">after tax</div>
+                        </div>
+                        <div id="split_summary" style="text-align:center;font-weight:700;font-size:15px;color:#235530;margin-bottom:10px;"></div>
+                        <div class="card-reminder" style="text-align:center;">Take the cash, run the card, then tap <strong>Card approved</strong>.</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="split_confirm" disabled>Card approved &mdash; finish sale</button>
                     </div>
                 </div>
             </div>
