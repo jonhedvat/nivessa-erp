@@ -89,16 +89,26 @@ class CollectiblePriceService
         }));
 
         $rows = DB::table('collectible_prices')->where('game', $game)->where('name_norm', $name)->where('price', '>', 0)->get();
+        $compactDesc = preg_replace('/[^a-z0-9]/', '', $desc);
         $best = [];
         $bestScore = -1;
         foreach ($rows as $r) {
             $hay = ' ' . self::norm($r->set_name . ' ' . $r->set_code . ' ' . $r->variant) . ' ';
             $num = self::norm($r->number);
+            $numLeft = preg_replace('/\/.*$/', '', $num);
             $score = 0;
+            // The exact set code typed ("LOB-001", not the LOB-EN001 reprint).
+            $code = preg_replace('/[^a-z0-9]/', '', mb_strtolower((string) $r->set_code));
+            if (mb_strlen($code) >= 5 && mb_strpos($compactDesc, $code) !== false) {
+                $score += 5;
+            }
             foreach ($restTokens as $t) {
                 // "4/102" or "4" = card number; "lob en001" = set code
                 $tn = preg_replace('/\/.*$/', '', $t);
-                if ($num !== '' && ($tn === $num || ltrim($tn, '0') === ltrim($num, '0'))) {
+                if ($num !== '' && $t === $num && strpos($num, '/') !== false) {
+                    // "4/102" = card 4 of the 102-card set: Base, not Base Set 2.
+                    $score += 5;
+                } elseif ($numLeft !== '' && ($tn === $numLeft || ltrim($tn, '0') === ltrim($numLeft, '0'))) {
                     $score += 3;
                 } elseif (mb_strpos($hay, ' ' . $t . ' ') !== false) {
                     $score += 2;
@@ -279,16 +289,23 @@ class CollectiblePriceService
             if (count($buf) >= 2000) $flush();
         };
 
-        if ($game === 'pokemon') {
-            $this->importPokemon($add, $log);
-        } elseif ($game === 'mtg') {
-            $this->importMtg($add, $log);
-        } elseif ($game === 'yugioh') {
-            $this->importYugioh($add, $log);
-        } else {
-            throw new \InvalidArgumentException('Unknown game ' . $game);
+        try {
+            if ($game === 'pokemon') {
+                $this->importPokemon($add, $log);
+            } elseif ($game === 'mtg') {
+                $this->importMtg($add, $log);
+            } elseif ($game === 'yugioh') {
+                $this->importYugioh($add, $log);
+            } else {
+                throw new \InvalidArgumentException('Unknown game ' . $game);
+            }
+            $flush();
+        } catch (\Throwable $e) {
+            // A partial list could miss a card's cheap printings and overpay:
+            // drop this run, keep the last full one.
+            DB::table('collectible_prices')->where('game', $game)->where('batch', $batch)->delete();
+            throw $e;
         }
-        $flush();
         if ($count < 1000) {
             // Something went wrong upstream: keep last week's prices.
             DB::table('collectible_prices')->where('game', $game)->where('batch', $batch)->delete();
@@ -307,7 +324,7 @@ class CollectiblePriceService
             $url = 'https://api.pokemontcg.io/v2/cards?pageSize=250&page=' . $page . '&orderBy=id&select=id,name,number,set,rarity,tcgplayer';
             $headers = [];
             if ($key = env('POKEMONTCG_API_KEY')) $headers[] = 'X-Api-Key: ' . $key;
-            $d = json_decode($this->get($url, $headers, 8), true);
+            $d = json_decode($this->get($url, $headers, 10), true);
             if (!is_array($d) || !isset($d['data'])) {
                 throw new \RuntimeException("Pokemon page $page failed");
             }
@@ -316,8 +333,12 @@ class CollectiblePriceService
                 $prices = $c['tcgplayer']['prices'] ?? [];
                 foreach ($prices as $variant => $p) {
                     $price = $p['market'] ?? ($p['mid'] ?? null);
+                    $num = (string) ($c['number'] ?? '');
+                    if ($num !== '' && !empty($c['set']['printedTotal']) && ctype_digit($num)) {
+                        $num .= '/' . $c['set']['printedTotal'];
+                    }
                     $add($c['name'], $c['set']['name'] ?? '', $c['set']['ptcgoCode'] ?? ($c['set']['id'] ?? ''),
-                        $c['number'] ?? '', $this->pokeVariant($variant, $c['rarity'] ?? ''), $price, 'tcgplayer', $c['tcgplayer']['url'] ?? '');
+                        $num, $this->pokeVariant($variant, $c['rarity'] ?? ''), $price, 'tcgplayer', $c['tcgplayer']['url'] ?? '');
                 }
             }
             if ($page % 10 === 0) $log("pokemon page $page / " . ceil($total / 250));
@@ -379,7 +400,7 @@ class CollectiblePriceService
     {
         $last = '';
         for ($i = 0; $i < $tries; $i++) {
-            if ($i) sleep(min(30, 2 * $i));
+            if ($i) sleep(min(45, 5 * $i));
             $ch = curl_init($url);
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,

@@ -105,8 +105,8 @@ class SellQuoteController extends StoreOrDiscogsController
         'signed_poster' => ['Autographs & signed items', 'Signed poster'],
         'signed_item' => ['Autographs & signed items', 'Other signed item'],
         'card_pack' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Sealed card packs (any brand)'],
-        'mtg_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Magic: The Gathering cards'],
-        'yugioh_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Yu-Gi-Oh! cards'],
+        'mtg_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Magic cards, bulk / mixed (pile)'],
+        'yugioh_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Yu-Gi-Oh! cards, bulk / mixed (pile)'],
         'card_collection' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Card collection / binder (any game)'],
         // Sarah 11/17: one valuable card / Funko per line, priced from our
         // collectible_prices table (CollectiblePriceService) at 20% of value.
@@ -214,7 +214,7 @@ class SellQuoteController extends StoreOrDiscogsController
     /** GET /sell-quote/options */
     public function options()
     {
-        $data = Cache::remember('sellquote:options9', 600, function () {
+        $data = Cache::remember('sellquote:options10', 600, function () {
             $grades = [];
             foreach (array_reverse($this->calculator->getGradesForDropdown()) as $g) {
                 $grades[] = ['key' => $g, 'help' => self::GRADE_HELP[$g] ?? ''];
