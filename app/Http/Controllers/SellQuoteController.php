@@ -75,15 +75,18 @@ class SellQuoteController extends StoreOrDiscogsController
         ['45s / 7-inch', '/^rpm45/'],
         ['CDs', '/^cd_(?!player)/'],
         ['Cassettes', '/^cassette_(?!player)/'],
-        ['Movies (DVD / Blu-ray / VHS)', '/^(dvd_(?!player)|bluray|4k|vhs|laserdisc)/'],
+        // Sarah 11/17: VHS and laser discs get their own entries (were buried
+        // under Movies, so sellers couldn't find them).
+        ['Movies (DVD / Blu-ray)', '/^(dvd_(?!player)|bluray|4k)/'],
+        ['VHS tapes', '/^vhs/'],
+        ['Laser discs', '/^laserdisc/'],
         ['Video games', '/^videogame/'],
         ['Books & magazines', '/^(book|magazine|coffee_table)/'],
         ['Clothing', '/^(hat_|tshirt|tanktop|sweatshirt)/'],
         ['Turntables & audio gear', '/^(turntable|receiver|dvd_player|cd_player|cassette_player|camcorder|flatscreen)/'],
         ['Toys & collectibles', '/^(toy_|funko|furry|mask|board_game|pin$)/'],
-        ['Cards', '/^(pokemon|sports_card)/'],
+        ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', '/^(pokemon|sports_card)/'],
         ['Posters & art', '/^(poster_2x3|framed_art)/'],
-        ['Sealed card packs', '/(?!)/'],
         ['Autographs & signed items', '/(?!)/'],
     ];
 
@@ -98,7 +101,10 @@ class SellQuoteController extends StoreOrDiscogsController
         'signed_cd' => ['Autographs & signed items', 'Signed CD'],
         'signed_poster' => ['Autographs & signed items', 'Signed poster'],
         'signed_item' => ['Autographs & signed items', 'Other signed item'],
-        'card_pack' => ['Sealed card packs', 'Sealed card packs (any brand)'],
+        'card_pack' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Sealed card packs (any brand)'],
+        'mtg_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Magic: The Gathering cards'],
+        'yugioh_cards' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Yu-Gi-Oh! cards'],
+        'card_collection' => ['Trading cards (Pokemon, Magic, Yu-Gi-Oh!, sports)', 'Card collection / binder (any game)'],
     ];
 
     /** @var BuyOfferCalculatorService */
@@ -188,7 +194,7 @@ class SellQuoteController extends StoreOrDiscogsController
     /** GET /sell-quote/options */
     public function options()
     {
-        $data = Cache::remember('sellquote:options6', 600, function () {
+        $data = Cache::remember('sellquote:options7', 600, function () {
             $grades = [];
             foreach (array_reverse($this->calculator->getGradesForDropdown()) as $g) {
                 $grades[] = ['key' => $g, 'help' => self::GRADE_HELP[$g] ?? ''];
@@ -1088,7 +1094,7 @@ class SellQuoteController extends StoreOrDiscogsController
             $who = $esc($q->name) . ', ' . $esc($q->phone) . ($q->email ? ', ' . $esc($q->email) : '');
             $inStore = (int) ((json_decode((string) $q->calculation_json, true) ?: [])['in_store_count'] ?? 0);
             if ($inStore > 0 && (float) $q->cash_total <= 0) {
-                $money = 'autographs / sealed card packs to price in store.';
+                $money = 'autographs / card items to price in store.';
             } elseif ($q->size_tier === 'large') {
                 $money = 'estimate ' . $m($q->estimate_low_cash) . '–' . $m($q->cash_total) . ' cash, valid through '
                     . \Carbon\Carbon::parse($q->expires_at)->format('D n/j') . '. Needs an appraisal: they were told to reply to the text or call.';
@@ -1097,7 +1103,7 @@ class SellQuoteController extends StoreOrDiscogsController
                     . \Carbon\Carbon::parse($q->expires_at)->format('D n/j') . '.';
             }
             if ($inStore > 0 && (float) $q->cash_total > 0) {
-                $money .= ' Plus ' . $inStore . ' autograph / card pack item' . ($inStore === 1 ? '' : 's') . ' to price in store.';
+                $money .= ' Plus ' . $inStore . ' autograph / card item' . ($inStore === 1 ? '' : 's') . ' to price in store.';
             }
             $calcAll = json_decode((string) $q->calculation_json, true) ?: [];
             if (!self::storeChosen($calcAll)) {
@@ -1189,7 +1195,7 @@ class SellQuoteController extends StoreOrDiscogsController
             // first, and the link to pick. The email waits for the pick.
             $hi = 'Hi' . ($first !== '' ? ' ' . $first : '') . ', Nivessa here. ';
             if ($onlyInStore) {
-                $sms = $hi . 'Quote ' . $number . ': we price autographs and sealed card packs when we see them. Bring your ' . $items
+                $sms = $hi . 'Quote ' . $number . ': we price autographs and trading cards when we see them. Bring your ' . $items
                     . ' to either store and show this text at the counter. ' . $link;
             } else {
                 $parts = [];
@@ -1212,7 +1218,7 @@ class SellQuoteController extends StoreOrDiscogsController
         }
 
         if ($onlyInStore) {
-            $sms = 'Hi' . ($first !== '' ? ' ' . $first : '') . ', Nivessa here. Quote ' . $number . ': we price autographs and sealed card packs when we see them. Bring your '
+            $sms = 'Hi' . ($first !== '' ? ' ' . $first : '') . ', Nivessa here. Quote ' . $number . ': we price autographs and trading cards when we see them. Bring your '
                 . $items . ' to ' . $store['name'] . ', ' . $street . ' and show this text at the counter. ' . $link;
         } elseif ($large) {
             $sms = 'Hi' . ($first !== '' ? ' ' . $first : '') . ', Nivessa here. Estimate ' . $number . ': '
