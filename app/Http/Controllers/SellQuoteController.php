@@ -752,6 +752,9 @@ class SellQuoteController extends StoreOrDiscogsController
                 + ($live ? ['ref' => mb_substr((string) ($g['ref'] ?? ''), 0, 80)] : []);
             if (!empty($types[$key]['in_store'])) {
                 $clean['description'] = trim(mb_substr(strip_tags((string) ($g['description'] ?? '')), 0, 150));
+                if (!empty($g['pick']) && isset(self::COLLECTIBLE_GAMES[$key])) {
+                    $clean['pick'] = (int) $g['pick'];
+                }
             }
             $cleanGroups[] = $clean;
         }
@@ -874,7 +877,9 @@ class SellQuoteController extends StoreOrDiscogsController
                 if ($game !== null && $desc !== '') {
                     // Cards: our price table (fast, so live too). Funko: saved
                     // eBay answers; a new eBay search only on the final press.
-                    $cv = app(CollectiblePriceService::class)->lookup($game, $desc, !$live, $this->businessId());
+                    $svc = app(CollectiblePriceService::class);
+                    $cv = !empty($g['pick']) ? $svc->lookupById($game, $g['pick']) : null;
+                    $cv = $cv ?: $svc->lookup($game, $desc, !$live, $this->businessId());
                     $cap = (float) BuyOfferCalculatorService::VALUE_CAP;
                     if (!empty($cv['ok']) && $cv['value'] >= CollectiblePriceService::MIN_VALUE && $cv['value'] <= $cap) {
                         $lines[] = [
@@ -917,6 +922,7 @@ class SellQuoteController extends StoreOrDiscogsController
                         'grade' => null,
                         'how' => 'in_store',
                         'note' => $note,
+                        'options' => $live ? ($cv['options'] ?? null) : null,
                         'ref' => $g['ref'] ?? null,
                     ];
                     continue;
@@ -1039,7 +1045,8 @@ class SellQuoteController extends StoreOrDiscogsController
                 'demand' => $d['demand'] ?? null,
                 // Card / Funko lines: what we matched and why it's priced so.
                 'note' => $d['note'] ?? null,
-                'match' => isset($d['note']) ? ($d['label'] ?? null) : null,
+                'match' => isset($d['note']) && empty($d['options']) && strpos((string) ($d['label'] ?? ''), ' (one per line): ') === false ? ($d['label'] ?? null) : null,
+                'options' => $d['options'] ?? null,
             ];
         }
         return $this->json([

@@ -142,8 +142,9 @@ class CollectiblePriceService
             if ($max < self::MIN_VALUE) {
                 $min = $max = $prices[0];
             } else {
-                $out['msg'] = 'There are several versions of ' . $best[0]->name . ' (' . count($best) . ' printings, $' . number_format($min, 0) . '–$' . number_format($max, 0) . '). Add the set name or card number, or we price it in store.';
+                $out['msg'] = count($best) . ' versions of ' . $best[0]->name . ' ($' . number_format($min, 0) . '–$' . number_format($max, 0) . '). Pick yours above.';
                 $out['ambiguous'] = true;
+                $out['options'] = $this->options($best);
                 return $out;
             }
         }
@@ -155,11 +156,48 @@ class CollectiblePriceService
         }
         $out['ok'] = true;
         $out['value'] = round($value, 2);
-        $out['label'] = trim($pick->name . ' · ' . $pick->set_name . ($pick->number ? ' #' . $pick->number : '') . ($pick->variant ? ' · ' . $pick->variant : ''));
+        $out['label'] = self::rowLabel($pick);
         $out['matches'] = count($best);
         $out['source_url'] = $pick->url;
         $out['search_url'] = $this->ebaySoldUrl($game, $pick->name . ' ' . $pick->set_name . ' ' . $pick->number);
         return $out;
+    }
+
+    /** Versions for the seller to pick from (newest set names first, max 60). */
+    protected function options(array $rows)
+    {
+        usort($rows, function ($a, $b) {
+            return strnatcasecmp($a->set_name . ' ' . $a->number, $b->set_name . ' ' . $b->number);
+        });
+        $out = [];
+        foreach (array_slice($rows, 0, 60) as $r) {
+            $out[] = ['id' => (int) $r->id, 'label' => self::rowLabel($r, false), 'price' => round((float) $r->price, 2)];
+        }
+        return $out;
+    }
+
+    public static function rowLabel($r, $withName = true)
+    {
+        return trim(($withName ? $r->name . ' · ' : '') . $r->set_name . ($r->number ? ' #' . $r->number : '') . ($r->variant ? ' · ' . $r->variant : ''));
+    }
+
+    /** The exact version the seller picked from the list. */
+    public function lookupById($game, $id)
+    {
+        $r = DB::table('collectible_prices')->where('game', $game)->where('id', (int) $id)->first();
+        if (!$r || (float) $r->price <= 0) {
+            return null;
+        }
+        return [
+            'ok' => true,
+            'value' => round((float) $r->price, 2),
+            'label' => self::rowLabel($r),
+            'source' => self::SOURCE_LABEL[$game] ?? '',
+            'source_url' => $r->url,
+            'search_url' => $this->ebaySoldUrl($game, $r->name . ' ' . $r->set_name . ' ' . $r->number),
+            'msg' => '',
+            'picked' => true,
+        ];
     }
 
     protected function lookupFunko($desc, $raw, $allowRemote, $businessId, array $out)
