@@ -2,7 +2,7 @@
 # conversion by list-price bucket for items added 90-450 days ago, plus the
 # "price floor" where going cheaper stops selling better. SELECTs + temp tables only.
 
-name: One-off: set Peter Gabriel CD 169189 to $8
+name: "One-off - set Peter Gabriel CD 169189 to 8 dollars"
 
 on:
   workflow_dispatch:
