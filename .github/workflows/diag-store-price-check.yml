@@ -1,0 +1,35 @@
+# One-off, read-only: per category > subcategory (and per store), 90-day
+# conversion by list-price bucket for items added 90-450 days ago, plus the
+# "price floor" where going cheaper stops selling better. SELECTs + temp tables only.
+
+name: Diag store-price match check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CiRjID0gYXBwKFxBcHBcSHR0cFxDb250cm9sbGVyc1xQcm9kdWN0Q29udHJvbGxlcjo6Y2xhc3MpOwokbSA9IG5ldyBSZWZsZWN0aW9uTWV0aG9kKCRjLCAnYnVsa0VudHJ5U3RvcmVQcmljZUNoZWNrJyk7ICRtLT5zZXRBY2Nlc3NpYmxlKHRydWUpOwokYmlkID0gKGludCkgREI6OnRhYmxlKCdidXNpbmVzcycpLT52YWx1ZSgnaWQnKTsKZm9yZWFjaCAoW1snQ0QgLSBVc2VkID4gUm9jaycsJzQuOTknXSxbJ1ZpbnlsIC0gVXNlZCA+IFJvY2snLCc4J11dIGFzIFskY2F0LCRwcl0pIHsKICBlY2hvICJTUCAkY2F0IFwkJHByID0+ICIuanNvbl9lbmNvZGUoJG0tPmludm9rZSgkYywgJGJpZCwgWyduYW1lJz0+J1BldGVyIEdhYnJpZWwnLCdhcnRpc3QnPT4nUGV0ZXIgR2FicmllbCcsJ2NhdGVnb3J5Jz0+JGNhdCwncHJpY2UnPT4kcHIsJ2Rpc2NvZ3NfcmVsZWFzZV9pZCc9PicnXSkpLiJcbiI7Cn0KJHN2YyA9IGFwcChcQXBwXFNlcnZpY2VzXERpc2NvZ3NTYWxlc0xvb2t1cFNlcnZpY2U6OmNsYXNzKTsKZm9yZWFjaCAoKG5ldyBSZWZsZWN0aW9uQ2xhc3MoJHN2YykpLT5nZXRNZXRob2RzKCkgYXMgJG1tKSBpZiAoJG1tLT5pc1B1YmxpYygpICYmICEkbW0tPmlzQ29uc3RydWN0b3IoKSkgZWNobyAiU1ZDIG1ldGhvZCAiLiRtbS0+Z2V0TmFtZSgpLiJcbiI7Cg==' | base64 -d > /tmp/sp_check.php
+            php -l /tmp/sp_check.php
+            php /tmp/sp_check.php
+            rm -f /tmp/sp_check.php

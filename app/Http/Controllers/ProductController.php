@@ -5333,6 +5333,10 @@ class ProductController extends Controller
             $item['category'] ?? '', $item['subcategory'] ?? '', $item['condition'] ?? '', $name,
         ]));
         $wantSealed = strpos($hint, 'seal') !== false;
+        // Same format only for name matches (Sarah 2026-11-18): a CD titled
+        // "Peter Gabriel" was raised to $20 off our "Peter Gabriel" VINYL sales.
+        // "CD - Used > Rock" -> "CD - Used". Release-id / SKU matches skip this.
+        $rowCat = trim(explode(' > ', (string) ($item['category'] ?? ''))[0]);
 
         // Resolve matching products first (indexed lookups), then their sales.
         // MySQL's default collation is case-insensitive, so plain = is fine.
@@ -5340,7 +5344,7 @@ class ProductController extends Controller
             ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
             ->leftJoin('categories as sc', 'sc.id', '=', 'p.sub_category_id')
             ->where('p.business_id', $business_id)
-            ->where(function ($w) use ($sku, $name, $artist, $releaseId) {
+            ->where(function ($w) use ($sku, $name, $artist, $releaseId, $rowCat) {
                 if (mb_strlen($sku) >= 3) {
                     $w->orWhere('p.sku', $sku);
                 }
@@ -5349,8 +5353,11 @@ class ProductController extends Controller
                     $w->orWhere('p.discogs_release_id', $releaseId);
                 }
                 if (mb_strlen($name) >= 3) {
-                    $w->orWhere(function ($n) use ($name, $artist) {
+                    $w->orWhere(function ($n) use ($name, $artist, $rowCat) {
                         $n->where('p.name', $name);
+                        if ($rowCat !== '') {
+                            $n->where('c.name', $rowCat);
+                        }
                         if ($artist !== '') {
                             $n->where(function ($a) use ($artist) {
                                 $a->whereNull('p.artist')->orWhere('p.artist', '')->orWhere('p.artist', $artist);

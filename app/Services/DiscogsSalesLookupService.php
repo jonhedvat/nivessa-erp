@@ -278,7 +278,7 @@ class DiscogsSalesLookupService
                 'vld.location_id',
                 DB::raw('l.name as location_name'),
                 DB::raw('SUM(vld.qty_available) as qty'),
-                DB::raw('COUNT(*) as lines'),
+                DB::raw('COUNT(*) as line_count'), // LINES is a reserved word in MySQL 8
             ])
             ->groupBy('vld.location_id', 'l.name')
             ->orderBy('l.name')
@@ -293,7 +293,7 @@ class DiscogsSalesLookupService
                 'location_id'   => (int) $r->location_id,
                 'location_name' => (string) ($r->location_name ?: 'Unknown'),
                 'qty'           => $qty,
-                'lines'         => (int) $r->lines,
+                'lines'         => (int) $r->line_count,
             ];
             $total += $qty;
         }
