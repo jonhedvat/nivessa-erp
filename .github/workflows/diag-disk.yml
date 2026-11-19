@@ -55,15 +55,26 @@ jobs:
               echo "== upload history in laravel logs"
               grep -h -o 'Database backup drive upload [a-z]*.\{0,300\}' storage/logs/laravel-*.log 2>/dev/null | sed -E 's/"token":"[^"]*"//' | cut -c1-260 | sort | uniq -c | sort -rn | head -15
               for f in $(ls storage/logs/laravel-*.log | tail -40); do s=$(grep -c 'drive upload succeeded' $f); x=$(grep -c 'drive upload failed' $f); [ "$s$x" != "00" ] && echo "$(basename $f) ok=$s fail=$x"; done
-              echo "== test POST (1KB gz file, real token)"
-              T=$(grep -E '^DB_BACKUP_GOOGLE_DRIVE_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"' ')
-              F=$(grep -E '^DB_BACKUP_GOOGLE_DRIVE_FOLDER_ID=' .env | cut -d= -f2- | tr -d '"'"'"' ')
-              echo test | gzip > /tmp/drivetest.sql.gz
-              curl -sS -L -m 60 -o /tmp/drive_resp.txt -D /tmp/drive_hdr.txt -w 'http=%{http_code} redirects=%{num_redirects} final_host=%{url_effective}\n' \
-                -F business_id=1 -F filename=connectivity_test.sql.gz -F "token=$T" -F "folder_id=$F" -F "file=@/tmp/drivetest.sql.gz;type=application/gzip" "$U" | sed -E 's#(final_host=https?://[^/]+).*#\1#'
-              grep -i -E '^(HTTP|content-type|location)' /tmp/drive_hdr.txt | sed -E 's#(location: https?://[^/]+).*#\1/...#I'
-              echo "-- body:"; sed -e 's/<[^>]*>/ /g' /tmp/drive_resp.txt | tr -s ' \n' | head -c 800; echo
-              rm -f /tmp/drivetest.sql.gz /tmp/drive_resp.txt /tmp/drive_hdr.txt
+              echo "== test POSTs via PHP (tiny + 5MB + 40MB)"
+              cat > /tmp/drivetest.php <<'PHPEOF'
+              <?php
+              require '/www/playlist.nivessa.com/app/vendor/autoload.php';
+              $app = require '/www/playlist.nivessa.com/app/bootstrap/app.php';
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $c = config('nivessa.backup_google_drive');
+              foreach ([1, 5*1024*1024, 40*1024*1024] as $size) {
+                $f = tempnam('/tmp', 'dt'); file_put_contents($f, random_bytes($size));
+                $ch = curl_init();
+                curl_setopt_array($ch, [CURLOPT_URL => trim($c['webhook_url']), CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_TIMEOUT => 200,
+                  CURLOPT_POSTFIELDS => ['business_id' => '1', 'filename' => "connectivity_test_{$size}.sql.gz", 'token' => $c['token'], 'folder_id' => $c['folder_id'], 'file' => new \CURLFile($f, 'application/gzip', "connectivity_test_{$size}.sql.gz")]]);
+                $t = microtime(true); $body = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch); @unlink($f);
+                $body = trim(preg_replace('/\s+/', ' ', strip_tags((string) $body)));
+                $body = preg_replace('#https?://[^\s"]+#', '<url>', $body);
+                printf("size=%d http=%d %.1fs err=%s body=%s\n", $size, $code, microtime(true)-$t, $err, substr($body, 0, 400));
+              }
+              PHPEOF
+              sed -i 's/^              //' /tmp/drivetest.php
+              php /tmp/drivetest.php 2>&1 | head -20; rm -f /tmp/drivetest.php
             fi
             if [ "${{ inputs.delete_dup_backups }}" = "true" ]; then
               B=storage/app/database_backups
