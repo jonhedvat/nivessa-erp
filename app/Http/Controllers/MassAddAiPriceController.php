@@ -359,8 +359,12 @@ class MassAddAiPriceController extends Controller
                 $isCard = stripos($cat, 'Trading Card') === 0;
                 $h = $this->storeHistory($businessId, $name, $artist, $cat);
                 $byPlayer = false;
-                if (!$h && $isCard && $artist !== '') {
-                    $h = $this->cardPlayerHistory($businessId, $artist, $cat, $sub);
+                // Sarah 2026-11-19: Pokemon cards carry artist "Pokemon", so match by the
+                // character (Mewtwo, Charmander) the AI names; players fall back to artist.
+                $who = $clean($r['character'] ?? '');
+                if ($who === '') $who = $artist;
+                if (!$h && $isCard && $who !== '') {
+                    $h = $this->cardPlayerHistory($businessId, $who, $cat, $sub);
                     $byPlayer = (bool) $h;
                 }
                 $floor = $h ? $h['floor'] : 0;
@@ -374,16 +378,22 @@ class MassAddAiPriceController extends Controller
                     }
                 }
                 $cs = $isCard && empty($r['premium']) ? $statFor($cat, $sub) : null;
+                if ($isCard && $h) {
+                    // Sarah 2026-11-19: cards sit longer than records; the 30-day "fast" tier
+                    // put Pikachu (13 in stock, ~25 days) at $10 vs our usual $6. Cards get the
+                    // bump only if they usually sell within a week; otherwise our usual price.
+                    $floor = ($h['days'] !== null && $h['days'] <= 7) ? max($h['p75'], $h['median'] * 1.25) : $h['median'];
+                }
                 if ($byPlayer && $cs) {
                     // Different cards of one player vary a lot (one $125 sale); an ordinary
                     // card's player floor stays within our usual range for this kind of card.
                     $floor = min($floor, max($cs['p90'], $cs['median']));
                 }
-                $histNote = function ($price) use ($h, $name, $artist, $ai, $byPlayer) {
+                $histNote = function ($price) use ($h, $name, $artist, $ai, $byPlayer, $who) {
                     return ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
                         'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock'], 'match' => $h['match'][0] ?? '',
-                        'by_player' => $byPlayer];
+                        'by_player' => $byPlayer, 'who' => $byPlayer ? $who : ''];
                 };
                 if ($cs && $ai > 0) {
                     // Ordinary raw card.
@@ -477,6 +487,10 @@ class MassAddAiPriceController extends Controller
                                 'confidence' => ['type' => 'string', 'enum' => ['high', 'low']],
                                 'high_value' => ['type' => 'boolean'],
                                 'edition_unclear' => ['type' => 'boolean'],
+                                'character' => [
+                                    'type' => 'string',
+                                    'description' => "Trading cards only: just the player's or character's name, with no set, number, form or card type (e.g. 'Frank Thomas', 'Mewtwo', 'Charizard' for 'Mega Charizard X EX'). Empty for everything else.",
+                                ],
                                 'premium' => [
                                     'type' => 'boolean',
                                     'description' => 'Trading cards only: true if the card is graded / slabbed, a true rookie card, autographed, a scarce insert or parallel, or a sealed box. false for ordinary raw cards and for everything that is not a card.',
@@ -563,7 +577,7 @@ class MassAddAiPriceController extends Controller
             . "Walk-in prices in our shops are lower than online; for reference, what we usually sell cards for:\n" . implode("\n", $lines) . "\n"
             . "Set premium=true only for cards that really are worth more: graded / slabbed (PSA, BGS, SGC), true rookie cards, autographs, scarce inserts or parallels, sealed boxes. "
             . "Card names: keep the player's name in the product name ('Michael Jordan 1990-91 NBA Hoops #65'), and keep any grading in the name too ('... PSA 9') "
-            . "since PSA / BGS grades do not fit the condition field. Artist is the player (or the franchise, e.g. Pokemon).";
+            . "since PSA / BGS grades do not fit the condition field. Artist is the player (or the franchise, e.g. Pokemon). Set character to just the player's or character's name ('Mewtwo', 'Frank Thomas').";
     }
 
     /** Lower-case word list for fuzzy title matching: no accents, punctuation or filler words. */

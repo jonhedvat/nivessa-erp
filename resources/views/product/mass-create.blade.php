@@ -2944,7 +2944,7 @@
                     const matched = (h.match && h.item.toLowerCase().indexOf(String(h.match).toLowerCase()) !== 0) ? ' <span class="text-muted">(our &ldquo;' + esc(h.match) + '&rdquo;)</span>' : '';
                     // Sarah 2026-11-19: card priced off our sales of the same player, not this exact card.
                     if (h.by_player) {
-                        return '<li><strong>' + esc(h.item) + '</strong>: we&rsquo;ve sold this player\'s cards ' + h.sales + 'x, usually ' + money(h.median) + speed
+                        return '<li><strong>' + esc(h.item) + '</strong>: we&rsquo;ve sold ' + esc(h.who || 'this player') + ' cards ' + h.sales + 'x, usually ' + money(h.median) + speed
                             + (h.in_stock > 0 ? ', ' + h.in_stock + ' in stock now' : '')
                             + ' &rarr; <strong style="color:#15803d;">priced at ' + money(h.price) + '</strong>' + (h.fast ? ' (fast seller)' : '') + '</li>';
                     }
