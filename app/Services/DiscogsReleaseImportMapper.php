@@ -103,9 +103,21 @@ class DiscogsReleaseImportMapper
         // to "Sealed Vinyl > Genre" instead of "Used Vinyl > Genre".
         $releaseYear = $this->extractReleaseYear($payload);
 
-        $overrideTerms = $this->artistGenreLookup->termsForArtist($artistStr !== '' ? $artistStr : null);
+        // Sarah 2026-11-19: a Metal / Nu-Metal / New Wave / Alt Rock style on
+        // the release always picks that genre bin — ahead of the store
+        // artist-genre list and how we filed the artist before, so these
+        // never fall into plain Rock.
+        $styleLower = array_map(static function ($x) { return mb_strtolower(trim((string) $x)); }, is_array($payload->styles ?? null) ? $payload->styles : []);
         $resolved = null;
-        if ($overrideTerms !== []) {
+        if ($this->keyStyleTerms($styleLower) !== []) {
+            $byStyle = $this->resolveCategoryFromGenres($businessId, $payload->genres ?? [], $payload->styles ?? [], $formatTokens, [], $releaseYear);
+            if ($byStyle['category_id'] !== null && $byStyle['sub_category_id'] !== null) {
+                $resolved = $byStyle;
+                $warnings[] = 'Category from the Discogs style (' . implode(', ', $payload->styles) . ').';
+            }
+        }
+        $overrideTerms = $this->artistGenreLookup->termsForArtist($artistStr !== '' ? $artistStr : null);
+        if ($resolved === null && $overrideTerms !== []) {
             $override = $this->resolveCategoryFromGenres($businessId, $overrideTerms, [], $formatTokens, [], $releaseYear);
             if ($override['category_id'] !== null) {
                 $resolved = $override;
@@ -118,17 +130,6 @@ class DiscogsReleaseImportMapper
         // already file this artist's existing products (their most common
         // genre subcategory) before trusting Discogs' genres — keeps new
         // adds binned next to the copies already on the shelf.
-        // Sarah 2026-11-19: a Metal / Nu-Metal / New Wave / Alt Rock style on
-        // the release beats how we filed the artist before (e.g. an Alt Rock
-        // CD by a band whose other copies sit in Rock).
-        $styleLower = array_map(static function ($x) { return mb_strtolower(trim((string) $x)); }, is_array($payload->styles ?? null) ? $payload->styles : []);
-        if ($resolved === null && $this->keyStyleTerms($styleLower) !== []) {
-            $byStyle = $this->resolveCategoryFromGenres($businessId, $payload->genres ?? [], $payload->styles ?? [], $formatTokens, [], $releaseYear);
-            if ($byStyle['category_id'] !== null && $byStyle['sub_category_id'] !== null) {
-                $resolved = $byStyle;
-                $warnings[] = 'Category from the Discogs style (' . implode(', ', $payload->styles) . ').';
-            }
-        }
         if ($resolved === null && $artistStr !== '') {
             $history = $this->resolveFromExistingArtistProducts($businessId, $artistStr, $formatTokens, $releaseYear);
             if ($history !== null) {
@@ -601,12 +602,12 @@ class DiscogsReleaseImportMapper
             }
         }
         foreach ($styleTerms as $st) {
-            if (mb_strpos($st, 'new wave') !== false) {
+            if (mb_strpos($st, 'new wave') !== false || preg_match('/\bpost[\s-]?punk\b/u', $st)) {
                 $out[] = 'new wave';
             }
         }
         foreach ($styleTerms as $st) {
-            if (preg_match('/\b(alternative|alt|indie) rock\b/u', $st)) {
+            if (preg_match('/\b(alternative|alt|indie) rock\b|\bgrunge\b/u', $st)) {
                 // "indie" also finds bins without the word rock:
                 // 7" "Alt / Indie", sealed cassettes "alt/indie".
                 $out[] = 'alt rock';
