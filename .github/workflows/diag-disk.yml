@@ -1,0 +1,45 @@
+name: Diag disk usage
+
+# Read-only: where is disk going on the prod VPS (Hostinger disk-full alerts).
+on:
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Add server to known_hosts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3 4 5; do ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true; grep -q . ~/.ssh/known_hosts && break; sleep 5; done
+      - name: Disk usage
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          command_timeout: 20m
+          script_stop: false
+          script: |
+            set +e
+            echo "== host $(hostname) user $(id -un) sudo=$(sudo -n true 2>/dev/null && echo yes || echo no)"
+            df -h /
+            echo "== /www"; du -xh --max-depth=2 /www 2>/dev/null | sort -rh | head -25
+            cd /www/playlist.nivessa.com/app
+            echo "== erp app dirs"; du -xh --max-depth=2 . 2>/dev/null | sort -rh | head -25
+            echo "== big files in /www >200M"; find /www -xdev -type f -size +200M -printf '%s\t%TY-%Tm-%Td\t%p\n' 2>/dev/null | sort -rn | head -30 | awk -F'\t' '{printf "%.1fG\t%s\t%s\n",$1/1073741824,$2,$3}'
+            echo "== mysql"
+            php artisan tinker --no-interaction --execute="
+              foreach (DB::select('SELECT table_schema s, ROUND(SUM(data_length+index_length+data_free)/1073741824,2) gb FROM information_schema.tables GROUP BY table_schema ORDER BY gb DESC') as \$r) echo 'DB ' . \$r->s . ' ' . \$r->gb . 'G' . PHP_EOL;
+              foreach (DB::select('SELECT table_schema s, table_name t, ROUND((data_length+index_length)/1073741824,2) gb, ROUND(data_free/1073741824,2) free, table_rows r FROM information_schema.tables ORDER BY data_length+index_length+data_free DESC LIMIT 25') as \$r) echo 'TBL ' . \$r->s . '.' . \$r->t . ' ' . \$r->gb . 'G free=' . \$r->free . 'G rows=' . \$r->r . PHP_EOL;
+              try { \$b = DB::select('SHOW BINARY LOGS'); \$t=0; foreach (\$b as \$x) \$t += \$x->File_size; echo 'BINLOGS n=' . count(\$b) . ' total=' . round(\$t/1073741824,2) . 'G first=' . (\$b[0]->Log_name ?? '') . PHP_EOL; } catch (\Throwable \$e) { echo 'BINLOGS err: ' . \$e->getMessage() . PHP_EOL; }
+              foreach (['log_bin','binlog_expire_logs_seconds','expire_logs_days','general_log','slow_query_log','datadir','innodb_file_per_table'] as \$v) { try { \$x = DB::select('SELECT @@' . \$v . ' v'); echo 'VAR ' . \$v . '=' . \$x[0]->v . PHP_EOL; } catch (\Throwable \$e) { echo 'VAR ' . \$v . ' n/a' . PHP_EOL; } }
+            " 2>&1 | head -60
