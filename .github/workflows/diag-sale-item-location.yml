@@ -1,0 +1,62 @@
+# READ-ONLY diagnostic: for a given sale (transactions.id), list each sold
+# product's listing_location / bin_position / business location. No writes.
+name: Diag sale item location
+
+on:
+  workflow_dispatch:
+    inputs:
+      transaction_id:
+        description: "Sale id (the number in /sells/<id>)"
+        required: true
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 0
+
+      - name: Look up listing location (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 90s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            TX_ID="${{ github.event.inputs.transaction_id }}"
+            echo "=== looking up sale $TX_ID ==="
+            php artisan tinker --no-ansi <<PHP
+            \$tx = (int) "$TX_ID";
+            \$t = \\Illuminate\\Support\\Facades\\DB::table('transactions')->where('id', \$tx)->first(['id','invoice_no','location_id','transaction_date']);
+            echo "TX_JSON: " . json_encode(\$t) . "\\n";
+            \$lines = \\Illuminate\\Support\\Facades\\DB::table('transaction_sell_lines as l')->leftJoin('products as p','p.id','=','l.product_id')->leftJoin('business_locations as bl','bl.id','=','p.business_location_id')->where('l.transaction_id', \$tx)->get(['l.product_id','p.sku','p.name','p.listing_location','p.bin_position','p.discogs_release_id','bl.name as product_location']);
+            echo "LINES_JSON: " . \$lines->toJson() . "\\n";
+            PHP
+            echo "=== done ==="
