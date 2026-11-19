@@ -30,16 +30,26 @@ jobs:
           script_stop: false
           script: |
             set +e
-            echo "== host $(hostname) user $(id -un) sudo=$(sudo -n true 2>/dev/null && echo yes || echo no)"
-            df -h /
-            echo "== /www"; du -xh --max-depth=2 /www 2>/dev/null | sort -rh | head -25
             cd /www/playlist.nivessa.com/app
-            echo "== erp app dirs"; du -xh --max-depth=2 . 2>/dev/null | sort -rh | head -25
-            echo "== big files in /www >200M"; find /www -xdev -type f -size +200M -printf '%s\t%TY-%Tm-%Td\t%p\n' 2>/dev/null | sort -rn | head -30 | awk -F'\t' '{printf "%.1fG\t%s\t%s\n",$1/1073741824,$2,$3}'
-            echo "== mysql"
-            php artisan tinker --no-interaction --execute="
-              foreach (DB::select('SELECT table_schema s, ROUND(SUM(data_length+index_length+data_free)/1073741824,2) gb FROM information_schema.tables GROUP BY table_schema ORDER BY gb DESC') as \$r) echo 'DB ' . \$r->s . ' ' . \$r->gb . 'G' . PHP_EOL;
-              foreach (DB::select('SELECT table_schema s, table_name t, ROUND((data_length+index_length)/1073741824,2) gb, ROUND(data_free/1073741824,2) free, table_rows r FROM information_schema.tables ORDER BY data_length+index_length+data_free DESC LIMIT 25') as \$r) echo 'TBL ' . \$r->s . '.' . \$r->t . ' ' . \$r->gb . 'G free=' . \$r->free . 'G rows=' . \$r->r . PHP_EOL;
-              try { \$b = DB::select('SHOW BINARY LOGS'); \$t=0; foreach (\$b as \$x) \$t += \$x->File_size; echo 'BINLOGS n=' . count(\$b) . ' total=' . round(\$t/1073741824,2) . 'G first=' . (\$b[0]->Log_name ?? '') . PHP_EOL; } catch (\Throwable \$e) { echo 'BINLOGS err: ' . \$e->getMessage() . PHP_EOL; }
-              foreach (['log_bin','binlog_expire_logs_seconds','expire_logs_days','general_log','slow_query_log','datadir','innodb_file_per_table'] as \$v) { try { \$x = DB::select('SELECT @@' . \$v . ' v'); echo 'VAR ' . \$v . '=' . \$x[0]->v . PHP_EOL; } catch (\Throwable \$e) { echo 'VAR ' . \$v . ' n/a' . PHP_EOL; } }
-            " 2>&1 | head -60
+            echo "== storage/app depth 3"; du -xh --max-depth=3 storage/app 2>/dev/null | sort -rh | head -30
+            echo "== storage/logs"; ls -lhS storage/logs | head -10
+            for d in $(du -x --max-depth=2 storage/app 2>/dev/null | sort -rn | sed -n '2,4p' | cut -f2); do
+              echo "== $d: file count $(find $d -type f | wc -l)"
+              echo "-- by month (mtime)"; find $d -type f -printf '%TY-%Tm %s\n' | awk '{a[$1]+=$2;n[$1]++} END{for(k in a) printf "%s %.1fG %d files\n",k,a[k]/1073741824,n[k]}' | sort | tail -24
+              echo "-- by extension"; find $d -type f -printf '%f %s\n' | awk '{n=split($1,x,"."); e=(n>1?x[n]:"none"); a[e]+=$2; c[e]++} END{for(k in a) printf "%.1fG %d .%s\n",a[k]/1073741824,c[k],k}' | sort -rn | head -8
+              echo "-- sample newest"; ls -lt $d | head -6
+              echo "-- sample oldest"; ls -ltr $d | head -4
+            done
+            cat > /tmp/diskdiag.php <<'PHPEOF'
+            <?php
+            require '/www/playlist.nivessa.com/app/vendor/autoload.php';
+            $app = require '/www/playlist.nivessa.com/app/bootstrap/app.php';
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            use Illuminate\Support\Facades\DB;
+            foreach (DB::select('SELECT table_schema s, ROUND(SUM(data_length+index_length+data_free)/1073741824,2) gb FROM information_schema.tables GROUP BY table_schema ORDER BY gb DESC') as $r) echo "DB {$r->s} {$r->gb}G\n";
+            foreach (DB::select('SELECT table_schema s, table_name t, ROUND((data_length+index_length)/1073741824,2) gb, ROUND(data_free/1073741824,2) fr, table_rows r FROM information_schema.tables ORDER BY data_length+index_length+data_free DESC LIMIT 15') as $r) echo "TBL {$r->s}.{$r->t} {$r->gb}G free={$r->fr}G rows={$r->r}\n";
+            try { $b = DB::select('SHOW BINARY LOGS'); $t=0; foreach ($b as $x) $t += $x->File_size; echo 'BINLOGS n='.count($b).' total='.round($t/1073741824,2)."G\n"; } catch (\Throwable $e) { echo 'BINLOGS err: '.substr($e->getMessage(),0,150)."\n"; }
+            foreach (['log_bin','binlog_expire_logs_seconds','general_log','general_log_file','slow_query_log','datadir'] as $v) { try { $x = DB::select("SELECT @@$v v"); echo "VAR $v=".$x[0]->v."\n"; } catch (\Throwable $e) { echo "VAR $v n/a\n"; } }
+            PHPEOF
+            sed -i 's/^            //' /tmp/diskdiag.php
+            echo "== mysql"; php /tmp/diskdiag.php 2>&1 | head -40; rm -f /tmp/diskdiag.php
