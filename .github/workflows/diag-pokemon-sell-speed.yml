@@ -1,0 +1,32 @@
+# Read-only: per-Pokemon card sales (last 2y), price, days to sell, stock. No writes.
+
+name: Diag Pokemon card sell speed (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X3RpbWVfbGltaXQoMCk7CiR1ID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ0pvbmF0aGFuJyktPndoZXJlKCdsYXN0X25hbWUnLCdsaWtlJywnSGVkdmF0JScpLT5maXJzdCgpOwokYmlkID0gJHUtPmJ1c2luZXNzX2lkOwokbmFtZXMgPSBbJ01pbWlreXUnLCdQaWthY2h1JywnTmlkb3JhbicsJ0FyY2FuaW5lJywnQ2hhcm1hbmRlcicsJ0NoYXJpemFyZCcsJ0VldmVlJywnR2VuZ2FyJywnTWV3dHdvJywnVW1icmVvbiddOwpmb3JlYWNoICgkbmFtZXMgYXMgJG5tKSB7CiAgJHByb2RzID0gREI6OnRhYmxlKCdwcm9kdWN0cyBhcyBwJyktPmpvaW4oJ2NhdGVnb3JpZXMgYXMgYycsJ2MuaWQnLCc9JywncC5jYXRlZ29yeV9pZCcpCiAgICAtPndoZXJlKCdwLmJ1c2luZXNzX2lkJywkYmlkKS0+d2hlcmUoJ2MubmFtZScsJ2xpa2UnLCdUcmFkaW5nIENhcmQlJykKICAgIC0+d2hlcmUoZnVuY3Rpb24oJHEpIHVzZSgkbm0peyAkcS0+d2hlcmUoJ3AubmFtZScsJ2xpa2UnLCIlJG5tJSIpLT5vcldoZXJlKCdwLmFydGlzdCcsJ2xpa2UnLCIlJG5tJSIpOyB9KQogICAgLT5nZXQoWydwLmlkJywncC5uYW1lJywncC5jcmVhdGVkX2F0J10pOwogICRpZHMgPSAkcHJvZHMtPnBsdWNrKCdpZCcpLT5hbGwoKTsKICAkY3JlYXRlZCA9ICRwcm9kcy0+cGx1Y2soJ2NyZWF0ZWRfYXQnLCdpZCcpOwogICRzYWxlcyA9ICRpZHMgPyBEQjo6dGFibGUoJ3RyYW5zYWN0aW9uX3NlbGxfbGluZXMgYXMgdHNsJyktPmpvaW4oJ3RyYW5zYWN0aW9ucyBhcyB0JywndC5pZCcsJz0nLCd0c2wudHJhbnNhY3Rpb25faWQnKQogICAgLT53aGVyZUluKCd0c2wucHJvZHVjdF9pZCcsJGlkcyktPndoZXJlKCd0LmJ1c2luZXNzX2lkJywkYmlkKS0+d2hlcmUoJ3QudHlwZScsJ3NlbGwnKS0+d2hlcmUoJ3Quc3RhdHVzJywnZmluYWwnKQogICAgLT53aGVyZU51bGwoJ3RzbC5wYXJlbnRfc2VsbF9saW5lX2lkJyktPndoZXJlKCd0LnRyYW5zYWN0aW9uX2RhdGUnLCc+PScsbm93KCktPnN1YlllYXJzKDIpKS0+d2hlcmUoJ3RzbC51bml0X3ByaWNlX2luY190YXgnLCc+JywwKQogICAgLT5nZXQoWyd0c2wucHJvZHVjdF9pZCcsJ3RzbC5xdWFudGl0eScsJ3RzbC51bml0X3ByaWNlX2luY190YXggYXMgcHJpY2UnLCd0LnRyYW5zYWN0aW9uX2RhdGUnXSkgOiBjb2xsZWN0KCk7CiAgJHByaWNlcyA9ICRzYWxlcy0+cGx1Y2soJ3ByaWNlJyktPm1hcChmbigkcCk9PihmbG9hdCkkcCktPnNvcnQoKS0+dmFsdWVzKCktPmFsbCgpOwogICRuID0gY291bnQoJHByaWNlcyk7CiAgJG1lZCA9ICRuID8gKCRuJTIgPyAkcHJpY2VzW2ludGRpdigkbiwyKV0gOiAoJHByaWNlc1skbi8yLTFdKyRwcmljZXNbJG4vMl0pLzIpIDogbnVsbDsKICAkZGF5cyA9IFtdOwogIGZvcmVhY2ggKCRzYWxlcy0+Z3JvdXBCeSgncHJvZHVjdF9pZCcpIGFzICRwaWQ9PiRyb3dzKSB7ICRjPSRjcmVhdGVkWyRwaWRdPz9udWxsOyBpZighJGMpIGNvbnRpbnVlOyAkZD0oc3RydG90aW1lKCRyb3dzLT5taW4oJ3RyYW5zYWN0aW9uX2RhdGUnKSktc3RydG90aW1lKCRjKSkvODY0MDA7IGlmKCRkPj0wKSAkZGF5c1tdPSRkOyB9CiAgc29ydCgkZGF5cyk7ICRtZCA9ICRkYXlzID8gcm91bmQoJGRheXNbaW50ZGl2KGNvdW50KCRkYXlzKSwyKV0pIDogbnVsbDsKICAkc3RvY2sgPSAkaWRzID8gKGZsb2F0KSBEQjo6dGFibGUoJ3ZhcmlhdGlvbl9sb2NhdGlvbl9kZXRhaWxzJyktPndoZXJlSW4oJ3Byb2R1Y3RfaWQnLCRpZHMpLT5zdW0oJ3F0eV9hdmFpbGFibGUnKSA6IDA7CiAgJGxhc3QgPSAkc2FsZXMtPm1heCgndHJhbnNhY3Rpb25fZGF0ZScpOwogIHByaW50ZigiUE9LRVx0JXNcdHByb2R1Y3RzPSVkXHRzb2xkPSVkXHR1bml0cz0lZFx0bWVkaWFuPSVzXHRtaW49JXNcdG1heD0lc1x0bWVkRGF5c1RvU2VsbD0lc1x0aW5TdG9jaz0lZFx0bGFzdFNhbGU9JXNcbiIsCiAgICAkbm0sIGNvdW50KCRpZHMpLCAkbiwgJHNhbGVzLT5zdW0oJ3F1YW50aXR5JyksICRtZWQ9PT1udWxsPyctJzonJCcucm91bmQoJG1lZCwyKSwgJG4/JyQnLnJvdW5kKCRwcmljZXNbMF0sMik6Jy0nLCAkbj8nJCcucm91bmQoJHByaWNlc1skbi0xXSwyKTonLScsICRtZD09PW51bGw/Jy0nOiRtZCwgJHN0b2NrLCAkbGFzdCA/IHN1YnN0cigkbGFzdCwwLDEwKSA6ICctJyk7CiAgZm9yZWFjaCAoJHNhbGVzLT5zb3J0QnlEZXNjKCd0cmFuc2FjdGlvbl9kYXRlJyktPnRha2UoNSkgYXMgJHMpIHByaW50ZigiICAgc29sZCAlcyAgJCUuMmYgICVzXG4iLCBzdWJzdHIoJHMtPnRyYW5zYWN0aW9uX2RhdGUsMCwxMCksICRzLT5wcmljZSwgbWJfc3Vic3RyKCRwcm9kcy0+Zmlyc3RXaGVyZSgnaWQnLCRzLT5wcm9kdWN0X2lkKS0+bmFtZSA/PyAnJywwLDYwKSk7Cn0K' | base64 -d > /tmp/diag_poke.php
+            php /tmp/diag_poke.php
+            rm -f /tmp/diag_poke.php
