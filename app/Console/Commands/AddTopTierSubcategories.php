@@ -56,7 +56,8 @@ class AddTopTierSubcategories extends Command
             'CD - Sealed' => ['Soundtracks', 'Gospel'],
             'Toys' => ['Anime Figures'],
             'Trading Cards' => ['Graded Slabs'],
-            'Magazines' => ['National Geographic', 'Music Magazines', 'Gaming Magazines'],
+            // Sarah 2026-11-19: 'Gaming Magazines' merged into the existing 'Video Games'.
+            'Magazines' => ['National Geographic', 'Music Magazines'],
             'Books' => ['Marvel Comics', 'DC Comics', 'Indie & Image Comics'],
         ];
     }
@@ -131,10 +132,10 @@ class AddTopTierSubcategories extends Command
                 'match' => '\bspin\b|alternative press|^ap\b|kerrang|\bmojo\b|\buncut\b|\bnme\b|billboard|\bcreem\b|guitar world|guitar player|revolver|decibel|\bvibe\b|the source|\bxxl\b|downbeat|down beat|relix|magnet magazine|hit parader|circus magazine|metal hammer|trouser press|musician|blender|tiger beat|\b16 magazine|teen beat|right on!?|jet magazine',
             ],
             [
-                'label' => 'Gaming Magazines',
+                'label' => 'Video Games (magazines)',
                 'parents' => ['Magazines'],
                 'from' => [null, 'Pop Culture', 'Magazines (New, Vintage)'],
-                'to' => 'Gaming Magazines',
+                'to' => 'Video Games',
                 'match' => 'nintendo power|game ?informer|\begm\b|electronic gaming|gamepro|pc gamer|playstation|xbox|tips ?& ?tricks|computer gaming|sega visions|gamefan|nintendo',
             ],
             [
