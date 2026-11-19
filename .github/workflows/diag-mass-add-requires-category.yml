@@ -1,0 +1,33 @@
+# Calls Mass Add save with rows that must fail validation (no store location, blank /
+# deleted category) and prints the errors. Nothing is created.
+
+name: Diag Mass Add requires category (no writes)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X2V4Y2VwdGlvbl9oYW5kbGVyKGZ1bmN0aW9uKCRlKXsgZWNobyAnRVJSICcgLiBnZXRfY2xhc3MoJGUpIC4gJyAnIC4gbWJfc3Vic3RyKCRlLT5nZXRNZXNzYWdlKCksMCwzMDApIC4gIlxuIjsgfSk7CiR1ID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ0pvbmF0aGFuJyktPndoZXJlKCdsYXN0X25hbWUnLCdsaWtlJywnSGVkdmF0JScpLT5maXJzdCgpOwpJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xBdXRoOjpsb2dpblVzaW5nSWQoJHUtPmlkKTsKJGJlZm9yZSA9IERCOjp0YWJsZSgncHJvZHVjdHMnKS0+d2hlcmUoJ2J1c2luZXNzX2lkJywkdS0+YnVzaW5lc3NfaWQpLT5tYXgoJ2lkJyk7Ci8vIE5vIGJ1c2luZXNzX2xvY2F0aW9ucyBvbiBwdXJwb3NlOiB2YWxpZGF0aW9uIG11c3QgZmFpbCwgc28gbm90aGluZyBjYW4gYmUgY3JlYXRlZC4KJHJlcSA9IElsbHVtaW5hdGVcSHR0cFxSZXF1ZXN0OjpjcmVhdGUoJy9wcm9kdWN0L21hc3Mtc3RvcmUnLCAnUE9TVCcsIFsncHJvZHVjdHMnID0+IFsKICBbJ25hbWUnID0+ICdESUFHIG5vLWNhdGVnb3J5IGNoZWNrJywgJ3NpbmdsZV9kc3BfaW5jX3RheCcgPT4gJzUnXSwKICBbJ25hbWUnID0+ICdESUFHIGRlbGV0ZWQtY2F0ZWdvcnkgY2hlY2snLCAnc2luZ2xlX2RzcF9pbmNfdGF4JyA9PiAnNScsICdjYXRlZ29yeV9pZCcgPT4gMzYwXSwKXV0pOwokcmVxLT5oZWFkZXJzLT5zZXQoJ0FjY2VwdCcsJ2FwcGxpY2F0aW9uL2pzb24nKTsgJHJlcS0+aGVhZGVycy0+c2V0KCdYLVJlcXVlc3RlZC1XaXRoJywnWE1MSHR0cFJlcXVlc3QnKTsKJHMgPSBhcHAoJ3Nlc3Npb24nKS0+ZHJpdmVyKCdhcnJheScpOyAkcy0+cHV0KCd1c2VyLmJ1c2luZXNzX2lkJywgJHUtPmJ1c2luZXNzX2lkKTsgJHJlcS0+c2V0TGFyYXZlbFNlc3Npb24oJHMpOwphcHAoKS0+aW5zdGFuY2UoJ3JlcXVlc3QnLCAkcmVxKTsKdHJ5IHsgJHJlcyA9IGFwcChBcHBcSHR0cFxDb250cm9sbGVyc1xQcm9kdWN0Q29udHJvbGxlcjo6Y2xhc3MpLT5tYXNzU3RvcmUoJHJlcSk7IH0KY2F0Y2ggKElsbHVtaW5hdGVcVmFsaWRhdGlvblxWYWxpZGF0aW9uRXhjZXB0aW9uICRlKSB7IGVjaG8gIlZBTElEQVRJT04gIiAuIGpzb25fZW5jb2RlKCRlLT5lcnJvcnMoKSkgLiAiXG4iOyAkcmVzID0gbnVsbDsgfQppZiAoJHJlcykgZWNobyAiU1RBVFVTICIgLiAkcmVzLT5nZXRTdGF0dXNDb2RlKCkgLiAiXG5CT0RZICIgLiBtYl9zdWJzdHIoJHJlcy0+Z2V0Q29udGVudCgpLDAsODAwKSAuICJcbiI7CiRhZnRlciA9IERCOjp0YWJsZSgncHJvZHVjdHMnKS0+d2hlcmUoJ2J1c2luZXNzX2lkJywkdS0+YnVzaW5lc3NfaWQpLT5tYXgoJ2lkJyk7CmVjaG8gIkNSRUFURUQgIiAuICgkYWZ0ZXIgLSAkYmVmb3JlKSAuICJcbiI7Cg==' | base64 -d > /tmp/diag_mass_cat.php
+            php /tmp/diag_mass_cat.php 2>&1 || true
+            rm -f /tmp/diag_mass_cat.php

@@ -4417,12 +4417,14 @@ class ProductController extends Controller
                 }
             }
             $categoryNames = [];
+            $deletedCategoryIds = [];
             if (!empty($categoryIds)) {
                 $rows = DB::table('categories')
                     ->whereIn('id', array_keys($categoryIds))
-                    ->pluck('name', 'id');
-                foreach ($rows as $id => $name) {
-                    $categoryNames[$id] = strtolower(trim((string) $name));
+                    ->get(['id', 'name', 'deleted_at']);
+                foreach ($rows as $row) {
+                    $categoryNames[$row->id] = strtolower(trim((string) $row->name));
+                    if ($row->deleted_at) $deletedCategoryIds[$row->id] = true;
                 }
             }
 
@@ -4445,6 +4447,21 @@ class ProductController extends Controller
                 $catId = $productInput['category_id'] ?? null;
                 $catName = ($catId !== null && isset($categoryNames[$catId])) ? $categoryNames[$catId] : null;
                 $artist = isset($productInput['artist']) ? trim((string) $productInput['artist']) : '';
+
+                // Sarah 2026-11-19: new items saved with a blank category (~1 in 70 Mass Add
+                // rows; 300+ in stock) dropped out of every category report and the pricer's
+                // stats. A new item must have a category, and not a deleted one.
+                if (!$isExistingProduct && ($catId === null || $catId === '' || (int) $catId === 0)) {
+                    $validator->errors()->add(
+                        "products.$index.category_id",
+                        'Pick a category for this item'
+                    );
+                } elseif (!$isExistingProduct && isset($deletedCategoryIds[$catId])) {
+                    $validator->errors()->add(
+                        "products.$index.category_id",
+                        'That category was deleted, pick another'
+                    );
+                }
 
                 if ($catName !== null && in_array($catName, $artistRequiredCategoryNames, true) && $artist === '') {
                     $validator->errors()->add(

@@ -1603,6 +1603,7 @@
                         // Clear previous error messages
                         $('.error-message').remove();
                         $('.is-invalid').removeClass('is-invalid');
+                        $('.select2-selection.cat-missing').removeClass('cat-missing').css({ border: '', background: '' });
                         
                         // Helper function to add error message
                         function addError(inputSelector, errorMessage) {
@@ -1654,6 +1655,11 @@
                                 addError(`[name="products[${productIndex}][business_locations][]"]`, errors[key][0]);
                             } else {
                                 addError(`[name="products[${productIndex}][${fieldName}]"]`, errors[key][0]);
+                            }
+                            // Category is a hidden field behind the category picker: outline the picker in red.
+                            if (fieldName === 'category_id') {
+                                $(`[name="products[${productIndex}][category_id]"]`).closest('td').find('.select2-selection').first()
+                                    .addClass('cat-missing is-invalid').css({ border: '2px solid #dc2626', background: '#fef2f2' });
                             }
 
                             // Add to error messages array for toastr
