@@ -41,6 +41,15 @@ jobs:
             if [ "${{ inputs.run_backup }}" = "true" ]; then
               echo "== running db:backup-daily"; time php artisan db:backup-daily 2>&1 | tail -5
             fi
+            echo "== verify: are other business folders copies of folder 1?"
+            B=storage/app/database_backups
+            for d in 1 3 12 20; do f=$(ls $B/$d/backup_20261118_*.sql 2>/dev/null | head -1); [ -z "$f" ] && continue
+              echo "-- folder $d: $(basename $f) bytes=$(stat -c%s $f) tables=$(grep -c '^CREATE TABLE' $f) db=$(grep -m1 '^-- Host:' $f | tr -d '\r')"
+              echo "   distinct business_id inserted into transactions: $(grep -m1 '^INSERT INTO `business` ' $f | grep -o '),(' | wc -l) extra business rows"
+            done
+            a=$(ls $B/1/backup_20261118_*.sql); b=$(ls $B/20/backup_20261118_*.sql)
+            echo "-- line-level diff folder1 vs folder20 (same night): $(diff $a $b | grep -c '^[<>]') changed lines of $(wc -l < $a)"
+            echo "== where is the rest? (ERP user view)"; du -xsh /www/playlist.nivessa.com 2>/dev/null; ls -ld /www /www/* 2>/dev/null
             df -h /
             echo "== backup dirs"; du -sh storage/app/database_backups/* 2>/dev/null | sort -V | head -25; ls -lh storage/app/database_backups/1 2>/dev/null
             echo "== storage/app depth 3"; du -xh --max-depth=3 storage/app 2>/dev/null | sort -rh | head -30
