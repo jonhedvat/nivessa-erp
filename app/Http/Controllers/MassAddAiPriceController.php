@@ -395,7 +395,8 @@ class MassAddAiPriceController extends Controller
                     // whole dollars, between $1 and our usual top price for this kind of card.
                     // Sarah 2026-11-19: if we've sold this card or player, never below that
                     // (fast sellers get the bigger floor from storeHistory / historyStats).
-                    $scaled = (float) max(1, min(round($ai * self::CARD_WALKIN_SHARE), max($cs['p90'], $cs['median'])));
+                    // Lowest: what our cheapest 1 in 10 of this kind went for (MLB $1, Jordan $4).
+                    $scaled = (float) max(1, $cs['p10'] ?? 1, min(round($ai * self::CARD_WALKIN_SHARE), max($cs['p90'], $cs['median'])));
                     $price = min($ai, $scaled);
                     // A player we've sold 3+ times cheaply (Canseco $1 same day, Nolan Ryan $2)
                     // stays within 2x our usual top price for that player; the AI's online number
@@ -510,7 +511,7 @@ class MassAddAiPriceController extends Controller
     private function cardStats($businessId)
     {
         try {
-            return \Cache::remember('mass_add_ai_price_stats_v2_' . $businessId, now()->addHours(6), function () use ($businessId) {
+            return \Cache::remember('mass_add_ai_price_stats_v3_' . $businessId, now()->addHours(6), function () use ($businessId) {
                 $rows = DB::table('transaction_sell_lines as tsl')
                     ->join('transactions as t', 't.id', '=', 'tsl.transaction_id')
                     ->join('products as p', 'p.id', '=', 'tsl.product_id')
@@ -538,7 +539,7 @@ class MassAddAiPriceController extends Controller
                         }
                         return $hist[count($hist) - 1][0];
                     };
-                    $out[$label] = ['sales' => $n, 'p25' => $pct(0.25), 'median' => $pct(0.5), 'p90' => $pct(0.9)];
+                    $out[$label] = ['sales' => $n, 'p10' => $pct(0.1), 'p25' => $pct(0.25), 'median' => $pct(0.5), 'p90' => $pct(0.9)];
                 }
                 return $out;
             });
