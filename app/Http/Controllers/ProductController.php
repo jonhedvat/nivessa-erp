@@ -63,7 +63,8 @@ class ProductController extends Controller
         'CD - Used > R&B, Soul, and Funk' => 8, 'CD - Used > Electronic/Dance' => 8, 'CD - Used > Soundtracks' => 8,
         'Cassettes - Used > Rock' => 10,
         'Books > Comic Books' => 5,
-        // Sealed CD / sealed vinyl: no floor (Sarah 2026-11-17).
+        // Sarah 2026-11-19: every sealed CD is at least $12. Sealed vinyl: no floor.
+        'CD - Sealed > *' => 12,
     ];
 
     private static function floorKey($s)

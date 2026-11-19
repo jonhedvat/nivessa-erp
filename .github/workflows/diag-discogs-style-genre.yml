@@ -1,0 +1,33 @@
+# Read-only: php -l + maps sample CD releases through DiscogsReleaseImportMapper.
+
+name: Diag Discogs style to genre mapping (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X2V4Y2VwdGlvbl9oYW5kbGVyKGZ1bmN0aW9uKCRlKXsgZWNobyAnRVJSICcgLiBtYl9zdWJzdHIoJGUtPmdldE1lc3NhZ2UoKSwwLDQwMCkgLiAiXG4iOyB9KTsKJHUgPSBEQjo6dGFibGUoJ3VzZXJzJyktPndoZXJlKCdmaXJzdF9uYW1lJywnSm9uYXRoYW4nKS0+d2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCdIZWR2YXQlJyktPmZpcnN0KCk7CiRiaWQgPSAkdS0+YnVzaW5lc3NfaWQ7CiRjYXRzID0gREI6OnRhYmxlKCdjYXRlZ29yaWVzJyktPndoZXJlKCdidXNpbmVzc19pZCcsJGJpZCktPnBsdWNrKCduYW1lJywnaWQnKTsKJHN2YyA9IG5ldyBcQXBwXFNlcnZpY2VzXERpc2NvZ3NTZXJ2aWNlKCRiaWQpOwokdGVzdHMgPSBbWydOaXJ2YW5hJywnTmV2ZXJtaW5kJ10sWydSYWRpb2hlYWQnLCdPSyBDb21wdXRlciddLFsnU21hc2hpbmcgUHVtcGtpbnMnLCdTaWFtZXNlIERyZWFtJ10sWydEZXBlY2hlIE1vZGUnLCdWaW9sYXRvciddLFsnTmV3IE9yZGVyJywnU3Vic3RhbmNlJ10sWydEdXJhbiBEdXJhbicsJ1JpbyddLFsnS29ybicsJ0ZvbGxvdyBUaGUgTGVhZGVyJ10sWydMaW1wIEJpemtpdCcsJ1NpZ25pZmljYW50IE90aGVyJ10sWydNZXRhbGxpY2EnLCdNZXRhbGxpY2EnXSxbJ0xpbmtpbiBQYXJrJywnSHlicmlkIFRoZW9yeSddLFsnUGVhcmwgSmFtJywnVGVuJ10sWydUaGUgQ3VyZScsJ0Rpc2ludGVncmF0aW9uJ11dOwpmb3JlYWNoICgkdGVzdHMgYXMgJHQpIHsKICAkciA9ICRzdmMtPmNhbGxBcGkoJHN2Yy0+Z2V0UmVsZWFzZUFwaVVybChbJ2FydGlzdCc9PiR0WzBdLCd0aXRsZSc9PiR0WzFdXSkgLiAnJmZvcm1hdD1DRCcpOwogICRoaXRzID0gKGFycmF5KSAoJHJbJ2RhdGEnXS0+cmVzdWx0cyA/PyBbXSk7CiAgaWYgKCEkaGl0cykgeyBlY2hvICJOT0hJVFx0eyR0WzBdfSAtIHskdFsxXX1cbiI7IGNvbnRpbnVlOyB9CiAgJHJpZCA9IChpbnQpICRoaXRzWzBdLT5pZDsKICAkcmVsID0gJHN2Yy0+Z2V0UmVsZWFzZUJ5SWQoJHJpZCk7CiAgaWYgKGVtcHR5KCRyZWxbJ2RhdGEnXSkpIHsgZWNobyAiTk9SRUxcdCRyaWRcbiI7IGNvbnRpbnVlOyB9CiAgJG0gPSAobmV3IFxBcHBcU2VydmljZXNcRGlzY29nc1JlbGVhc2VJbXBvcnRNYXBwZXIoKSktPm1hcEZyb21BcGlQYXlsb2FkKCRiaWQsICRyZWxbJ2RhdGEnXSwgJHJpZCk7CiAgcHJpbnRmKCJNQVBcdCVzIC0gJXNcdCMlZFx0Zz0lc1x0cz0lc1x0PT4gJXMgPiAlc1x0JXNcbiIsICR0WzBdLCAkdFsxXSwgJHJpZCwgaW1wbG9kZSgnLCcsIChhcnJheSkoJHJlbFsnZGF0YSddLT5nZW5yZXMgPz8gW10pKSwgaW1wbG9kZSgnLCcsIChhcnJheSkoJHJlbFsnZGF0YSddLT5zdHlsZXMgPz8gW10pKSwKICAgICRjYXRzWyRtWydjYXRlZ29yeV9pZCddID8/IDBdID8/ICctJywgJGNhdHNbJG1bJ3N1Yl9jYXRlZ29yeV9pZCddID8/IDBdID8/ICctJywgaW1wbG9kZSgnIHwgJywgJG1bJ3dhcm5pbmdzJ10gPz8gW10pKTsKICB1c2xlZXAoMTIwMDAwMCk7Cn0KZWNobyAnRkxPT1Igc2VhbGVkIENEIHJvY2sgPSAnIC4gdmFyX2V4cG9ydChcQXBwXEh0dHBcQ29udHJvbGxlcnNcUHJvZHVjdENvbnRyb2xsZXI6Om1hc3NBZGRNaW5QcmljZSgnQ0QgLSBTZWFsZWQgPiBSb2NrJyksIHRydWUpIC4gIlxuIjsKZWNobyAnRkxPT1IgdXNlZCBDRCByb2NrID0gJyAuIHZhcl9leHBvcnQoXEFwcFxIdHRwXENvbnRyb2xsZXJzXFByb2R1Y3RDb250cm9sbGVyOjptYXNzQWRkTWluUHJpY2UoJ0NEIC0gVXNlZCA+IFJvY2snKSwgdHJ1ZSkgLiAiXG4iOwo=' | base64 -d > storage/diag_style.php
+            php -l app/Services/DiscogsReleaseImportMapper.php; php -l app/Http/Controllers/ProductController.php
+            php storage/diag_style.php 2>&1 || true
+            rm -f storage/diag_style.php

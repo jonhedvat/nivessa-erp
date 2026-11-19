@@ -118,6 +118,17 @@ class DiscogsReleaseImportMapper
         // already file this artist's existing products (their most common
         // genre subcategory) before trusting Discogs' genres — keeps new
         // adds binned next to the copies already on the shelf.
+        // Sarah 2026-11-19: a Metal / Nu-Metal / New Wave / Alt Rock style on
+        // the release beats how we filed the artist before (e.g. an Alt Rock
+        // CD by a band whose other copies sit in Rock).
+        $styleLower = array_map(static function ($x) { return mb_strtolower(trim((string) $x)); }, is_array($payload->styles ?? null) ? $payload->styles : []);
+        if ($resolved === null && $this->keyStyleTerms($styleLower) !== []) {
+            $byStyle = $this->resolveCategoryFromGenres($businessId, $payload->genres ?? [], $payload->styles ?? [], $formatTokens, [], $releaseYear);
+            if ($byStyle['category_id'] !== null && $byStyle['sub_category_id'] !== null) {
+                $resolved = $byStyle;
+                $warnings[] = 'Category from the Discogs style (' . implode(', ', $payload->styles) . ').';
+            }
+        }
         if ($resolved === null && $artistStr !== '') {
             $history = $this->resolveFromExistingArtistProducts($businessId, $artistStr, $formatTokens, $releaseYear);
             if ($history !== null) {
@@ -519,22 +530,27 @@ class DiscogsReleaseImportMapper
 
         $preferred = [];
 
+        // Sarah 2026-11-19: Metal / Nu-Metal / New Wave / Alt Rock styles
+        // pick our genre whatever Discogs' top genre is (New Wave is often
+        // filed under Electronic or Pop, not Rock).
+        $keyStyles = $this->keyStyleTerms($styleTerms);
+        foreach ($keyStyles as $t) {
+            if ($t === 'new wave' || $t === 'alt rock') {
+                continue; // ordered below, after punk
+            }
+            $preferred[] = $t;
+        }
+
         // Rock → prefer the sub-style category.
+        if ($has($genreTerms, 'rock') && $has($styleTerms, 'punk')) {
+            $preferred[] = 'punk';
+        }
+        foreach ($keyStyles as $t) {
+            if ($t === 'new wave' || $t === 'alt rock') {
+                $preferred[] = $t;
+            }
+        }
         if ($has($genreTerms, 'rock')) {
-            if ($has($styleTerms, 'metal')) {
-                $preferred[] = 'metal';
-            }
-            if ($has($styleTerms, 'punk')) {
-                $preferred[] = 'punk';
-            }
-            if ($has($styleTerms, 'new wave')) {
-                $preferred[] = 'new wave';
-            }
-            if ($has($styleTerms, 'alternative rock')
-                || $has($styleTerms, 'alt rock')
-                || $has($styleTerms, 'indie rock')) {
-                $preferred[] = 'alt rock';
-            }
             if ($has($styleTerms, 'blues')) {
                 $preferred[] = 'blues';
             }
@@ -564,6 +580,37 @@ class DiscogsReleaseImportMapper
         }
 
         return array_values(array_unique($preferred));
+    }
+
+    /**
+     * Sarah 2026-11-19: Discogs styles that name one of our genre bins
+     * directly. Order = which wins when a release has several.
+     *
+     * @param  string[]  $styleTerms  lowercased Discogs styles
+     * @return string[]  our genre terms ('nu-metal', 'metal', 'new wave', 'alt rock')
+     */
+    private function keyStyleTerms(array $styleTerms): array
+    {
+        $out = [];
+        foreach ($styleTerms as $st) {
+            if (preg_match('/\bnu[\s-]?metal\b/u', $st)) {
+                $out[] = 'nu-metal';
+            }
+            if (mb_strpos($st, 'metal') !== false) {
+                $out[] = 'metal';
+            }
+        }
+        foreach ($styleTerms as $st) {
+            if (mb_strpos($st, 'new wave') !== false) {
+                $out[] = 'new wave';
+            }
+        }
+        foreach ($styleTerms as $st) {
+            if (preg_match('/\b(alternative|alt|indie) rock\b/u', $st)) {
+                $out[] = 'alt rock';
+            }
+        }
+        return array_values(array_unique($out));
     }
 
     /**
@@ -664,8 +711,14 @@ class DiscogsReleaseImportMapper
                 if ($subName === '') {
                     continue;
                 }
+                // Every word of the term in the sub's name ("alt rock" in
+                // "Alt /Indie Rock").
+                $termWords = preg_split('/[^a-z0-9]+/u', $term, -1, PREG_SPLIT_NO_EMPTY);
+                $subWords = preg_split('/[^a-z0-9]+/u', $subName, -1, PREG_SPLIT_NO_EMPTY);
+                $subHasTerm = mb_strpos($subName, $term) !== false
+                    || (count($termWords) > 1 && array_diff($termWords, $subWords) === []);
                 $isMatch = ($subName === $term)
-                    || mb_strpos($subName, $term) !== false
+                    || $subHasTerm
                     || mb_strpos($term, $subName) !== false;
                 if (!$isMatch) {
                     continue;
@@ -676,6 +729,9 @@ class DiscogsReleaseImportMapper
                     'sub' => $sub,
                     'parent_name' => $parentName,
                     'sub_exact' => ($subName === $term),
+                    // "Alt Rock/Indie" holds "alt rock"; plain "Rock" only
+                    // sits inside it — the first must win (Sarah 2026-11-19).
+                    'sub_has_term' => $subHasTerm,
                 ];
             }
         }
@@ -701,7 +757,7 @@ class DiscogsReleaseImportMapper
             $best = null;
             $bestScore = null;
             foreach ($matches as $m) {
-                $score = $m['sub_exact'] ? 1 : 0;
+                $score = $m['sub_exact'] ? 2 : ($m['sub_has_term'] ? 1 : 0);
                 $pn = $m['parent_name'];
 
                 // If the parent is keyed to a specific size (7"/10"/12"),
