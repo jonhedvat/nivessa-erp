@@ -371,12 +371,15 @@ class MassAddAiPriceController extends Controller
                     $price = $floor;
                     $notes[] = $histNote($price);
                 } elseif (stripos($cat, 'Trading Card') === 0) {
-                    // Ordinary raw card we have no exact history for: the AI's online
-                    // price runs well above walk-in prices, so meet in the middle
-                    // with what this kind of card usually sells for here.
+                    // Ordinary raw card we have no exact history for: price it at what
+                    // this kind of card usually sells for here.
+                    // Sarah 2026-11-18: meeting in the middle with the online price put base
+                    // MLB cards at $8-12 when ours sell for $1-5. The online number for a vague
+                    // name ("Bobby Witt Jr. card") is pulled up by rookies, parallels and graded
+                    // copies of the same player. Cards worth more get premium=true and keep the AI price.
                     $cs = empty($r['premium']) ? $statFor($cat, $sub) : null;
                     if ($cs && $ai > $cs['median']) {
-                        $price = (float) round(min(($ai + $cs['median']) / 2, max($cs['p90'], $cs['median'])));
+                        $price = (float) $cs['median'];
                         $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat];
                     }

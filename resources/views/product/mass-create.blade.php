@@ -2919,7 +2919,7 @@
                 const rows = hist.map(h => {
                     if (h.card) {
                         return '<li><strong>' + esc(h.item) + '</strong>: online about ' + money(h.ai) + ', our ' + esc(h.kind) + ' usually sell for ' + money(h.median)
-                            + ' &rarr; <strong style="color:#b45309;">met in the middle at ' + money(h.price) + '</strong></li>';
+                            + ' &rarr; <strong style="color:#b45309;">priced at ' + money(h.price) + '</strong></li>';
                     }
                     if (h.low) {
                         return '<li><strong>' + esc(h.item) + '</strong>: AI said ' + money(h.ai) + ', under what we get for ' + esc(h.kind) + ' (usually ' + money(h.median) + ')'
