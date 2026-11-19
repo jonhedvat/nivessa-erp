@@ -1,0 +1,32 @@
+# Read-only: NHL / NFL / UFC card stock and every sale ever. No writes.
+
+name: Diag NHL NFL UFC card sales (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHUgPSBEQjo6dGFibGUoJ3VzZXJzJyktPndoZXJlKCdmaXJzdF9uYW1lJywnSm9uYXRoYW4nKS0+d2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCdIZWR2YXQlJyktPmZpcnN0KCk7CiRiaWQgPSAkdS0+YnVzaW5lc3NfaWQ7CmZvcmVhY2ggKFsnTkhMIENhcmRzJywnTkZMIENhcmRzJywnVUZDIENhcmRzJ10gYXMgJHN1YikgewogICRpZHMgPSBEQjo6dGFibGUoJ3Byb2R1Y3RzIGFzIHAnKS0+am9pbignY2F0ZWdvcmllcyBhcyBzYycsJ3NjLmlkJywnPScsJ3Auc3ViX2NhdGVnb3J5X2lkJyktPndoZXJlKCdwLmJ1c2luZXNzX2lkJywkYmlkKS0+d2hlcmUoJ3NjLm5hbWUnLCRzdWIpLT5wbHVjaygncC5pZCcpLT5hbGwoKTsKICAkc3RvY2sgPSAkaWRzID8gKGZsb2F0KSBEQjo6dGFibGUoJ3ZhcmlhdGlvbl9sb2NhdGlvbl9kZXRhaWxzJyktPndoZXJlSW4oJ3Byb2R1Y3RfaWQnLCRpZHMpLT5zdW0oJ3F0eV9hdmFpbGFibGUnKSA6IDA7CiAgJHNhbGVzID0gJGlkcyA/IERCOjp0YWJsZSgndHJhbnNhY3Rpb25fc2VsbF9saW5lcyBhcyB0c2wnKS0+am9pbigndHJhbnNhY3Rpb25zIGFzIHQnLCd0LmlkJywnPScsJ3RzbC50cmFuc2FjdGlvbl9pZCcpLT5qb2luKCdwcm9kdWN0cyBhcyBwJywncC5pZCcsJz0nLCd0c2wucHJvZHVjdF9pZCcpCiAgICAtPndoZXJlSW4oJ3RzbC5wcm9kdWN0X2lkJywkaWRzKS0+d2hlcmUoJ3QuYnVzaW5lc3NfaWQnLCRiaWQpLT53aGVyZSgndC50eXBlJywnc2VsbCcpLT53aGVyZSgndC5zdGF0dXMnLCdmaW5hbCcpLT53aGVyZU51bGwoJ3RzbC5wYXJlbnRfc2VsbF9saW5lX2lkJykKICAgIC0+b3JkZXJCeSgndC50cmFuc2FjdGlvbl9kYXRlJyktPmdldChbJ3AubmFtZScsJ3RzbC51bml0X3ByaWNlX2luY190YXggYXMgcHJpY2UnLCd0LnRyYW5zYWN0aW9uX2RhdGUnLCdwLmNyZWF0ZWRfYXQnXSkgOiBjb2xsZWN0KCk7CiAgcHJpbnRmKCJTVUJcdCVzXHRwcm9kdWN0cz0lZFx0aW5TdG9jaz0lZFx0c29sZEV2ZXI9JWRcbiIsICRzdWIsIGNvdW50KCRpZHMpLCAkc3RvY2ssICRzYWxlcy0+Y291bnQoKSk7CiAgZm9yZWFjaCAoJHNhbGVzIGFzICRzKSBwcmludGYoIiAgIHNvbGQgJXMgICQlLjJmICAlcyAgKGFkZGVkICVzKVxuIiwgc3Vic3RyKCRzLT50cmFuc2FjdGlvbl9kYXRlLDAsMTApLCAkcy0+cHJpY2UsICRzLT5uYW1lLCBzdWJzdHIoJHMtPmNyZWF0ZWRfYXQsMCwxMCkpOwogICR0b3AgPSAkaWRzID8gREI6OnRhYmxlKCd2YXJpYXRpb25fbG9jYXRpb25fZGV0YWlscyBhcyB2JyktPmpvaW4oJ3Byb2R1Y3RzIGFzIHAnLCdwLmlkJywnPScsJ3YucHJvZHVjdF9pZCcpLT53aGVyZUluKCd2LnByb2R1Y3RfaWQnLCRpZHMpLT53aGVyZSgndi5xdHlfYXZhaWxhYmxlJywnPicsMCkKICAgIC0+b3JkZXJCeURlc2MoJ3YucXR5X2F2YWlsYWJsZScpLT5saW1pdCg4KS0+Z2V0KFsncC5uYW1lJywndi5xdHlfYXZhaWxhYmxlJywncC5jcmVhdGVkX2F0J10pIDogY29sbGVjdCgpOwogIGZvcmVhY2ggKCR0b3AgYXMgJHQpIHByaW50ZigiICAgc3RvY2sgJWQgICVzICAoYWRkZWQgJXMpXG4iLCAkdC0+cXR5X2F2YWlsYWJsZSwgJHQtPm5hbWUsIHN1YnN0cigkdC0+Y3JlYXRlZF9hdCwwLDEwKSk7Cn0K' | base64 -d > /tmp/diag_subs.php
+            php /tmp/diag_subs.php
+            rm -f /tmp/diag_subs.php
