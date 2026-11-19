@@ -4,6 +4,11 @@ name: Diag disk usage
 on:
   workflow_dispatch:
     inputs:
+      delete_dup_backups:
+        description: 'DELETE duplicate DB backups in business folders other than 1'
+        required: false
+        default: false
+        type: boolean
       run_backup:
         description: 'Also run db:backup-daily now (tests the backup job)'
         required: false
@@ -37,6 +42,17 @@ jobs:
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
+            if [ "${{ inputs.delete_dup_backups }}" = "true" ]; then
+              B=storage/app/database_backups
+              ls $B/1/backup_*.sql* >/dev/null 2>&1 || { echo "folder 1 has no backups - refusing to delete"; exit 1; }
+              echo "== deleting duplicate backups (keeping folder 1)"
+              for d in $B/*/; do n=$(basename $d)
+                case "$n" in 1|*[!0-9]*) continue;; esac
+                c=$(ls $d | grep -cE '^backup_[0-9]{8}_[0-9]{6}_[a-f0-9]{8}\.sql(\.gz)?$')
+                find "$d" -maxdepth 1 -type f -regextype posix-extended -regex '.*/backup_[0-9]{8}_[0-9]{6}_[a-f0-9]{8}\.sql(\.gz)?' -delete
+                rmdir "$d" 2>/dev/null && echo "  folder $n: deleted $c files, folder removed" || echo "  folder $n: deleted $c files, other files left: $(ls $d)"
+              done
+            fi
             php -l app/Services/DatabaseBackupService.php; php -l app/Console/Commands/DailyDatabaseBackup.php
             if [ "${{ inputs.run_backup }}" = "true" ]; then
               echo "== running db:backup-daily"; time php artisan db:backup-daily 2>&1 | tail -5
