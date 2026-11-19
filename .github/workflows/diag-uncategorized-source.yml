@@ -1,0 +1,33 @@
+# Read-only: prints the per-category sold-price ranges the Mass Add AI pricer
+# uses as its fallback (no AI calls, no writes).
+
+name: Diag where uncategorized products come from (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X2V4Y2VwdGlvbl9oYW5kbGVyKGZ1bmN0aW9uKCRlKXsgZWNobyAnRVJSICcgLiBtYl9zdWJzdHIoJGUtPmdldE1lc3NhZ2UoKSwwLDQwMCkgLiAiXG4iOyB9KTsKJHUgPSBEQjo6dGFibGUoJ3VzZXJzJyktPndoZXJlKCdmaXJzdF9uYW1lJywnSm9uYXRoYW4nKS0+d2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCdIZWR2YXQlJyktPmZpcnN0KCk7CiRiaWQgPSAkdS0+YnVzaW5lc3NfaWQ7CiRub0NhdCA9IGZ1bmN0aW9uKCRxKSB7IHJldHVybiAkcS0+d2hlcmUoZnVuY3Rpb24oJHcpeyAkdy0+d2hlcmVOdWxsKCdwLmNhdGVnb3J5X2lkJyktPm9yV2hlcmUoJ3AuY2F0ZWdvcnlfaWQnLDApLT5vcldoZXJlTnVsbCgnYy5pZCcpLT5vcldoZXJlTm90TnVsbCgnYy5kZWxldGVkX2F0Jyk7IH0pOyB9OwovLyBTaW5jZSAyMDI2LTAzOiBldmVyeSBwcm9kdWN0IGNyZWF0ZWQsIGJ5IHNvdXJjZSwgYW5kIGhvdyBtYW55IGhhZCBubyBjYXRlZ29yeQokcm93cyA9IERCOjp0YWJsZSgncHJvZHVjdHMgYXMgcCcpLT5sZWZ0Sm9pbignY2F0ZWdvcmllcyBhcyBjJywnYy5pZCcsJz0nLCdwLmNhdGVnb3J5X2lkJyktPmxlZnRKb2luKCd1c2VycyBhcyB1cycsJ3VzLmlkJywnPScsJ3AuY3JlYXRlZF9ieScpCiAgLT53aGVyZSgncC5idXNpbmVzc19pZCcsJGJpZCktPndoZXJlKCdwLmNyZWF0ZWRfYXQnLCc+PScsJzIwMjYtMDktMDEnKQogIC0+c2VsZWN0KERCOjpyYXcoIkNPQUxFU0NFKHAuYWRkZWRfdmlhLCcoYmxhbmspJykgc3JjIiksIERCOjpyYXcoJ0NPVU5UKCopIHRvdGFsJyksCiAgICBEQjo6cmF3KCJTVU0oQ0FTRSBXSEVOIHAuY2F0ZWdvcnlfaWQgSVMgTlVMTCBPUiBwLmNhdGVnb3J5X2lkPTAgT1IgYy5pZCBJUyBOVUxMIE9SIGMuZGVsZXRlZF9hdCBJUyBOT1QgTlVMTCBUSEVOIDEgRUxTRSAwIEVORCkgbm9jYXQiKSkKICAtPmdyb3VwQnkoJ3NyYycpLT5vcmRlckJ5RGVzYygnbm9jYXQnKS0+Z2V0KCk7CmZvcmVhY2ggKCRyb3dzIGFzICRyKSBwcmludGYoIlNSQ1x0JXNcdHRvdGFsPSVkXHRub2NhdD0lZFxuIiwgJHItPnNyYywgJHItPnRvdGFsLCAkci0+bm9jYXQpOwovLyBJbi1zdG9jayB1bmNhdGVnb3JpemVkOiBzb3VyY2UgeCBwZXJzb24KJHNxID0gREI6OnRhYmxlKCd2YXJpYXRpb25fbG9jYXRpb25fZGV0YWlscycpLT5ncm91cEJ5KCdwcm9kdWN0X2lkJyktPmhhdmluZ1JhdygnU1VNKHF0eV9hdmFpbGFibGUpID4gMCcpLT5zZWxlY3QoJ3Byb2R1Y3RfaWQnKTsKJHEgPSBEQjo6dGFibGUoJ3Byb2R1Y3RzIGFzIHAnKS0+am9pblN1Yigkc3EsJ3N0Jywnc3QucHJvZHVjdF9pZCcsJz0nLCdwLmlkJyktPmxlZnRKb2luKCdjYXRlZ29yaWVzIGFzIGMnLCdjLmlkJywnPScsJ3AuY2F0ZWdvcnlfaWQnKS0+bGVmdEpvaW4oJ3VzZXJzIGFzIHVzJywndXMuaWQnLCc9JywncC5jcmVhdGVkX2J5JykKICAtPndoZXJlKCdwLmJ1c2luZXNzX2lkJywkYmlkKS0+d2hlcmUoJ3AuaXNfaW5hY3RpdmUnLDApOwokbm9DYXQoJHEpOwpmb3JlYWNoICgkcS0+c2VsZWN0KERCOjpyYXcoIkNPQUxFU0NFKHAuYWRkZWRfdmlhLCcoYmxhbmspJykgc3JjIiksIERCOjpyYXcoIkNPTkNBVChDT0FMRVNDRSh1cy5maXJzdF9uYW1lLCcnKSwnICcsQ09BTEVTQ0UodXMubGFzdF9uYW1lLCcnKSkgd2hvIiksIERCOjpyYXcoJ0NPVU5UKCopIG4nKSwgREI6OnJhdygnTUlOKERBVEUocC5jcmVhdGVkX2F0KSkgZmlyc3QnKSwgREI6OnJhdygnTUFYKERBVEUocC5jcmVhdGVkX2F0KSkgbGFzdCcpKS0+Z3JvdXBCeSgnc3JjJywnd2hvJyktPm9yZGVyQnlEZXNjKCduJyktPmdldCgpIGFzICRyKQogIHByaW50ZigiV0hPXHQlc1x0JXNcdG49JWRcdCVzLi4lc1xuIiwgJHItPnNyYywgdHJpbSgkci0+d2hvKSwgJHItPm4sICRyLT5maXJzdCwgJHItPmxhc3QpOwovLyBPZiB0aGUgdW5jYXRlZ29yaXplZCwgaG93IG1hbnkgcG9pbnQgYXQgYSBkZWxldGVkIGNhdGVnb3J5ICh2cyBibGFuaykKJHEyID0gREI6OnRhYmxlKCdwcm9kdWN0cyBhcyBwJyktPmpvaW5TdWIoJHNxLCdzdCcsJ3N0LnByb2R1Y3RfaWQnLCc9JywncC5pZCcpLT5sZWZ0Sm9pbignY2F0ZWdvcmllcyBhcyBjJywnYy5pZCcsJz0nLCdwLmNhdGVnb3J5X2lkJyktPndoZXJlKCdwLmJ1c2luZXNzX2lkJywkYmlkKS0+d2hlcmUoJ3AuaXNfaW5hY3RpdmUnLDApOwokbm9DYXQoJHEyKTsKZm9yZWFjaCAoJHEyLT5zZWxlY3QoREI6OnJhdygiQ0FTRSBXSEVOIHAuY2F0ZWdvcnlfaWQgSVMgTlVMTCBPUiBwLmNhdGVnb3J5X2lkPTAgVEhFTiAnYmxhbmsnIFdIRU4gYy5pZCBJUyBOVUxMIFRIRU4gJ21pc3NpbmcgaWQnIEVMU0UgQ09OQ0FUKCdkZWxldGVkOiAnLCBjLm5hbWUsICcgIycsIGMuaWQpIEVORCBrIiksIERCOjpyYXcoJ0NPVU5UKCopIG4nKSktPmdyb3VwQnkoJ2snKS0+Z2V0KCkgYXMgJHIpIGVjaG8gIktJTkRcdHskci0+a31cdHskci0+bn1cbiI7Cg==' | base64 -d > /tmp/diag_nocat_src.php
+            php /tmp/diag_nocat_src.php 2>&1 || true
+            rm -f /tmp/diag_nocat_src.php
