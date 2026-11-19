@@ -2920,9 +2920,15 @@
             }
             const esc = t => $('<div>').text(String(t)).html();
             const money = v => '$' + Number(v).toFixed(2);
-            const hist = res.history || [];
+            // Cards to check first (Sarah 2026-11-19).
+            const hist = (res.history || []).slice().sort((a, b) => (b.check ? 1 : 0) - (a.check ? 1 : 0));
+            const nCheck = hist.filter(h => h.check).length;
             if (hist.length) {
                 const rows = hist.map(h => {
+                    if (h.card && h.check) {
+                        return '<li style="color:#b91c1c;"><strong>' + esc(h.item) + '</strong>: online about ' + money(h.ai) + ', priced at ' + money(h.price)
+                            + ' &rarr; <strong><i class="fa fa-exclamation-triangle"></i> Check this card: could be a rookie (RC), autographed, numbered, a parallel or graded. If so, add that to the line and price it again, or type the price yourself.</strong></li>';
+                    }
                     if (h.card) {
                         return '<li><strong>' + esc(h.item) + '</strong>: online about ' + money(h.ai) + ', our ' + esc(h.kind) + ' usually sell for ' + money(h.median)
                             + ' &rarr; <strong style="color:#b45309;">priced at ' + money(h.price) + '</strong></li>';
@@ -2939,6 +2945,7 @@
                     return '<li><strong>' + esc(h.item) + '</strong>' + matched + ': sold ' + h.sales + 'x, usually ' + money(h.median) + speed
                         + (h.in_stock > 0 ? ', ' + h.in_stock + ' in stock now' : '') + raised + '</li>';
                 }).join('');
+                if (nCheck) toastr.warning(nCheck + ' card' + (nCheck === 1 ? '' : 's') + ' to check before saving (shown in red).');
                 $('#ai_price_history').html('<strong><i class="fa fa-line-chart"></i> Our sales history</strong><ul style="margin:6px 0 0; padding-left:18px;">' + rows + '</ul>').show();
             } else {
                 $('#ai_price_history').html('<span class="text-muted">None of these have sold in our store in the last 2 years, so prices are the AI&rsquo;s market estimate.</span>').show();

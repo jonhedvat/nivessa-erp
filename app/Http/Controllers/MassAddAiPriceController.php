@@ -46,6 +46,9 @@ class MassAddAiPriceController extends Controller
     /** Ordinary raw cards: our walk-in price as a share of the online sold price (see price()). */
     const CARD_WALKIN_SHARE = 0.25;
 
+    /** Ordinary cards this much or more online get a red "check this card" note. */
+    const CARD_CHECK_ONLINE = 20;
+
     private function webComparables($businessId, $line)
     {
         $key = 'ai_web_comp_v2:' . $businessId . ':' . md5(mb_strtolower($line));
@@ -386,8 +389,11 @@ class MassAddAiPriceController extends Controller
                     $scaled = $cs ? (float) max(1, min(round($ai * self::CARD_WALKIN_SHARE), max($cs['p90'], $cs['median']))) : 0;
                     if ($cs && $ai > 0 && $scaled < $ai) {
                         $price = $scaled;
+                        // Sarah 2026-11-19: $20+ online but treated as ordinary - may be a rookie or
+                        // parallel staff didn't describe. Flag it so someone looks at the card.
                         $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
-                            'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat];
+                            'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat,
+                            'check' => $ai >= self::CARD_CHECK_ONLINE];
                     }
                 } elseif (!$h && $ai > 0 && stripos($cat, '7"') !== 0 && !in_array(strtoupper($cond), ['G+', 'G', 'F', 'P'], true)) {
                     // Sarah 2026-11-16: the AI runs about a third low on sealed vinyl / CDs
