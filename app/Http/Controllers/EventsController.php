@@ -1378,6 +1378,9 @@ class EventsController extends Controller
             'price'        => ($priceRaw === null || $priceRaw === '') ? null : (float) $priceRaw,
             // Where it came in (empty = at the event). Set for DM/phone adds.
             'source'       => trim((string) $request->input('source', '')) ?: null,
+            // Store the preorder is for (Sarah, 2026-11-19). Blank = the
+            // website works it out from the event / the customer's RSVP.
+            'store'        => in_array($request->input('store'), ['hollywood', 'pico'], true) ? $request->input('store') : null,
         ];
 
         // Key-gated ERP bridge create (/api/v1/erp/preorders) — staff-only, so

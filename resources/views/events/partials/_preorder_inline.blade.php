@@ -12,7 +12,7 @@
   <div>
     <span class="ev-name">{{ $p['preorderTitle'] ?? '' }}</span>@if(isset($p['preorderPrice'])) <span class="ev-meta">${{ number_format((float) $p['preorderPrice'], 2) }}</span>@endif
   </div>
-  <div style="margin:3px 0;"><span class="pill {{ $pcls }}">{{ $ptxt }}</span></div>
+  <div style="margin:3px 0;"><span class="pill {{ $pcls }}">{{ $ptxt }}</span>@if(in_array($p['eventLocationKey'] ?? '', ['hollywood','pico'], true)) <span class="pill">{{ ($p['eventLocationKey'] ?? '') === 'pico' ? 'Pico' : 'Hollywood' }}</span>@endif</div>
   @if($pid)
     <div style="white-space:nowrap;">
       @foreach(['ready' => 'Ready', 'picked_up' => 'Picked up', 'canceled' => 'Cancel'] as $sval => $slabel)

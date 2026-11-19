@@ -154,7 +154,12 @@
     // In a per-store view, don't surface preorders that didn't match a guest
     // in this store — they belong to the other store (preorders aren't store-
     // tagged, so this is the safe default). Use "Both stores" to see them all.
-    if ($scopedToStore) { $unmatchedPre = []; }
+    // Preorders saved with a store (2026-11-19+) still show in their store.
+    if ($scopedToStore) {
+      $unmatchedPre = array_values(array_filter($unmatchedPre, function ($p) use ($storeScope) {
+        return ($p['eventLocationKey'] ?? '') === $storeScope;
+      }));
+    }
 
     // Everyone on the RSVP list, offered in the "+ Add preorder" picker so we
     // reuse the email/phone we already have instead of retyping. De-duped by
@@ -173,6 +178,7 @@
         'lastName'  => $r['lastName'] ?? '',
         'email'     => $r['email'] ?? '',
         'phone'     => $r['phone'] ?? '',
+        'store'     => $r['eventLocationKey'] ?? '',
         'checkedIn' => $ciG,
         'label'     => $gn
           . (!empty($r['phone']) ? ' · ' . $r['phone'] : '')
@@ -444,6 +450,19 @@
             <div class="ev-field" style="flex:2 1 240px;"><label>Item *</label><input type="text" name="productTitle" required placeholder="e.g. Artist – Album (vinyl)"></div>
             <div class="ev-field" style="flex:1 1 120px;"><label>Price</label><input type="number" step="0.01" min="0" name="price" placeholder="0.00"></div>
           @endif
+          {{-- Which store it's for, saved on the preorder (Sarah, 2026-11-19). --}}
+          @php $evStores = array_values(array_unique(array_filter(array_map(function ($l) { $l = strtolower((string) $l); return strpos($l, 'pico') !== false ? 'pico' : (strpos($l, 'hollywood') !== false ? 'hollywood' : ''); }, $eventLocsAll)))); @endphp
+          @if(count($evStores) > 1)
+            <div class="ev-field" style="flex:1 1 140px;"><label>Store *</label>
+              <select name="store" required data-store-select data-default="{{ in_array($storeScope, ['hollywood','pico'], true) ? $storeScope : '' }}">
+                <option value="">Choose a store…</option>
+                <option value="hollywood" {{ $storeScope === 'hollywood' ? 'selected' : '' }}>Hollywood</option>
+                <option value="pico" {{ $storeScope === 'pico' ? 'selected' : '' }}>Pico</option>
+              </select>
+            </div>
+          @elseif(count($evStores) === 1)
+            <input type="hidden" name="store" value="{{ $evStores[0] }}">
+          @endif
           {{-- Where it came in. Empty (At event) for walk-ins; the standalone
                "+ Add preorder" button defaults this to Instagram DM. --}}
           <div class="ev-field" style="flex:1 1 150px;"><label>Source</label>
@@ -482,6 +501,8 @@
           set('lastName', g.lastName);
           set('email', g.email);
           set('phone', g.phone);
+          var st = form.querySelector('[data-store-select]');
+          if (st && g.store) st.value = g.store;
         });
         var closeBtn = document.getElementById('preorder-add-close');
         if (closeBtn) closeBtn.addEventListener('click', function () {
@@ -501,6 +522,9 @@
           set('lastName', b.getAttribute('data-ln'));
           set('email', b.getAttribute('data-email'));
           set('phone', b.getAttribute('data-phone'));
+          // Store: the guest's RSVP store, else the store this page is scoped to.
+          var stSel = form.querySelector('[data-store-select]');
+          if (stSel) stSel.value = b.getAttribute('data-store') || stSel.getAttribute('data-default') || '';
           // Default paid on for at-event walk-ins, off for the after-the-fact
           // standalone button (data-paid="0"). Staff can still toggle it.
           var paidBox = form.querySelector('[data-paid-checkbox]');
@@ -614,6 +638,7 @@
                 <button type="button" class="btn-ghost preorder-add-btn"
                   data-fn="{{ $r['firstName'] ?? '' }}" data-ln="{{ $r['lastName'] ?? '' }}"
                   data-email="{{ $r['email'] ?? '' }}" data-phone="{{ $r['phone'] ?? '' }}" data-paid="1"
+                  data-store="{{ $r['eventLocationKey'] ?? '' }}"
                   style="padding:5px 12px;font-size:12px;">+ Add preorder</button>
               </td>
               @endif
@@ -646,6 +671,7 @@
                     <button type="button" class="btn-ghost preorder-add-btn"
                       data-fn="{{ $g['firstName'] ?? '' }}" data-ln="{{ $g['lastName'] ?? '' }}"
                       data-email="{{ $g['email'] ?? '' }}" data-phone="{{ $r['phone'] ?? '' }}" data-paid="1"
+                      data-store="{{ $r['eventLocationKey'] ?? '' }}"
                       style="padding:5px 12px;font-size:12px;">+ Add preorder</button>
                   </td>
                   @endif
