@@ -535,7 +535,7 @@ class DiscogsReleaseImportMapper
         // filed under Electronic or Pop, not Rock).
         $keyStyles = $this->keyStyleTerms($styleTerms);
         foreach ($keyStyles as $t) {
-            if ($t === 'new wave' || $t === 'alt rock') {
+            if ($t === 'new wave' || $t === 'alt rock' || $t === 'indie') {
                 continue; // ordered below, after punk
             }
             $preferred[] = $t;
@@ -546,7 +546,7 @@ class DiscogsReleaseImportMapper
             $preferred[] = 'punk';
         }
         foreach ($keyStyles as $t) {
-            if ($t === 'new wave' || $t === 'alt rock') {
+            if ($t === 'new wave' || $t === 'alt rock' || $t === 'indie') {
                 $preferred[] = $t;
             }
         }
@@ -587,7 +587,7 @@ class DiscogsReleaseImportMapper
      * directly. Order = which wins when a release has several.
      *
      * @param  string[]  $styleTerms  lowercased Discogs styles
-     * @return string[]  our genre terms ('nu-metal', 'metal', 'new wave', 'alt rock')
+     * @return string[]  our genre terms ('nu-metal', 'metal', 'new wave', 'alt rock', 'indie')
      */
     private function keyStyleTerms(array $styleTerms): array
     {
@@ -607,7 +607,10 @@ class DiscogsReleaseImportMapper
         }
         foreach ($styleTerms as $st) {
             if (preg_match('/\b(alternative|alt|indie) rock\b/u', $st)) {
+                // "indie" also finds bins without the word rock:
+                // 7" "Alt / Indie", sealed cassettes "alt/indie".
                 $out[] = 'alt rock';
+                $out[] = 'indie';
             }
         }
         return array_values(array_unique($out));
