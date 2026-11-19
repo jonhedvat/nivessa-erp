@@ -43,6 +43,9 @@ class MassAddAiPriceController extends Controller
      */
     const EBAY_SOLD_SHARE = 0.8;
 
+    /** Ordinary raw cards: our walk-in price as a share of the online sold price (see price()). */
+    const CARD_WALKIN_SHARE = 0.25;
+
     private function webComparables($businessId, $line)
     {
         $key = 'ai_web_comp_v2:' . $businessId . ':' . md5(mb_strtolower($line));
@@ -371,15 +374,18 @@ class MassAddAiPriceController extends Controller
                     $price = $floor;
                     $notes[] = $histNote($price);
                 } elseif (stripos($cat, 'Trading Card') === 0) {
-                    // Ordinary raw card we have no exact history for: price it at what
-                    // this kind of card usually sells for here.
+                    // Ordinary raw card we have no exact history for.
                     // Sarah 2026-11-18: meeting in the middle with the online price put base
-                    // MLB cards at $8-12 when ours sell for $1-5. The online number for a vague
-                    // name ("Bobby Witt Jr. card") is pulled up by rookies, parallels and graded
-                    // copies of the same player. Cards worth more get premium=true and keep the AI price.
+                    // MLB cards at $8-12 when ours sell for $1-5; one flat median put them all at $4.
+                    // Our walk-in card prices run about a quarter of online (MLB 2y: half sold $1-3,
+                    // modern Chrome / signed $5-15; Jordan AI $18-45 vs ours $4-12), so keep the
+                    // AI's ranking of which card is worth more, scaled to our prices: 25% of online,
+                    // whole dollars, between $1 and our usual top price for this kind of card.
+                    // Cards worth more get premium=true and keep the AI price.
                     $cs = empty($r['premium']) ? $statFor($cat, $sub) : null;
-                    if ($cs && $ai > $cs['median']) {
-                        $price = (float) $cs['median'];
+                    $scaled = $cs ? (float) max(1, min(round($ai * self::CARD_WALKIN_SHARE), max($cs['p90'], $cs['median']))) : 0;
+                    if ($cs && $ai > 0 && $scaled < $ai) {
+                        $price = $scaled;
                         $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat];
                     }
