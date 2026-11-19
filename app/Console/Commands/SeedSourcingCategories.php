@@ -33,7 +33,8 @@ class SeedSourcingCategories extends Command
         'Toys' => ['Squishies', 'Keychains', 'Magnets', 'Pins'],
         'Magazines' => ['Playboy', 'Mad Magazine', 'Rolling Stone'],
         'Comics' => ['Spider-Man', 'Batman', 'Superman'],
-        'Trading Cards' => ['Michael Jordan Cards', 'Kobe Bryant Cards', 'Pokemon 1st Edition', 'Pokemon Slabs'],
+        // Sarah 2026-11-19: Jordan / Kobe cards merged into NBA Cards (one sport, cleaner reports).
+        'Trading Cards' => ['Pokemon 1st Edition', 'Pokemon Slabs'],
         'Candy & Chips' => [],
         'Drinks' => [],
         'Apparel' => ['Shirts', 'Sweatshirts'],
