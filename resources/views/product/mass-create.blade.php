@@ -458,11 +458,17 @@
                     <em>&ldquo;here are a few DVDs I want to price&rdquo;</em>. AI fills in the artist, category and price,
                     checks what we&rsquo;ve sold it for and how fast it sells so it never goes under that, then adds everything to the table below.
                 </div>
+                {{-- Sarah 2026-11-18: vague card names ("Bobby Witt Jr. card") get priced as plain base cards. --}}
+                <div style="font-size:13px; color:#444; margin-bottom:10px; padding:8px 12px; background:#fffbeb; border:1px solid #fde68a; border-radius:8px;">
+                    <strong><i class="fa fa-lightbulb-o"></i> More detail = better price.</strong>
+                    <strong>Cards:</strong> add the year, set and card # (<em>2024 Topps Bobby Witt Jr. #17</em>), plus RC, auto, refractor / numbered (/99), or PSA / BGS grade if it has one. Without those, a card is priced like a plain base card.
+                    <strong>Music:</strong> add the format and condition (LP, CD, cassette &middot; sealed, VG+, VG), and anything special like first pressing, colored vinyl or Japan press.
+                </div>
                 <textarea
                     id="bulk_product_text"
                     class="form-control"
                     rows="8"
-                    placeholder="Rumours LP VG+&#10;Thriller sealed&#10;Kind of Blue CD&#10;Nevermind cassette"
+                    placeholder="Rumours LP VG+&#10;Thriller sealed&#10;Kind of Blue CD&#10;Nevermind cassette&#10;2024 Topps Bobby Witt Jr. #17"
                     style="font-size:16px; line-height:1.6; border-radius:10px; padding:12px 14px; background:#fff;"></textarea>
                 <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                     <button type="button" class="btn btn-primary btn-lg" id="ai_price_bulk_text" style="border-radius:8px;">
