@@ -58,7 +58,8 @@ class AddTopTierSubcategories extends Command
             'Trading Cards' => ['Graded Slabs'],
             // Sarah 2026-11-19: 'Gaming Magazines' merged into the existing 'Video Games'.
             'Magazines' => ['National Geographic', 'Music Magazines'],
-            'Books' => ['Marvel Comics', 'DC Comics', 'Indie & Image Comics'],
+            // Sarah 2026-11-19: DC Comics merged back into Comic Books.
+            'Books' => ['Marvel Comics', 'Indie & Image Comics'],
         ];
     }
 
@@ -146,14 +147,8 @@ class AddTopTierSubcategories extends Command
                 'match' => $marvel,
                 'exclude' => $dc,
             ],
-            [
-                'label' => 'DC Comics',
-                'parents' => ['Books'],
-                'from' => ['Comic Books'],
-                'to' => 'DC Comics',
-                'match' => $dc,
-                'exclude' => $marvel,
-            ],
+            // (DC Comics rule removed 2026-11-19: DC titles stay in Comic Books; $dc is still
+            // used below so Marvel / Indie rules never pull DC books.)
             [
                 'label' => 'Indie & Image Comics',
                 'parents' => ['Books'],
