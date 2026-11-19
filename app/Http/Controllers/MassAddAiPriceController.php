@@ -356,46 +356,68 @@ class MassAddAiPriceController extends Controller
                 $ai = round((float) preg_replace('/[^0-9.]/', '', (string) ($r['price'] ?? '')), 2);
                 $price = $ai;
 
+                $isCard = stripos($cat, 'Trading Card') === 0;
                 $h = $this->storeHistory($businessId, $name, $artist, $cat);
+                $byPlayer = false;
+                if (!$h && $isCard && $artist !== '') {
+                    $h = $this->cardPlayerHistory($businessId, $artist, $cat, $sub);
+                    $byPlayer = (bool) $h;
+                }
                 $floor = $h ? $h['floor'] : 0;
                 // Fast sellers (within 5 days on average) should not be the cheapest price online:
                 // never below the web comparables we found for this line.
-                if ($h && $h['days'] !== null && $h['days'] <= 5) {
+                // Not for cards: the online number for a card is what we scale down from.
+                if ($h && !$isCard && $h['days'] !== null && $h['days'] <= 5) {
                     $wl = $webList[$idx] ?? null;
                     foreach ([$wl['discogs'] ?? null, $wl['ebay']['median'] ?? null] as $webPrice) {
                         if ($webPrice && $webPrice > $floor) $floor = $webPrice;
                     }
                 }
-                $histNote = function ($price) use ($h, $name, $artist, $ai) {
+                $cs = $isCard && empty($r['premium']) ? $statFor($cat, $sub) : null;
+                if ($byPlayer && $cs) {
+                    // Different cards of one player vary a lot (one $125 sale); an ordinary
+                    // card's player floor stays within our usual range for this kind of card.
+                    $floor = min($floor, max($cs['p90'], $cs['median']));
+                }
+                $histNote = function ($price) use ($h, $name, $artist, $ai, $byPlayer) {
                     return ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''),
                         'ai' => $ai, 'price' => $price, 'sales' => $h['sales'], 'median' => $h['median'],
-                        'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock'], 'match' => $h['match'][0] ?? ''];
+                        'days' => $h['days'], 'fast' => $h['fast'], 'in_stock' => $h['in_stock'], 'match' => $h['match'][0] ?? '',
+                        'by_player' => $byPlayer];
                 };
-                if ($h && $floor > $ai) {
-                    // Sarah 2026-11-16: "if you see things selling, why let someone price
-                    // it lower by accident" - we sold this same item for more: use our price.
-                    $price = $floor;
-                    $notes[] = $histNote($price);
-                } elseif (stripos($cat, 'Trading Card') === 0) {
-                    // Ordinary raw card we have no exact history for.
+                if ($cs && $ai > 0) {
+                    // Ordinary raw card.
                     // Sarah 2026-11-18: meeting in the middle with the online price put base
                     // MLB cards at $8-12 when ours sell for $1-5; one flat median put them all at $4.
                     // Our walk-in card prices run about a quarter of online (MLB 2y: half sold $1-3,
                     // modern Chrome / signed $5-15; Jordan AI $18-45 vs ours $4-12), so keep the
                     // AI's ranking of which card is worth more, scaled to our prices: 25% of online,
                     // whole dollars, between $1 and our usual top price for this kind of card.
-                    // Cards worth more get premium=true and keep the AI price.
-                    $cs = empty($r['premium']) ? $statFor($cat, $sub) : null;
-                    $scaled = $cs ? (float) max(1, min(round($ai * self::CARD_WALKIN_SHARE), max($cs['p90'], $cs['median']))) : 0;
-                    if ($cs && $ai > 0 && $scaled < $ai) {
-                        $price = $scaled;
-                        // Sarah 2026-11-19: $20+ online but treated as ordinary - may be a rookie or
-                        // parallel staff didn't describe. Flag it so someone looks at the card.
+                    // Sarah 2026-11-19: if we've sold this card or player, never below that
+                    // (fast sellers get the bigger floor from storeHistory / historyStats).
+                    $scaled = (float) max(1, min(round($ai * self::CARD_WALKIN_SHARE), max($cs['p90'], $cs['median'])));
+                    $price = min($ai, $scaled);
+                    // A player we've sold 3+ times cheaply (Canseco $1 same day, Nolan Ryan $2)
+                    // stays within 2x our usual top price for that player; the AI's online number
+                    // for 80s-90s cards runs far above that. The red check flag still catches rares.
+                    if ($byPlayer && $h['sales'] >= 3) $price = min($price, max(1, 2 * $h['p90']));
+                    if ($h && $floor > $price) $price = (float) round($floor);
+                    // Sarah 2026-11-19: $20+ online but treated as ordinary - may be a rookie or
+                    // parallel staff didn't describe. Flag it so someone looks at the card.
+                    $check = $ai >= self::CARD_CHECK_ONLINE && $price < $ai;
+                    if ($h) {
+                        $notes[] = $histNote($price) + ['card_hist' => true, 'check' => $check];
+                    } elseif ($price < $ai) {
                         $notes[] = ['item' => $name, 'card' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $sub !== '' ? $sub : $cat,
-                            'check' => $ai >= self::CARD_CHECK_ONLINE];
+                            'check' => $check];
                     }
-                } elseif (!$h && $ai > 0 && stripos($cat, '7"') !== 0 && !in_array(strtoupper($cond), ['G+', 'G', 'F', 'P'], true)) {
+                } elseif ($h && $floor > $ai) {
+                    // Sarah 2026-11-16: "if you see things selling, why let someone price
+                    // it lower by accident" - we sold this same item for more: use our price.
+                    $price = $floor;
+                    $notes[] = $histNote($price);
+                } elseif (!$h && !$isCard && $ai > 0 && stripos($cat, '7"') !== 0 && !in_array(strtoupper($cond), ['G+', 'G', 'F', 'P'], true)) {
                     // Sarah 2026-11-16: the AI runs about a third low on sealed vinyl / CDs
                     // and cassettes. No exact history for this item, so never go below
                     // what three quarters of our sales in its category + genre went for.
@@ -406,8 +428,7 @@ class MassAddAiPriceController extends Controller
                         $notes[] = ['item' => $name . ($artist !== '' ? ' - ' . $artist : ''), 'low' => true, 'ai' => $ai, 'price' => $price,
                             'sales' => $cs['sales'], 'median' => $cs['median'], 'kind' => $cat . ($sub !== '' ? ' > ' . $sub : '')];
                     }
-                }
-                if ($h && $price == $ai) {
+                } elseif ($h && $price == $ai) {
                     $notes[] = $histNote($price); // we have history and the AI was not under it
                 }
 
@@ -619,6 +640,53 @@ class MassAddAiPriceController extends Controller
             $products = $cands->filter(function ($p) use ($name, $qTitle, $qArtist) {
                 return $this->sameTitle($qTitle, $qArtist, $p->name, (string) $p->artist);
             })->take(200);
+            return $this->historyStats($businessId, $products);
+        } catch (\Exception $e) {
+            \Log::warning('MassAddAiPrice history failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /**
+     * Sarah 2026-11-19: our card products are mostly named just the player ("Frank Thomas"),
+     * so a priced card ("Frank Thomas 1991 Topps #79") never matches storeHistory by title.
+     * This matches by player instead: any product in the same card category whose name or
+     * artist has every word of the player's name. Skipped when the "player" is really the
+     * franchise (artist "Pokemon" in Pokemon Cards would match every Pokemon card).
+     */
+    private function cardPlayerHistory($businessId, $player, $cat, $sub)
+    {
+        $tokens = $this->nameTokens($player);
+        $tokens = array_values(array_diff($tokens, ['jr', 'sr', 'ii', 'iii', 'card', 'cards']));
+        if (!$tokens) return null;
+        $catWords = $this->nameTokens($cat . ' ' . $sub);
+        if (array_intersect($tokens, $catWords)) return null;
+        $long = array_values(array_filter($tokens, function ($w) { return strlen($w) >= 3; }));
+        if (!$long) return null;
+        usort($long, function ($a, $b) { return strlen($b) - strlen($a); });
+        try {
+            $cands = DB::table('products as p')
+                ->join('categories as c', 'c.id', '=', 'p.category_id')
+                ->where('p.business_id', $businessId)
+                ->where('c.name', $cat)
+                ->where(function ($w) use ($long) {
+                    $w->where('p.name', 'like', '%' . $long[0] . '%')->orWhere('p.artist', 'like', '%' . $long[0] . '%');
+                })
+                ->limit(600)->get(['p.id', 'p.name', 'p.artist', 'p.created_at']);
+            $products = $cands->filter(function ($p) use ($tokens) {
+                return !array_diff($tokens, $this->nameTokens($p->name . ' ' . $p->artist));
+            })->take(200);
+            return $this->historyStats($businessId, $products);
+        } catch (\Exception $e) {
+            \Log::warning('MassAddAiPrice card player history failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /** Sold-price and speed stats for a set of our products (see storeHistory). */
+    private function historyStats($businessId, $products)
+    {
+        try {
             if ($products->isEmpty()) return null;
             $created = $products->pluck('created_at', 'id');
             $names = $products->pluck('name', 'id');

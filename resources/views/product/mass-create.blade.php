@@ -2925,7 +2925,7 @@
             const nCheck = hist.filter(h => h.check).length;
             if (hist.length) {
                 const rows = hist.map(h => {
-                    if (h.card && h.check) {
+                    if (h.check) {
                         return '<li style="color:#b91c1c;"><strong>' + esc(h.item) + '</strong>: online about ' + money(h.ai) + ', priced at ' + money(h.price)
                             + ' &rarr; <strong><i class="fa fa-exclamation-triangle"></i> Check this card: could be a rookie (RC), autographed, numbered, a parallel or graded. If so, add that to the line and price it again, or type the price yourself.</strong></li>';
                     }
@@ -2942,6 +2942,12 @@
                         ? ' &rarr; <strong style="color:#15803d;">raised ' + money(h.ai) + ' to ' + money(h.price) + '</strong>' + (h.fast ? ' (fast seller)' : '')
                         : ' &rarr; kept ' + money(h.price);
                     const matched = (h.match && h.item.toLowerCase().indexOf(String(h.match).toLowerCase()) !== 0) ? ' <span class="text-muted">(our &ldquo;' + esc(h.match) + '&rdquo;)</span>' : '';
+                    // Sarah 2026-11-19: card priced off our sales of the same player, not this exact card.
+                    if (h.by_player) {
+                        return '<li><strong>' + esc(h.item) + '</strong>: we&rsquo;ve sold this player\'s cards ' + h.sales + 'x, usually ' + money(h.median) + speed
+                            + (h.in_stock > 0 ? ', ' + h.in_stock + ' in stock now' : '')
+                            + ' &rarr; <strong style="color:#15803d;">priced at ' + money(h.price) + '</strong>' + (h.fast ? ' (fast seller)' : '') + '</li>';
+                    }
                     return '<li><strong>' + esc(h.item) + '</strong>' + matched + ': sold ' + h.sales + 'x, usually ' + money(h.median) + speed
                         + (h.in_stock > 0 ? ', ' + h.in_stock + ' in stock now' : '') + raised + '</li>';
                 }).join('');
