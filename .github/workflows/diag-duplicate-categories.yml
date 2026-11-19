@@ -1,0 +1,33 @@
+# Read-only: prints the per-category sold-price ranges the Mass Add AI pricer
+# uses as its fallback (no AI calls, no writes).
+
+name: Diag duplicate categories (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHUgPSBEQjo6dGFibGUoJ3VzZXJzJyktPndoZXJlKCdmaXJzdF9uYW1lJywnSm9uYXRoYW4nKS0+d2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCdIZWR2YXQlJyktPmZpcnN0KCk7CiRiaWQgPSAkdS0+YnVzaW5lc3NfaWQ7CiRjb2xzID0gREI6OmdldFNjaGVtYUJ1aWxkZXIoKS0+Z2V0Q29sdW1uTGlzdGluZygnY2F0ZWdvcmllcycpOyBlY2hvICJDT0xTICIgLiBqc29uX2VuY29kZSgkY29scykgLiAiXG4iOwpmb3JlYWNoIChEQjo6dGFibGUoJ2NhdGVnb3JpZXMnKS0+d2hlcmUoJ2J1c2luZXNzX2lkJywkYmlkKS0+d2hlcmUoJ25hbWUnLCdsaWtlJywnJUNhc3NldHRlJScpLT5nZXQoKSBhcyAkYykKICBwcmludGYoIkNBVCBpZD0lZCBwYXJlbnQ9JWQgbmFtZT0lcyBkZWxldGVkPSVzIHR5cGU9JXMgcHJvZHVjdHM9JWRcbiIsICRjLT5pZCwgJGMtPnBhcmVudF9pZCwgJGMtPm5hbWUsICRjLT5kZWxldGVkX2F0ID8/ICctJywgJGMtPmNhdGVnb3J5X3R5cGUgPz8gJy0nLCBEQjo6dGFibGUoJ3Byb2R1Y3RzJyktPndoZXJlKCdjYXRlZ29yeV9pZCcsJGMtPmlkKS0+b3JXaGVyZSgnc3ViX2NhdGVnb3J5X2lkJywkYy0+aWQpLT5jb3VudCgpKTsKLy8gRHVwbGljYXRlIHRvcC1sZXZlbCBuYW1lcyBhY3Jvc3MgdGhlIGJ1c2luZXNzCmZvcmVhY2ggKERCOjp0YWJsZSgnY2F0ZWdvcmllcycpLT53aGVyZSgnYnVzaW5lc3NfaWQnLCRiaWQpLT53aGVyZSgncGFyZW50X2lkJywwKS0+d2hlcmVOdWxsKCdkZWxldGVkX2F0JyktPnNlbGVjdCgnbmFtZScsREI6OnJhdygnQ09VTlQoKikgbicpLERCOjpyYXcoJ0dST1VQX0NPTkNBVChpZCkgaWRzJykpLT5ncm91cEJ5KCduYW1lJyktPmhhdmluZygnbicsJz4nLDEpLT5nZXQoKSBhcyAkZCkgZWNobyAiRFVQVE9QIHskZC0+bmFtZX0gaWRzPXskZC0+aWRzfVxuIjsKLy8gU3VicyBvZiBDYXNzZXR0ZXMgLSBTZWFsZWQgdXNlZCBieSBwcm9kdWN0cywgd2hhdGV2ZXIgdGhlaXIgcGFyZW50X2lkCmZvcmVhY2ggKERCOjp0YWJsZSgncHJvZHVjdHMgYXMgcCcpLT5qb2luKCdjYXRlZ29yaWVzIGFzIGMnLCdjLmlkJywnPScsJ3AuY2F0ZWdvcnlfaWQnKS0+am9pbignY2F0ZWdvcmllcyBhcyBzJywncy5pZCcsJz0nLCdwLnN1Yl9jYXRlZ29yeV9pZCcpLT53aGVyZSgncC5idXNpbmVzc19pZCcsJGJpZCktPndoZXJlKCdjLm5hbWUnLCdDYXNzZXR0ZXMgLSBTZWFsZWQnKS0+c2VsZWN0KCdjLmlkIGFzIGNpZCcsJ3MuaWQgYXMgc2lkJywncy5uYW1lJywncy5wYXJlbnRfaWQnLERCOjpyYXcoJ0NPVU5UKCopIG4nKSktPmdyb3VwQnkoJ2MuaWQnLCdzLmlkJywncy5uYW1lJywncy5wYXJlbnRfaWQnKS0+Z2V0KCkgYXMgJHIpIGVjaG8gIlVTRUQgY2F0PXskci0+Y2lkfSBzdWI9eyRyLT5zaWR9IHskci0+bmFtZX0gcGFyZW50PXskci0+cGFyZW50X2lkfSBuPXskci0+bn1cbiI7Cg==' | base64 -d > /tmp/diag_dupcat.php
+            php /tmp/diag_dupcat.php 2>&1 || true
+            rm -f /tmp/diag_dupcat.php
