@@ -1,0 +1,33 @@
+# Read-only: prints the per-category sold-price ranges the Mass Add AI pricer
+# uses as its fallback (no AI calls, no writes).
+
+name: Diag tech accessories (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X2V4Y2VwdGlvbl9oYW5kbGVyKGZ1bmN0aW9uKCRlKXsgZWNobyAnRVJSICcgLiBtYl9zdWJzdHIoJGUtPmdldE1lc3NhZ2UoKSwwLDQwMCkgLiAiXG4iOyB9KTsKJHUgPSBEQjo6dGFibGUoJ3VzZXJzJyktPndoZXJlKCdmaXJzdF9uYW1lJywnSm9uYXRoYW4nKS0+d2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCdIZWR2YXQlJyktPmZpcnN0KCk7CiRiaWQgPSAkdS0+YnVzaW5lc3NfaWQ7CiRjYXRzID0gREI6OnRhYmxlKCdjYXRlZ29yaWVzJyktPndoZXJlKCdidXNpbmVzc19pZCcsJGJpZCktPmdldChbJ2lkJywnbmFtZScsJ2RlbGV0ZWRfYXQnXSktPmtleUJ5KCdpZCcpOwokcnggPSAndXNifHR5cGVbLSBdP2N8bGlnaHRuaW5nfGNhYmxlfGNoYXJnZXJ8Y2hhcmdpbmd8YWRhcHRlcnxhZGFwdG9yfGF1eFxifGhkbWl8cmNhIGNhYmxlfGVhcmJ1ZHxhaXJwb2R8ZWFyID9wb2RzfGhlYWRwaG9uZXxibHVldG9vdGh8cGhvbmUgY2FzZXxpcGhvbmV8YW5kcm9pZHxwb3dlciA/YmFua3xiYXR0ZXJ5fGJhdHRlcmllc3xzZCBjYXJkfG1lbW9yeSBjYXJkfGZsYXNoIGRyaXZlfHRodW1iIGRyaXZlfHdhbGwgcGx1Z3xleHRlbnNpb24gY29yZHxzcGxpdHRlcnxkb25nbGV8c3R5bHVzfHNjcmVlbiBwcm90ZWN0b3J8cG9wc29ja2V0fHBob25lIGdyaXB8cGhvbmUgc3RhbmR8d2lyZWxlc3N8c3BlYWtlcic7CiRyb3dzID0gREI6OnRhYmxlKCdwcm9kdWN0cyBhcyBwJykKICAtPmxlZnRKb2luKERCOjpyYXcoJyhTRUxFQ1QgcHJvZHVjdF9pZCwgU1VNKHF0eV9hdmFpbGFibGUpIHEgRlJPTSB2YXJpYXRpb25fbG9jYXRpb25fZGV0YWlscyBHUk9VUCBCWSBwcm9kdWN0X2lkKSBzdCcpLCdzdC5wcm9kdWN0X2lkJywnPScsJ3AuaWQnKQogIC0+d2hlcmUoJ3AuYnVzaW5lc3NfaWQnLCRiaWQpLT53aGVyZSgncC5pc19pbmFjdGl2ZScsMCkKICAtPndoZXJlUmF3KCJMT1dFUihDT05DQVQocC5uYW1lLCcgJyxDT0FMRVNDRShwLmFydGlzdCwnJykpKSBSRUdFWFAgPyIsIFskcnhdKQogIC0+Z2V0KFsncC5pZCcsJ3AubmFtZScsJ3AuYXJ0aXN0JywncC5jYXRlZ29yeV9pZCcsJ3Auc3ViX2NhdGVnb3J5X2lkJywncC5jcmVhdGVkX2F0JywncC5hZGRlZF92aWEnLCdzdC5xJywKICAgIERCOjpyYXcoJyhTRUxFQ1Qgc2VsbF9wcmljZV9pbmNfdGF4IEZST00gdmFyaWF0aW9ucyB2IFdIRVJFIHYucHJvZHVjdF9pZD1wLmlkIExJTUlUIDEpIHByaWNlJyksCiAgICBEQjo6cmF3KCcoU0VMRUNUIENPVU5UKCopIEZST00gdHJhbnNhY3Rpb25fc2VsbF9saW5lcyB0c2wgSk9JTiB0cmFuc2FjdGlvbnMgdCBPTiB0LmlkPXRzbC50cmFuc2FjdGlvbl9pZCBXSEVSRSB0c2wucHJvZHVjdF9pZD1wLmlkIEFORCB0LnR5cGU9InNlbGwiIEFORCB0LnN0YXR1cz0iZmluYWwiKSBzb2xkJyldKTsKZm9yZWFjaCAoJHJvd3MgYXMgJHIpIHsKICAkYyA9ICRyLT5jYXRlZ29yeV9pZCA/ICgoJGNhdHNbJHItPmNhdGVnb3J5X2lkXS0+bmFtZSA/PyAnPycpIC4gKCRjYXRzWyRyLT5jYXRlZ29yeV9pZF0tPmRlbGV0ZWRfYXQgPz8gbnVsbCA/ICcgKERFTEVURUQpJyA6ICcnKSkgOiAnKG5vbmUpJzsKICAkcyA9ICRyLT5zdWJfY2F0ZWdvcnlfaWQgPyAoJGNhdHNbJHItPnN1Yl9jYXRlZ29yeV9pZF0tPm5hbWUgPz8gJz8nKSA6ICcnOwogIHByaW50ZigiVFx0IyVkXHQlc1x0JXNcdCVzXHQlc1x0cXR5PSVkXHRzb2xkPSVkXHQkJXNcdCVzXHQlc1xuIiwgJHItPmlkLCBtYl9zdWJzdHIoJHItPm5hbWUsMCw3MCksIG1iX3N1YnN0cigoc3RyaW5nKSRyLT5hcnRpc3QsMCwyNSksICRjLCAkcywgKGludCkkci0+cSwgJHItPnNvbGQsIHJvdW5kKChmbG9hdCkkci0+cHJpY2UsMiksIHN1YnN0cigkci0+Y3JlYXRlZF9hdCwwLDEwKSwgJHItPmFkZGVkX3ZpYSk7Cn0K' | base64 -d > /tmp/diag_tech.php
+            php /tmp/diag_tech.php 2>&1 || true
+            rm -f /tmp/diag_tech.php
