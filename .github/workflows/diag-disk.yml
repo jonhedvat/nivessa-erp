@@ -9,6 +9,11 @@ on:
         required: false
         default: false
         type: boolean
+      drive_check:
+        description: 'Diagnose the Google Drive backup upload (read-only + tiny test POST)'
+        required: false
+        default: false
+        type: boolean
       run_backup:
         description: 'Also run db:backup-daily now (tests the backup job)'
         required: false
@@ -42,6 +47,24 @@ jobs:
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
+            if [ "${{ inputs.drive_check }}" = "true" ]; then
+              echo "== drive config (secrets masked)"
+              grep -E '^DB_BACKUP_GOOGLE_DRIVE_' .env | sed -E 's/(TOKEN=).+/\1<set>/; s#(WEBHOOK_URL=https?://[^/]+/).*#\1...#'
+              U=$(grep -E '^DB_BACKUP_GOOGLE_DRIVE_WEBHOOK_URL=' .env | cut -d= -f2- | tr -d '"'"'"' ')
+              echo "url path shape: $(echo "$U" | sed -E 's#https?://[^/]+##; s#/[A-Za-z0-9_-]{30,}#/<id>#g')"
+              echo "== upload history in laravel logs"
+              grep -h -o 'Database backup drive upload [a-z]*.\{0,300\}' storage/logs/laravel-*.log 2>/dev/null | sed -E 's/"token":"[^"]*"//' | cut -c1-260 | sort | uniq -c | sort -rn | head -15
+              for f in $(ls storage/logs/laravel-*.log | tail -40); do s=$(grep -c 'drive upload succeeded' $f); x=$(grep -c 'drive upload failed' $f); [ "$s$x" != "00" ] && echo "$(basename $f) ok=$s fail=$x"; done
+              echo "== test POST (1KB gz file, real token)"
+              T=$(grep -E '^DB_BACKUP_GOOGLE_DRIVE_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"' ')
+              F=$(grep -E '^DB_BACKUP_GOOGLE_DRIVE_FOLDER_ID=' .env | cut -d= -f2- | tr -d '"'"'"' ')
+              echo test | gzip > /tmp/drivetest.sql.gz
+              curl -sS -L -m 60 -o /tmp/drive_resp.txt -D /tmp/drive_hdr.txt -w 'http=%{http_code} redirects=%{num_redirects} final_host=%{url_effective}\n' \
+                -F business_id=1 -F filename=connectivity_test.sql.gz -F "token=$T" -F "folder_id=$F" -F "file=@/tmp/drivetest.sql.gz;type=application/gzip" "$U" | sed -E 's#(final_host=https?://[^/]+).*#\1#'
+              grep -i -E '^(HTTP|content-type|location)' /tmp/drive_hdr.txt | sed -E 's#(location: https?://[^/]+).*#\1/...#I'
+              echo "-- body:"; sed -e 's/<[^>]*>/ /g' /tmp/drive_resp.txt | tr -s ' \n' | head -c 800; echo
+              rm -f /tmp/drivetest.sql.gz /tmp/drive_resp.txt /tmp/drive_hdr.txt
+            fi
             if [ "${{ inputs.delete_dup_backups }}" = "true" ]; then
               B=storage/app/database_backups
               ls $B/1/backup_*.sql* >/dev/null 2>&1 || { echo "folder 1 has no backups - refusing to delete"; exit 1; }
