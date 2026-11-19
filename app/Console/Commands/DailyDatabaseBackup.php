@@ -45,7 +45,11 @@ class DailyDatabaseBackup extends Command
             $query->where('id', (int) $optBusinessId);
         }
 
-        $businesses = $query->get();
+        // mysqldump dumps the WHOLE database regardless of business, so one
+        // dump a night is enough. Looping every business wrote 20 identical
+        // dumps a night (81G on disk, Nov 2026). Store it under the lowest
+        // business id (the main Nivessa account) unless one is specified.
+        $businesses = $query->orderBy('id')->limit(1)->get();
         if ($businesses->isEmpty()) {
             $this->warn('No business found to back up.');
             return 0;

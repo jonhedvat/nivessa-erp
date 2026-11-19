@@ -34,7 +34,7 @@ class DatabaseBackupService
             return [];
         }
 
-        $files = glob($dir . DIRECTORY_SEPARATOR . 'backup_*.sql');
+        $files = glob($dir . DIRECTORY_SEPARATOR . 'backup_*.sql*');
         if ($files === false) {
             return [];
         }
@@ -111,7 +111,12 @@ class DatabaseBackupService
         }
 
         $binary = env('DB_BACKUP_MYSQLDUMP_PATH', 'mysqldump');
-        $filename = 'backup_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.sql';
+        // Dumps are stored gzipped: raw .sql dumps (~690MB each, Nov 2026)
+        // filled the VPS disk. mysqldump writes straight to a temp file
+        // (--result-file) instead of buffering the whole dump in PHP memory.
+        $base = 'backup_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4));
+        $sqlPath = $dir . DIRECTORY_SEPARATOR . $base . '.sql.tmp';
+        $filename = $base . '.sql.gz';
         $fullPath = $dir . DIRECTORY_SEPARATOR . $filename;
 
         $args = [
@@ -123,6 +128,7 @@ class DatabaseBackupService
             '--quick',
             '--routines',
             '--skip-lock-tables',
+            '--result-file=' . $sqlPath,
         ];
 
         if (!empty($socket)) {
@@ -143,22 +149,26 @@ class DatabaseBackupService
         $process->run();
 
         if (!$process->isSuccessful()) {
+            @unlink($sqlPath);
             return [
                 'success' => false,
                 'message' => 'mysqldump failed: ' . $this->truncateMessage($process->getErrorOutput() ?: $process->getOutput()),
             ];
         }
 
-        $output = $process->getOutput();
-        if ($output === '' || $output === null) {
+        if (!is_file($sqlPath) || filesize($sqlPath) === 0) {
+            @unlink($sqlPath);
             return [
                 'success' => false,
                 'message' => 'mysqldump produced no output. Check that mysqldump is installed and DB credentials are correct.',
             ];
         }
 
-        if (file_put_contents($fullPath, $output) === false) {
-            return ['success' => false, 'message' => 'Could not write backup file to disk.'];
+        $gzOk = $this->createGzipCopy($sqlPath, $fullPath);
+        @unlink($sqlPath);
+        if (!$gzOk) {
+            @unlink($fullPath);
+            return ['success' => false, 'message' => 'Could not write compressed backup file to disk.'];
         }
 
         @chmod($fullPath, 0640);
@@ -229,7 +239,7 @@ class DatabaseBackupService
      */
     public function isAllowedBackupFilename($name)
     {
-        return (bool) preg_match('/^backup_\d{8}_\d{6}_[a-f0-9]{8}\.sql$/', $name);
+        return (bool) preg_match('/^backup_\d{8}_\d{6}_[a-f0-9]{8}\.sql(\.gz)?$/', $name);
     }
 
     /**

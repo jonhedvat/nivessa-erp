@@ -3,6 +3,12 @@ name: Diag disk usage
 # Read-only: where is disk going on the prod VPS (Hostinger disk-full alerts).
 on:
   workflow_dispatch:
+    inputs:
+      run_backup:
+        description: 'Also run db:backup-daily now (tests the backup job)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   run:
@@ -31,6 +37,12 @@ jobs:
           script: |
             set +e
             cd /www/playlist.nivessa.com/app
+            php -l app/Services/DatabaseBackupService.php; php -l app/Console/Commands/DailyDatabaseBackup.php
+            if [ "${{ inputs.run_backup }}" = "true" ]; then
+              echo "== running db:backup-daily"; time php artisan db:backup-daily 2>&1 | tail -5
+            fi
+            df -h /
+            echo "== backup dirs"; du -sh storage/app/database_backups/* 2>/dev/null | sort -V | head -25; ls -lh storage/app/database_backups/1 2>/dev/null
             echo "== storage/app depth 3"; du -xh --max-depth=3 storage/app 2>/dev/null | sort -rh | head -30
             echo "== storage/logs"; ls -lhS storage/logs | head -10
             for d in $(du -x --max-depth=2 storage/app 2>/dev/null | sort -rn | sed -n '2,4p' | cut -f2); do
