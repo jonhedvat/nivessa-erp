@@ -407,6 +407,41 @@ class ManageUserController extends Controller
         return redirect()->action('ManageUserController@show', [$id])->with('status', $output);
     }
 
+    /**
+     * Is this email free? (jQuery validate "remote" check on Add/Edit user.)
+     * Returns "true" when no other user has it.
+     */
+    public function checkEmail(Request $request)
+    {
+        if (!auth()->user()->can('user.create') && !auth()->user()->can('user.update')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $query = User::where('email', $request->input('email'));
+        if (!empty($request->input('user_id'))) {
+            $query->where('id', '!=', $request->input('user_id'));
+        }
+
+        return response()->json(!$query->exists());
+    }
+
+    /**
+     * Is this username free? (jQuery validate "remote" check on Add/Edit user.)
+     */
+    public function checkUsername(Request $request)
+    {
+        if (!auth()->user()->can('user.create') && !auth()->user()->can('user.update')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $username = (string) $request->input('username');
+        if (!empty($request->input('username_ext'))) {
+            $username .= $request->input('username_ext');
+        }
+
+        return response()->json(!User::where('username', $username)->exists());
+    }
+
     private function getAdmins()
     {
         $business_id = request()->session()->get('user.business_id');

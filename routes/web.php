@@ -1193,6 +1193,11 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
 
     Route::resource('roles', 'RoleController');
 
+    // Duplicate email/username checks for the Add/Edit user forms. The old
+    // /business/register/check-* URLs were turned off with public sign-up on
+    // 11/16, which left these forms stuck on a pending check (Update did nothing).
+    Route::post('/users/check-email', 'ManageUserController@checkEmail')->name('users.check-email');
+    Route::post('/users/check-username', 'ManageUserController@checkUsername')->name('users.check-username');
     Route::resource('users', 'ManageUserController');
     Route::put('/users/{id}/account-info', 'ManageUserController@updateAccountInfo')->name('users.update-account-info');
 
