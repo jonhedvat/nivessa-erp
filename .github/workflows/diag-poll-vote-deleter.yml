@@ -50,16 +50,18 @@ jobs:
             echo "=== laravel log mentions ==="
             grep -h -i "store-requests\|website-directory/requests" storage/logs/*.log 2>/dev/null | grep "2026-11-1[56]" | cut -c1-300 | head -40
             php artisan tinker --no-ansi <<'PHP'
-            echo 'TZ app=' . config('app.timezone') . "\n";
-            // deletions were 2026-11-15 23:54 -> 2026-11-16 00:22 America/Los_Angeles
-            $from = '2026-11-15 20:00:00'; $to = '2026-11-16 02:00:00';
-            echo "=== activity_log in window ===\n";
-            foreach (\DB::table('activity_log as a')->leftJoin('users as u', 'u.id', '=', 'a.causer_id')->whereBetween('a.created_at', [$from, $to])->orderBy('a.created_at')->limit(300)->get(['a.created_at', 'a.description', 'a.subject_type', 'u.first_name', 'u.last_name', 'u.username']) as $r) echo json_encode([$r->created_at, $r->description, $r->subject_type, trim($r->first_name . ' ' . $r->last_name), $r->username]) . "\n";
-            if (\Schema::hasTable('sessions')) {
-              echo "=== sessions active in window ===\n";
-              foreach (\DB::table('sessions as s')->leftJoin('users as u', 'u.id', '=', 's.user_id')->whereNotNull('s.user_id')->get(['s.user_id', 's.last_activity', 'u.first_name', 'u.last_name']) as $r) echo json_encode([$r->user_id, date('c', $r->last_activity), trim($r->first_name . ' ' . $r->last_name)]) . "\n";
-            } else { echo "no sessions table (driver=" . config('session.driver') . ")\n"; }
-            echo "=== users with website-admin access ===\n";
-            foreach (\DB::table('users')->where('user_type', 'user')->whereNull('deleted_at')->get(['id', 'first_name', 'last_name', 'username']) as $u) { try { $m = \App\User::find($u->id); if ($m && ($m->can('superadmin') || $m->hasRole('Admin#1') || $m->can('website_admin'))) echo json_encode([$u->id, trim($u->first_name . ' ' . $u->last_name), $u->username]) . "\n"; } catch (\Throwable $e) {} }
+            $sus = \DB::table('users')->where(fn ($q) => $q->where('username', 'like', '%pHqghUme%')->orWhere('first_name', 'like', '%pHqghUme%')->orWhere('email', 'like', '%pHqghUme%'))->get();
+            echo "=== suspicious users ===\n";
+            foreach ($sus as $u) { $m = \App\User::find($u->id); echo json_encode(['id' => $u->id, 'username' => $u->username, 'email_domain' => substr(strrchr((string) $u->email, '@'), 1), 'user_type' => $u->user_type, 'status' => $u->status ?? null, 'business_id' => $u->business_id, 'created_at' => $u->created_at, 'updated_at' => $u->updated_at, 'deleted_at' => $u->deleted_at ?? null, 'roles' => $m ? $m->getRoleNames() : null, 'is_superadmin' => $m ? $m->can('superadmin') : null]) . "\n"; }
+            $ids = $sus->pluck('id')->all();
+            echo "=== who created it (activity_log subject=user) ===\n";
+            foreach (\DB::table('activity_log as a')->leftJoin('users as u', 'u.id', '=', 'a.causer_id')->where('a.subject_type', 'App\\User')->whereIn('a.subject_id', $ids)->whereNotIn('a.description', ['pos_duty'])->orderBy('a.created_at')->limit(20)->get(['a.created_at', 'a.description', 'u.username']) as $r) echo json_encode($r) . "\n";
+            echo "=== its activity per day/description ===\n";
+            foreach (\DB::table('activity_log')->whereIn('causer_id', $ids)->selectRaw('date(created_at) d, description, count(*) n, min(created_at) first, max(created_at) last')->groupBy('d', 'description')->orderBy('d')->get() as $r) echo json_encode($r) . "\n";
+            echo "=== ALL activity 2026-11-15 23:30 -> 2026-11-16 00:45 ===\n";
+            foreach (\DB::table('activity_log as a')->leftJoin('users as u', 'u.id', '=', 'a.causer_id')->whereBetween('a.created_at', ['2026-11-15 23:30:00', '2026-11-16 00:45:00'])->orderBy('a.created_at')->limit(200)->get(['a.created_at', 'a.description', 'a.subject_type', 'u.username', 'a.properties']) as $r) echo json_encode([$r->created_at, $r->description, $r->subject_type, $r->username, substr((string) $r->properties, 0, 200)]) . "\n";
+            echo "=== other recent oddly-named users (last 60d) ===\n";
+            foreach (\DB::table('users')->where('created_at', '>=', now()->subDays(60))->orderBy('created_at')->get(['id', 'username', 'first_name', 'last_name', 'user_type', 'created_at']) as $u) echo json_encode($u) . "\n";
+            echo "session driver=" . config('session.driver') . "\n";
             PHP
             echo "=== done ==="
