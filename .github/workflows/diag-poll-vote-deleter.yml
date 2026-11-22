@@ -1,0 +1,65 @@
+# READ-ONLY (2026-11-22): who used Website Admin > Store Requests to delete poll votes?
+name: Diag who deleted store-poll votes
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+
+      - name: Who deleted poll votes (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            echo "=== nginx: Store Requests page hits (any log readable) ==="
+            ls -la /var/log/nginx/ 2>&1 | head -5
+            zgrep -h "website-directory/requests" /var/log/nginx/*access* 2>/dev/null | grep -E "1[4-7]/Nov/2026" | awk '{print $4, $1, $6, $7, $9}' | sed -E 's/([0-9]+\.[0-9]+)\.[0-9]+\.[0-9]+/\1.x.x/' | head -200
+            cd /www/playlist.nivessa.com/app
+            echo "=== laravel log mentions ==="
+            grep -h -i "store-requests\|website-directory/requests" storage/logs/*.log 2>/dev/null | grep "2026-11-1[56]" | cut -c1-300 | head -40
+            php artisan tinker --no-ansi <<'PHP'
+            echo 'TZ app=' . config('app.timezone') . "\n";
+            // deletions were 2026-11-15 23:54 -> 2026-11-16 00:22 America/Los_Angeles
+            $from = '2026-11-15 20:00:00'; $to = '2026-11-16 02:00:00';
+            echo "=== activity_log in window ===\n";
+            foreach (\DB::table('activity_log as a')->leftJoin('users as u', 'u.id', '=', 'a.causer_id')->whereBetween('a.created_at', [$from, $to])->orderBy('a.created_at')->limit(300)->get(['a.created_at', 'a.description', 'a.subject_type', 'u.first_name', 'u.last_name', 'u.username']) as $r) echo json_encode([$r->created_at, $r->description, $r->subject_type, trim($r->first_name . ' ' . $r->last_name), $r->username]) . "\n";
+            if (\Schema::hasTable('sessions')) {
+              echo "=== sessions active in window ===\n";
+              foreach (\DB::table('sessions as s')->leftJoin('users as u', 'u.id', '=', 's.user_id')->whereNotNull('s.user_id')->get(['s.user_id', 's.last_activity', 'u.first_name', 'u.last_name']) as $r) echo json_encode([$r->user_id, date('c', $r->last_activity), trim($r->first_name . ' ' . $r->last_name)]) . "\n";
+            } else { echo "no sessions table (driver=" . config('session.driver') . ")\n"; }
+            echo "=== users with website-admin access ===\n";
+            foreach (\DB::table('users')->where('user_type', 'user')->whereNull('deleted_at')->get(['id', 'first_name', 'last_name', 'username']) as $u) { try { $m = \App\User::find($u->id); if ($m && ($m->can('superadmin') || $m->hasRole('Admin#1') || $m->can('website_admin'))) echo json_encode([$u->id, trim($u->first_name . ' ' . $u->last_name), $u->username]) . "\n"; } catch (\Throwable $e) {} }
+            PHP
+            echo "=== done ==="
