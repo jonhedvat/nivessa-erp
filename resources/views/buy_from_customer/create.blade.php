@@ -2050,7 +2050,7 @@ HTML;
             var t = BFC_RULES.types[type] || {};
             var ebay = bfcNeedsEbaySold(t);
             // The link box only where a link means something: Discogs records and eBay lines.
-            $row.find('input[name$="[discogs_link]"]').attr('placeholder', ebay ? 'eBay link (required over ${{ (int) \App\Services\BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER }})' : 'Discogs release ID or URL')
+            $row.find('input[name$="[discogs_link]"]').attr('placeholder', ebay ? (t.ebay_link_always ? 'eBay sold link (required)' : 'eBay link (required over ${{ (int) \App\Services\BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER }})') : 'Discogs release ID or URL')
                 .toggle(ebay || t.mode === 'individual_discogs' || !!$.trim($row.find('input[name$="[discogs_link]"]').val()));
             $row.find('a.bfc-ebay-search').attr('href', bfcEbaySearchHref($row)).toggle(ebay);
             $row.find('a.bfc-ebay-howto').toggle(ebay);
