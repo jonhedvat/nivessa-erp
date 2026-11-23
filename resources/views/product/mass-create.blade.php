@@ -478,6 +478,10 @@
                     <button type="button" class="btn btn-default btn-lg" id="ai_price_quick" style="border-radius:8px;" title="Prices from AI + our sales only. Use when eBay/Discogs aren't connecting.">
                         <i class="fa fa-bolt"></i> Price from ERP history
                     </button>
+                    {{-- Sarah 2026-11-22: items already have prices typed in ("Rumours LP VG+ $22") — skip AI, just add them. --}}
+                    <button type="button" class="btn btn-default btn-lg" id="already_priced" style="border-radius:8px;" title="Type a $ price on each line, like: Rumours LP VG+ $22">
+                        <i class="fa fa-check"></i> I already priced the items
+                    </button>
                     <span class="text-muted" id="bulk_parse_status"></span>
                 </div>
                 <div id="ai_price_history" style="display:none; margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e3e3e8; border-radius:8px; font-size:13px;"></div>
@@ -3033,6 +3037,30 @@ a, b, c, d, e</textarea>
     })();
 
     // Sarah 2026-11-15: "Price it & add to table" — rough typed list → Claude → CSV → table.
+    // "I already priced the items": no AI. Lines like "Rumours LP VG+ $22" or
+    // "Rumours - Fleetwood Mac - $22" become "name,artist,,,,22" so the $ price
+    // doesn't end up in the name. CSV / pipe / tab lines go through unchanged.
+    $('#already_priced').on('click', function () {
+        const raw = ($('#bulk_product_text').val() || '').trim();
+        if (!raw) { toastr.warning('Type your items with their prices first, like: Rumours LP VG+ $22'); return; }
+        let noPrice = 0;
+        const lines = raw.split('\n').map(function (line) {
+            line = line.trim();
+            if (!line || /[,|\t]/.test(line)) return line;
+            const m = line.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
+            if (!m) { noPrice++; return line; }
+            const rest = line.replace(m[0], ' ').replace(/[\s\-–:@]+$/, '').replace(/^[\s\-–:@]+/, '').replace(/\s+-\s*-\s+/g, ' - ').trim();
+            const d = rest.search(/\s[-–]\s/);
+            const name = d === -1 ? rest : rest.slice(0, d).trim();
+            const artist = d === -1 ? '' : rest.slice(d + 3).replace(/\s[-–]\s*$/, '').trim();
+            return name + ',' + artist + ',,,,' + m[1] + ',';
+        });
+        $('#bulk_product_text').val(lines.join('\n'));
+        $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
+        if (noPrice) {
+            toastr.info(noPrice + ' line' + (noPrice === 1 ? ' has' : 's have') + ' no $ price. Fill those in the table.', '', { timeOut: 8000 });
+        }
+    });
     // ChatGPT way step 3: send the pasted answer through the normal parser.
     $('#chatgpt_answer_add').on('click', function () {
         // Keep only the product rows (Name,Artist,Category,Subcategory,SKU,Price,) — drops ChatGPT's
