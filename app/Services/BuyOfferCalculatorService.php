@@ -380,7 +380,36 @@ class BuyOfferCalculatorService
                     ['under' => 30, 'percent' => 0.15],
                     ['under' => null, 'percent' => 0.20],
                 ]],
-                'music_gear_value' => ['label' => 'Music gear: guitar, amp, pedal, keyboard, mixer… (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                // Jon 2026-11-23: instruments get their own "Instrument:" lines so staff
+                // find them (a guitar was bought outside the form today, PO2026/8150).
+                // Guitars sold 9 in a year at $166.78 avg, 15 in stock: paid off the
+                // eBay sold value like other gear, 15% under $30 / 20% at $30+.
+                'instrument_guitar' => ['label' => 'Instrument: Guitar / Bass (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'instrument_amp' => ['label' => 'Instrument: Amp (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'instrument_pedal' => ['label' => 'Instrument: Effects Pedal (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'instrument_keyboard' => ['label' => 'Instrument: Keyboard / Synth (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'instrument_drums' => ['label' => 'Instrument: Drums / Percussion (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'instrument_other' => ['label' => 'Instrument: Other (horn, violin, ukulele, harmonica… enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                // Replaced by the Instrument: lines above; kept so any buy that used it still shows its label.
+                'music_gear_value' => ['label' => 'Music gear: guitar, amp, pedal, keyboard, mixer… (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'retired' => true, 'value_tiers' => [
                     ['under' => 30, 'percent' => 0.15],
                     ['under' => null, 'percent' => 0.20],
                 ]],
