@@ -305,7 +305,7 @@ class MassAddAiPriceController extends Controller
             // Sarah 2026-11-22: staff got "couldn't reach the server" when eBay/Discogs were slow.
             // "Quick price" skips the web lookups; otherwise they stop after WEB_BUDGET_SECONDS
             // and the remaining lines are priced from our sales + the AI alone.
-            $skipWeb = $request->boolean('skip_web');
+            $skipWeb = (bool) $request->input('skip_web');
             $webStart = microtime(true);
             $webSkipped = 0;
             foreach ($numbered as $n => $l) {
