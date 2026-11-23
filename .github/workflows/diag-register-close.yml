@@ -56,16 +56,13 @@ jobs:
             $tz = config('app.timezone'); echo 'TZ app=' . $tz . "\n";
             $from = \Carbon\Carbon::parse($d . ' 00:00', 'America/Los_Angeles')->subDay();
             $to = $from->copy()->addDays(3);
-            $q = \DB::table('cash_registers as cr')->leftJoin('users as u', 'u.id', '=', 'cr.user_id')->leftJoin('business_locations as bl', 'bl.id', '=', 'cr.location_id')
-              ->where(fn ($w) => $w->whereBetween('cr.created_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()])
-                ->orWhereBetween('cr.closed_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()]));
+            $q = \DB::table('cash_registers as cr')->leftJoin('users as u', 'u.id', '=', 'cr.user_id')->leftJoin('business_locations as bl', 'bl.id', '=', 'cr.location_id')->where(fn ($w) => $w->whereBetween('cr.created_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()])->orWhereBetween('cr.closed_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()]));
             if ($loc !== '') $q->where('bl.name', 'like', '%' . $loc . '%');
             $rows = $q->orderBy('cr.id')->get(['cr.*', 'u.first_name', 'u.last_name', 'bl.name as loc']);
             echo 'COUNT=' . count($rows) . "\n";
             foreach ($rows as $r) {
               echo 'REG ' . json_encode($r) . "\n";
-              $tx = \DB::table('cash_register_transactions')->where('cash_register_id', $r->id)
-                ->selectRaw('pay_method, type, transaction_type, ROUND(SUM(amount),2) amt, COUNT(*) n')->groupBy('pay_method', 'type', 'transaction_type')->get();
+              $tx = \DB::table('cash_register_transactions')->where('cash_register_id', $r->id)->selectRaw('pay_method, type, transaction_type, ROUND(SUM(amount),2) amt, COUNT(*) n')->groupBy('pay_method', 'type', 'transaction_type')->get();
               echo 'TX ' . json_encode($tx) . "\n";
             }
             PHP
