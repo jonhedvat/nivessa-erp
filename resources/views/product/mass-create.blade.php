@@ -472,11 +472,11 @@
                     style="font-size:16px; line-height:1.6; border-radius:10px; padding:12px 14px; background:#fff;"></textarea>
                 <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                     <button type="button" class="btn btn-primary btn-lg" id="ai_price_bulk_text" style="border-radius:8px;">
-                        <i class="fa fa-magic"></i> Price it &amp; add to table
+                        <i class="fa fa-magic"></i> Price from web research
                     </button>
                     {{-- Sarah 2026-11-22: same AI + our sales, but skips the eBay/Discogs lookups (for when they're down or slow). --}}
                     <button type="button" class="btn btn-default btn-lg" id="ai_price_quick" style="border-radius:8px;" title="Prices from AI + our sales only. Use when eBay/Discogs aren't connecting.">
-                        <i class="fa fa-bolt"></i> Quick price (skip eBay/Discogs)
+                        <i class="fa fa-bolt"></i> Price from ERP history
                     </button>
                     <span class="text-muted" id="bulk_parse_status"></span>
                 </div>
@@ -3058,10 +3058,10 @@ a, b, c, d, e</textarea>
         } else { t.select(); document.execCommand('copy'); done(); }
     });
     const aiPriceBtnHtml = {
-        ai_price_bulk_text: '<i class="fa fa-magic"></i> Price it &amp; add to table',
-        ai_price_quick: '<i class="fa fa-bolt"></i> Quick price (skip eBay/Discogs)',
+        ai_price_bulk_text: '<i class="fa fa-magic"></i> Price from web research',
+        ai_price_quick: '<i class="fa fa-bolt"></i> Price from ERP history',
     };
-    const aiPriceFallbackHint = ' Try <strong>Quick price</strong>, or <a href="#" class="open-chatgpt-way">use ChatGPT instead</a>.';
+    const aiPriceFallbackHint = ' Try <strong>Price from ERP history</strong>, or <a href="#" class="open-chatgpt-way">use ChatGPT instead</a>.';
     $(document).on('click', '.open-chatgpt-way', function (e) {
         e.preventDefault();
         $('#chatgpt_way').prop('open', true);
@@ -3081,7 +3081,7 @@ a, b, c, d, e</textarea>
         $btn.html('<i class="fa fa-spinner fa-spin"></i> Pricing ' + n + ' item' + (n === 1 ? '' : 's') + '...');
         $('#bulk_parse_status').html((skipWeb ? 'Skipping eBay/Discogs.' : 'This can take up to a minute for long lists.')
             + (n > MASS_ADD_BIG_BATCH ? ' <strong>' + n + ' items is a big batch; ' + MASS_ADD_BIG_BATCH + ' or fewer at a time is much faster.</strong>' : ''));
-        const doneSlow = window.massAddSlowWatch(skipWeb ? 'pricing' : 'pricing on eBay and the web', n, skipWeb ? '' : ' Or use <strong>Quick price</strong> to skip eBay/Discogs.');
+        const doneSlow = window.massAddSlowWatch(skipWeb ? 'pricing' : 'pricing on eBay and the web', n, skipWeb ? '' : ' Or use <strong>Price from ERP history</strong> to skip eBay/Discogs.');
         $.ajax({
             url: "{{ route('product.massCreate.aiPrice') }}",
             method: 'POST',
@@ -3134,7 +3134,7 @@ a, b, c, d, e</textarea>
             if (res.web_skipped > 0) {
                 $('#ai_price_history').prepend('<div style="color:#b45309; margin-bottom:6px;"><i class="fa fa-exclamation-triangle"></i> eBay/Discogs were slow, so ' + res.web_skipped + ' item' + (res.web_skipped === 1 ? ' was' : 's were') + ' priced from the AI + our sales only.</div>').show();
             } else if (res.skip_web) {
-                $('#ai_price_history').prepend('<div class="text-muted" style="margin-bottom:6px;"><i class="fa fa-bolt"></i> Quick price: no eBay/Discogs lookups.</div>').show();
+                $('#ai_price_history').prepend('<div class="text-muted" style="margin-bottom:6px;"><i class="fa fa-bolt"></i> Priced from ERP history: no eBay/Discogs lookups.</div>').show();
             }
             $('#bulk_product_text').val(res.csv);
             $('#bulk_preview_container').hide();
