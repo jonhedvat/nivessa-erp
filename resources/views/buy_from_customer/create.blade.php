@@ -36,6 +36,23 @@
     .bfc-quote-card td { padding:2px 6px 2px 0; border-top:1px solid #f0f0f0; }
     .bfc-quote-card .bfc-q-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
     .bfc-quote-error { margin-top:8px; color:#a12a1f; font-weight:600; }
+    /* Compact top (Jon 11/23). */
+    .bfc-compact-header { padding-top: 8px !important; padding-bottom: 0 !important; }
+    .content .bfc-top-box { border: 2px solid #c62828; background: #fff5f5; border-radius: 6px; padding: 7px 12px; margin-bottom: 8px; font-size: 14px; line-height: 1.45; color: #111; }
+    .content .bfc-top-box .bfc-top-red { color: #c62828; font-weight: 700; }
+    .bfc-create .bfc-beta-banner.bfc-beta-compact { display: block; padding: 5px 12px; margin-bottom: 8px; font-size: 13px; }
+    .bfc-beta-compact summary { cursor: pointer; }
+    .bfc-create .meta-row.bfc-meta-compact { padding: 5px 12px; margin-bottom: 6px; font-size: 13px; }
+    .bfc-create .bfc-used-budget.bfc-budget-compact { padding: 5px 12px; margin-bottom: 8px; }
+    .bfc-budget-compact > summary { cursor: pointer; font-size: 13px; list-style: none; }
+    .bfc-budget-compact > summary::-webkit-details-marker { display: none; }
+    .bfc-budget-compact[open] > summary { margin-bottom: 8px; }
+    .bfc-budget-label { font-weight: 600; margin-right: 4px; }
+    .bfc-budget-chip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #e8f5e9; color: #1b5e20; margin-right: 4px; font-weight: 600; }
+    .bfc-budget-chip.warn { background: #fff8e1; color: #8a6d00; }
+    .bfc-budget-chip.over { background: #ffebee; color: #c62828; }
+    .bfc-budget-more { font-size: 12px; color: #3c8dbc; text-decoration: underline; }
+    .bfc-budget-alerts:empty { display: none; }
     /* Scan mode (Jon 11/23). Off = the form looks exactly like before. */
     .bfc-scan-wrap, .bfc-scan-on-only { display: none; }
     body.bfc-scan-on .bfc-scan-wrap, body.bfc-scan-on .bfc-scan-on-only { display: block; }
@@ -344,8 +361,8 @@
 @stop
 
 @section('content')
-<section class="content-header">
-    <h1>Buy from Customer Form @if(!empty($bfcBeta)) (Beta) @endif</h1>
+<section class="content-header bfc-compact-header">
+    <h1 style="display:inline-block; margin:0; font-size:22px; vertical-align:middle;">Buy from Customer Form @if(!empty($bfcBeta)) (Beta) @endif</h1>
     @if(empty(request()->route('id')))
         {{-- Normal / Beta live on one page as tabs (Sarah 10/23). --}}
         <div class="bfc-form-tabs">
@@ -353,8 +370,8 @@
             <a href="{{ route('buy-from-customer.original') }}" class="{{ empty($bfcBeta) ? 'on' : '' }}">Original</a>
         </div>
         <style>
-            .bfc-form-tabs { display: flex; gap: 8px; margin-top: 10px; }
-            .bfc-form-tabs a { padding: 6px 16px; border-radius: 999px; border: 1px solid #DFD2B3; background: #FFFFFF; color: #1F1B16; font-weight: 700; font-size: 14px; text-decoration: none; }
+            .bfc-form-tabs { display: inline-flex; gap: 6px; margin: 0 0 0 12px; vertical-align: middle; }
+            .bfc-form-tabs a { padding: 3px 12px; border-radius: 999px; border: 1px solid #DFD2B3; background: #FFFFFF; color: #1F1B16; font-weight: 700; font-size: 14px; text-decoration: none; }
             .bfc-form-tabs a.on { background: #DCEBFF; border-color: #9DC1F0; color: #1F4E8C; }
         </style>
     @endif
@@ -387,8 +404,11 @@
 
     {{-- Sarah 2026-10-26: staff thought a draft meant the credit was on the
          account, then added it by hand. Say it at the top and at the buttons. --}}
-    <div class="bfc-not-finished">
-        <strong>This buy is NOT finished yet.</strong> Nothing is paid and <strong>no store credit is added</strong> until the seller signs and you click the green <strong>Accept and finish buy</strong> button at the bottom. Never add buy credit by hand on the customer's page.
+    {{-- Jon 11/23: the warnings, rules, date/employee and budget used to take a
+         whole screen before the form. Same content, compact. --}}
+    <div class="bfc-top-box">
+        <div><strong>Not finished</strong> until the seller signs and you click <strong>Accept and finish buy</strong> at the bottom. Nothing is paid or credited before that. Never add buy credit by hand.</div>
+        <div><strong>Pay the number the system gives you.</strong> <span class="bfc-top-red">Overpaying too often loses buying privileges.</span> Unsure? Call your store manager.</div>
     </div>
 
     @php
@@ -467,28 +487,18 @@
         }
     @endphp
 
-    <div class="alert alert-warning bfc-rules">
-        <strong>Buying rules</strong>
-        <ol style="margin:6px 0 0; padding-left:20px;">
-            <li>You must pay the number the system gives you. <strong style="color:#c62828 !important;">Overpaying costs the store a lot of money and anyone who overpays too frequently will lose buying privileges.</strong></li>
-            <li>If you are unsure or need approval, please call your store manager to help you.</li>
-        </ol>
-    </div>
-
     @if($bfcBeta)
-        <div class="bfc-beta-banner">
-            <span><strong>Beta buy form:</strong> pays more on bulk that sells fast at this store and less on what we have too much of (or huge lots). Pick the genre under the title when there's a dropdown. Each line shows how fast it sells and any cut right away.@if(auth()->user()->can('business_settings.access')) <a href="{{ url('/business/settings') }}#buy-margins" target="_blank">Edit margins</a>@endif</span>
-        </div>
+        <details class="bfc-beta-banner bfc-beta-compact">
+            <summary><strong>Beta buy form</strong> — how it prices</summary>
+            Pays more on bulk that sells fast at this store and less on what we have too much of (or huge lots). Pick the genre under the title when there's a dropdown. Each line shows how fast it sells and any cut right away.@if(auth()->user()->can('business_settings.access')) <a href="{{ url('/business/settings') }}#buy-margins" target="_blank">Edit margins</a>@endif
+        </details>
     @endif
 
     <div class="row">
         <div class="col-md-12">
-            <div class="meta-row">
-                <div class="row">
-                    <div class="col-sm-4"><strong>Date &amp; time:</strong> {{ @format_datetime(\Carbon\Carbon::now()) }}</div>
-                    <div class="col-sm-4"><strong>Employee:</strong> {{ auth()->user()->user_full_name ?? auth()->user()->username ?? '—' }}</div>
-                    <div class="col-sm-4"><strong>Buy record #:</strong> @if(($saved_offer_id ?? session('saved_offer_id'))) BFC-{{ str_pad((string) ($saved_offer_id ?? session('saved_offer_id')), 6, '0', STR_PAD_LEFT) }} @else <span class="text-muted">assigned on save</span> @endif</div>
-                </div>
+            <div class="meta-row bfc-meta-compact">
+                {{ @format_datetime(\Carbon\Carbon::now()) }} · {{ auth()->user()->user_full_name ?? auth()->user()->username ?? '—' }} ·
+                @if(($saved_offer_id ?? session('saved_offer_id'))) <strong>BFC-{{ str_pad((string) ($saved_offer_id ?? session('saved_offer_id')), 6, '0', STR_PAD_LEFT) }}</strong> @else <span class="text-muted">buy # assigned on save</span> @endif
             </div>
 
             {{-- Used buying budget by store — same figures as the inventory
@@ -540,7 +550,19 @@
 HTML;
                     };
                 @endphp
-                <div class="bfc-used-budget">
+                <details class="bfc-used-budget bfc-budget-compact">
+                    <summary>
+                        <span class="bfc-budget-label">Used budget · week {{ $purchaseBudget['week_no'] }}:</span>
+                        @foreach($perStore as $st)
+                            @php $u = $st['used']; @endphp
+                            <span class="bfc-budget-chip {{ $u['over_budget'] ? 'over' : ($u['pct_spent'] >= 80 ? 'warn' : '') }}">
+                                {{ $st['label'] }}
+                                @if($u['over_budget']) over by ${{ number_format(abs($u['remaining']), 0) }} @else ${{ number_format($u['remaining'], 0) }} left @endif
+                                <small>({{ $u['pct_spent'] }}%)</small>
+                            </span>
+                        @endforeach
+                        <span class="bfc-budget-more">details</span>
+                    </summary>
                     <div class="bfc-used-budget-head">
                         <span class="bfc-used-budget-title">Used buying budget by store — week {{ $purchaseBudget['week_no'] }} of 13 <small class="text-muted">({{ \Carbon\Carbon::parse($purchaseBudget['start'])->format('M j') }} – {{ \Carbon\Carbon::parse($purchaseBudget['end'])->format('M j') }}) · 35% cap</small></span>
                         <span class="bfc-used-budget-figures">Weekly total <strong>${{ number_format($purchaseBudget['budget'], 0) }}</strong></span>
@@ -554,6 +576,8 @@ HTML;
                         @endphp
                         {!! $bfcBar($st['label'], $bfcCaption, $st['used'], $st['used_cap_full'] ?? null, $st['used_eaten'] ?? null) !!}
                     @endforeach
+                </details>
+                <div class="bfc-budget-alerts">
                     @php
                         // Stores where New's overspend ate the whole shared pot, so
                         // there's no used budget left to buy collections against.
