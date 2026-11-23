@@ -2475,15 +2475,25 @@ a, b, c, d, e</textarea>
                 + (highs.length ? '<p><strong>Too high</strong> = more than 2.5x what it sells for. Unticked by default: tick to switch to the suggested price, or leave it if you know it is worth more.</p>' : '')
                 + (unchecked.length ? '<div class="alert alert-warning" style="padding:8px 10px;"><strong>' + unchecked.length + ' row' + (unchecked.length > 1 ? 's' : '') + ' could not be checked against Discogs</strong> (Discogs is limiting how fast we can look things up). Go back, wait a minute and save again to check them, or save anyway: '
                     + unchecked.map(function (it) { return esc((it.artist ? it.artist + ' - ' : '') + it.name) + ' ($' + Number(it.price).toFixed(2) + ')'; }).join(', ') + '</div>' : '')
-                + (rowsHtml ? '<table class="table table-condensed"><thead><tr><th></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
+                + (rowsHtml ? '<table class="table table-condensed"><thead><tr><th style="white-space:nowrap;"><label style="font-weight:600;font-size:11px;margin:0;cursor:pointer;" title="Select or unselect all"><input type="checkbox" id="pg_all"> All</label></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
                 + '<div id="pg_reason_wrap" style="display:none;"><label>Why keep the low price on the unticked rows? (required)</label>'
                 + '<input type="text" class="form-control" id="pg_reason" placeholder="e.g. damaged cover, bargain bin, matching another copy"></div></div>'
                 + '<div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">Go back</button>'
                 + '<button type="button" class="btn btn-success" id="pg_apply">' + (rowsHtml ? 'Use ticked prices &amp; save' : 'Save anyway') + '</button></div>'
                 + '</div></div></div>');
             $('body').append($m);
-            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('tr.pg-low .pg-use:not(:checked)').length > 0); };
+            // Header "All" box (Sarah 2026-11-22): ticks/unticks every row; manager-only (disabled) rows stay as they are.
+            const syncAll = function () {
+                const $boxes = $m.find('.pg-use:not(:disabled)'), on = $boxes.filter(':checked').length;
+                $m.find('#pg_all').prop('checked', $boxes.length > 0 && on === $boxes.length).prop('indeterminate', on > 0 && on < $boxes.length);
+            };
+            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('tr.pg-low .pg-use:not(:checked)').length > 0); syncAll(); };
             $m.on('change', '.pg-use', syncReason);
+            $m.on('change', '#pg_all', function () {
+                $m.find('.pg-use:not(:disabled)').prop('checked', this.checked);
+                syncReason();
+            });
+            syncAll();
             $m.on('click', '#pg_apply', function () {
                 const kept = [];
                 $m.find('tbody tr').each(function () {
