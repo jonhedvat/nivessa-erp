@@ -7,6 +7,28 @@
 </section>
 
 <section class="content">
+    @php
+        // Jon 11/23: individually priced items (single records, signed/rare/eBay,
+        // $10+ CDs, anything scanned) get listed one by one in Mass Add — they
+        // are never "a collection to store in the back". Only bulk lots count
+        // toward the 100-item store-it-in-the-back / warehouse call.
+        $bfcTypeRules = app(\App\Services\BuyOfferCalculatorService::class)->getRules()['item_types'];
+        $bfcBulkUnits = 0;
+        $bfcSingleUnits = 0;
+        foreach ($offer->lines as $bfcL) {
+            $bfcQ = (float) $bfcL->quantity;
+            $bfcMode = $bfcTypeRules[$bfcL->item_type]['mode'] ?? 'bulk_fixed';
+            if ($bfcMode !== 'bulk_fixed' || !empty($bfcL->upc)) {
+                $bfcSingleUnits += $bfcQ;
+            } else {
+                $bfcBulkUnits += $bfcQ;
+            }
+        }
+        $bfcBulkUnits = (int) round($bfcBulkUnits);
+        $bfcSingleUnits = (int) round($bfcSingleUnits);
+        $bfcStoreCollection = $bfcBulkUnits >= 100;
+        $bfcAllSingles = $bfcBulkUnits === 0 && $bfcSingleUnits > 0;
+    @endphp
     <div class="no-print" style="margin-bottom:15px;">
         @if(session('status'))
             <div class="alert alert-{{ session('status.success') ? 'success' : 'danger' }}">
@@ -64,18 +86,16 @@
                  (it loads this buy and adds its rows). 100+: store the box in the back
                  and list it later. --}}
             @php
-                $bfcItemCount = (int) round($offer->lines->sum(function ($l) { return (float) $l->quantity; }));
-                $bfcBig = $bfcItemCount >= 100;
                 $bfcMassAddUrl = route('product.massCreate', ['buy' => $offer->buy_record_number, 'add' => 1]);
                 $bfcCanList = auth()->user()->can('product.create');
+                $bfcPlural = function ($n, $w) { return number_format($n) . ' ' . $w . ($n === 1 ? '' : 's'); };
             @endphp
-            <div id="bfc_next_step" style="border:2px solid {{ $bfcBig ? '#8a6d00' : '#3c8dbc' }}; background:{{ $bfcBig ? '#fff8e1' : '#eef6fc' }}; border-radius:6px; padding:14px 18px; margin-bottom:15px;">
-                <div style="font-size:18px; font-weight:800; margin-bottom:6px;">
-                    <i class="fa fa-{{ $bfcBig ? 'archive' : 'list' }}"></i> Next: {{ number_format($bfcItemCount) }} item{{ $bfcItemCount === 1 ? '' : 's' }}
-                    — {{ $bfcBig ? 'store it in the back' : 'list them now' }}
-                </div>
-                @if($bfcBig)
-                    <div style="font-size:15px; margin-bottom:10px;">This is a big buy (100+ items). Don't list it now: put it in the back, write where below, and it gets listed later.</div>
+            <div id="bfc_next_step" style="border:2px solid {{ $bfcStoreCollection ? '#8a6d00' : '#3c8dbc' }}; background:{{ $bfcStoreCollection ? '#fff8e1' : '#eef6fc' }}; border-radius:6px; padding:14px 18px; margin-bottom:15px;">
+                @if($bfcStoreCollection)
+                    <div style="font-size:18px; font-weight:800; margin-bottom:6px;">
+                        <i class="fa fa-archive"></i> Next: {{ $bfcPlural($bfcBulkUnits, 'bulk item') }} — store it in the back
+                    </div>
+                    <div style="font-size:15px; margin-bottom:10px;">This is a big bulk lot (100+ items). Don't list it now: put it in the back, write where below, and it gets listed later.</div>
                     <div class="input-group" style="max-width:460px;">
                         <input type="text" id="bfc_next_storage" class="form-control input-lg" placeholder="Where is it? e.g. Back room, shelf B3" value="{{ $offer->storage_location }}">
                         <span class="input-group-btn">
@@ -85,15 +105,25 @@
                     <div id="bfc_next_storage_status" style="font-weight:600; margin-top:6px;">
                         @if($offer->storage_location)<span style="color:#1e8e3e;"><i class="fa fa-check"></i> Stored at: {{ $offer->storage_location }}</span>@endif
                     </div>
-                    @if($bfcCanList)
+                    @if($bfcCanList && $bfcSingleUnits > 0)
+                        <div style="margin-top:12px; padding-top:10px; border-top:1px dashed #d8c27a;">
+                            <strong>The {{ $bfcPlural($bfcSingleUnits, 'individually priced item') }}</strong> don't go in the back:
+                            <a href="{{ $bfcMassAddUrl }}" class="btn btn-success btn-sm" style="margin-left:6px;"><i class="fa fa-arrow-right"></i> Send to Mass Add</a>
+                        </div>
+                    @elseif($bfcCanList)
                         <div style="margin-top:8px;"><a href="{{ $bfcMassAddUrl }}"><i class="fa fa-arrow-right"></i> List it in Mass Add now anyway</a></div>
                     @endif
                 @else
+                    <div style="font-size:18px; font-weight:800; margin-bottom:6px;">
+                        <i class="fa fa-list"></i> Next: {{ $bfcPlural($bfcBulkUnits + $bfcSingleUnits, 'item') }} — list {{ ($bfcBulkUnits + $bfcSingleUnits) === 1 ? 'it' : 'them' }} now
+                    </div>
                     @if($bfcCanList)
                         <a href="{{ $bfcMassAddUrl }}" class="btn btn-success btn-lg"><i class="fa fa-arrow-right"></i> Send to Mass Add</a>
-                        <span style="margin-left:10px;">No time now? <a href="#" id="bfc_next_store_instead">Store it in the back instead</a></span>
+                        @if(!$bfcAllSingles)
+                            <span style="margin-left:10px;">No time now? <a href="#" id="bfc_next_store_instead">Store it in the back instead</a></span>
+                        @endif
                     @else
-                        <div style="font-size:15px;">Hand it to someone who can list products (Mass Add), or store it in the back and write where below.</div>
+                        <div style="font-size:15px;">Hand {{ ($bfcBulkUnits + $bfcSingleUnits) === 1 ? 'it' : 'them' }} to someone who can list products (Mass Add).</div>
                     @endif
                 @endif
             </div>
@@ -118,10 +148,11 @@
             </div>
 
             @php $totalItems = $offer->total_item_quantity; @endphp
-            @if($totalItems > 100)
+            {{-- Only a big BULK lot is a warehouse collection; individually priced items are not. --}}
+            @if($bfcStoreCollection)
                 <div class="bfc-warehouse-label" style="border:4px solid #b0451a; background:#fff3e0; padding:20px; margin-bottom:20px; text-align:center; border-radius:6px;">
                     <div style="font-size:22px; font-weight:800; color:#b0451a; letter-spacing:1px;">&#9888; WAREHOUSE COLLECTION &mdash; DO NOT SHELVE IN STORE &#9888;</div>
-                    <div style="font-size:16px; margin-top:8px;">{{ $offer->buy_record_number }} &middot; {{ $totalItems }} items</div>
+                    <div style="font-size:16px; margin-top:8px;">{{ $offer->buy_record_number }} &middot; {{ $bfcBulkUnits }} bulk items</div>
                     <div style="font-size:15px; margin-top:10px; font-weight:600;">&rarr; Take this box to the Warehouse</div>
                     <div style="font-size:12px; color:#7a4a1a; margin-top:8px;">
                         Warehouse is not always staffed. If it's closed, hold this box at {{ optional($offer->location)->name ?: 'the store' }} until it can be dropped off.
@@ -176,6 +207,7 @@
                         @endif
                     </td>
                 </tr>
+                @if(!$bfcAllSingles)
                 <tr>
                     <th style="background:#f9f9f9;">Storage location</th>
                     <td>
@@ -200,6 +232,7 @@
                         </div>
                     </td>
                 </tr>
+                @endif
             </table>
 
             <h4>Contents</h4>
@@ -325,10 +358,16 @@
                 </div>
             @endif
 
+            @if($bfcAllSingles)
+            <p style="margin-top:25px; border-top:1px solid #ddd; padding-top:15px;">
+                <strong>Instructions:</strong> These items were priced one by one. List them in Mass Add (Send to Mass Add at the top).
+            </p>
+            @else
             <p style="margin-top:25px; border-top:1px solid #ddd; padding-top:15px;">
                 <strong>Instructions:</strong> Print this sheet (or copy the ID number and storage location onto a label)
                 and affix it to the box. Store the box at the location noted above.
             </p>
+            @endif
         </div>
     </div>
 </section>
