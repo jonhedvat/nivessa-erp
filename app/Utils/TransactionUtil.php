@@ -2414,6 +2414,10 @@ class TransactionUtil extends Util
                             ->where('transactions.id', $transaction_id)
                             ->where('transactions.type', 'purchase')
                             ->select('p.id as product_id', 'p.name as product_name', 'v.id as variation_id', 'v.name as variation_name', 'v.sell_price_inc_tax as price', 'v.sub_sku as sub_sku', 'cat.name as catname', 'sub_cat.name as subcatname', 'pl.quantity as quantity', 'pl.exp_date', 'pl.lot_number')
+                            // Keep labels in the order the items were listed on the
+                            // purchase. Without this MySQL picked its own order, so
+                            // price-corrected rows printed out of sequence (Sarah 2026-11-22).
+                            ->orderBy('pl.id')
                             ->get();
         return $products;
     }

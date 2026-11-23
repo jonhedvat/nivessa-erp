@@ -85,6 +85,12 @@ class LabelsController extends Controller
         } else if (!empty($product_ids)) {
             $productIdsArray = explode(",", $product_ids);
             $products = $this->productUtil->getDetailsFromProducts($business_id, $productIdsArray);
+            // Print in the order the ids were passed (Mass Add row order),
+            // not whatever order the database returns (Sarah 2026-11-22).
+            $pos = array_flip(array_map('intval', $productIdsArray));
+            $products = $products->sortBy(function ($p) use ($pos) {
+                return $pos[(int) $p->product_id] ?? PHP_INT_MAX;
+            })->values();
             // Markdowns (?listed=1): the tag keeps the ORIGINAL listed date.
             if ($request->get('listed') && \Schema::hasColumn('products', 'listed_at')) {
                 $listed = DB::table('products')->whereIn('id', $productIdsArray)
