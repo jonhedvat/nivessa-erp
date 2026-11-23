@@ -60,14 +60,47 @@
                 </div>
                 <div id="bfc_receipt_status" style="font-weight:600;"></div>
             </div>
+            {{-- Jon 11/23: what to do with the items. Under 100: list them now in Mass Add
+                 (it loads this buy and adds its rows). 100+: store the box in the back
+                 and list it later. --}}
+            @php
+                $bfcItemCount = (int) round($offer->lines->sum(function ($l) { return (float) $l->quantity; }));
+                $bfcBig = $bfcItemCount >= 100;
+                $bfcMassAddUrl = route('product.massCreate', ['buy' => $offer->buy_record_number, 'add' => 1]);
+                $bfcCanList = auth()->user()->can('product.create');
+            @endphp
+            <div id="bfc_next_step" style="border:2px solid {{ $bfcBig ? '#8a6d00' : '#3c8dbc' }}; background:{{ $bfcBig ? '#fff8e1' : '#eef6fc' }}; border-radius:6px; padding:14px 18px; margin-bottom:15px;">
+                <div style="font-size:18px; font-weight:800; margin-bottom:6px;">
+                    <i class="fa fa-{{ $bfcBig ? 'archive' : 'list' }}"></i> Next: {{ number_format($bfcItemCount) }} item{{ $bfcItemCount === 1 ? '' : 's' }}
+                    — {{ $bfcBig ? 'store it in the back' : 'list them now' }}
+                </div>
+                @if($bfcBig)
+                    <div style="font-size:15px; margin-bottom:10px;">This is a big buy (100+ items). Don't list it now: put it in the back, write where below, and it gets listed later.</div>
+                    <div class="input-group" style="max-width:460px;">
+                        <input type="text" id="bfc_next_storage" class="form-control input-lg" placeholder="Where is it? e.g. Back room, shelf B3" value="{{ $offer->storage_location }}">
+                        <span class="input-group-btn">
+                            <button type="button" class="btn btn-warning btn-lg" id="bfc_next_storage_save"><i class="fa fa-archive"></i> Stored in the back</button>
+                        </span>
+                    </div>
+                    <div id="bfc_next_storage_status" style="font-weight:600; margin-top:6px;">
+                        @if($offer->storage_location)<span style="color:#1e8e3e;"><i class="fa fa-check"></i> Stored at: {{ $offer->storage_location }}</span>@endif
+                    </div>
+                    @if($bfcCanList)
+                        <div style="margin-top:8px;"><a href="{{ $bfcMassAddUrl }}"><i class="fa fa-arrow-right"></i> List it in Mass Add now anyway</a></div>
+                    @endif
+                @else
+                    @if($bfcCanList)
+                        <a href="{{ $bfcMassAddUrl }}" class="btn btn-success btn-lg"><i class="fa fa-arrow-right"></i> Send to Mass Add</a>
+                        <span style="margin-left:10px;">No time now? <a href="#" id="bfc_next_store_instead">Store it in the back instead</a></span>
+                    @else
+                        <div style="font-size:15px;">Hand it to someone who can list products (Mass Add), or store it in the back and write where below.</div>
+                    @endif
+                @endif
+            </div>
         @elseif($offer->status === 'draft')
             <div style="border:3px solid #c62828; background:#ffebee; border-radius:6px; padding:14px 18px; margin-bottom:15px; color:#7f1d1d; font-size:17px;">
                 <strong>This buy is NOT finished.</strong> Nothing is paid and no store credit is added until you open it and click Accept and finish buy.
             </div>
-        @endif
-        @if($offer->status === 'accepted' && auth()->user()->can('product.create'))
-            {{-- Jon 11/23: list the buy without retyping it — Mass Add loads this buy and adds its rows. --}}
-            <a href="{{ route('product.massCreate', ['buy' => $offer->buy_record_number, 'add' => 1]) }}" class="btn btn-success"><i class="fa fa-arrow-right"></i> Send to Mass Add</a>
         @endif
         <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fa fa-print"></i> Print</button>
         <button type="button" class="btn btn-default" id="bfc_copy_discogs_links"><i class="fa fa-copy"></i> Copy Discogs Links</button>
@@ -363,6 +396,21 @@
                 });
         });
 
+        // "Stored in the back" on the next-step box saves the same storage location.
+        $('#bfc_next_storage_save').on('click', function () {
+            var val = $.trim($('#bfc_next_storage').val());
+            if (!val) { $('#bfc_next_storage_status').css('color', '#c62828').text('Write where you put it first.'); $('#bfc_next_storage').focus(); return; }
+            $('#bfc_storage_location_input').val(val);
+            $('#bfc_storage_location_save').click();
+        });
+        $('#bfc_next_storage').on('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('#bfc_next_storage_save').click(); } });
+        $('#bfc_next_store_instead').on('click', function (e) {
+            e.preventDefault();
+            var $i = $('#bfc_storage_location_input');
+            $('html, body').animate({ scrollTop: $i.offset().top - 120 }, 200);
+            $i.focus();
+        });
+
         $('#bfc_storage_location_save').on('click', function () {
             var $btn = $(this);
             var $status = $('#bfc_storage_location_status');
@@ -377,6 +425,9 @@
                     $('#bfc_storage_location_display').text(resp.storage_location || 'Not yet assigned');
                     $('#bfc_storage_location_meta').text(resp.updated_at ? ('Last set ' + resp.updated_at + (resp.updated_by ? ' by ' + resp.updated_by : '')) : '');
                     $status.text('Saved.');
+                    if (resp.storage_location) {
+                        $('#bfc_next_storage_status').css('color', '#1e8e3e').html('<i class="fa fa-check"></i> Stored at: ' + $('<div>').text(resp.storage_location).html());
+                    }
                 })
                 .fail(function () {
                     $status.text('Save failed — try again.');
