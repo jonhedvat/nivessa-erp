@@ -125,6 +125,10 @@ class BuyScanService
             if (isset($seen[$r->id])) continue;
             $seen[$r->id] = true;
             $catText = trim($r->cat . ' ' . $r->sub);
+            $format = self::formatFromText($r->cat . ' ' . $r->sub);
+            $cond = self::conditionFromText($r->cat) ?: self::conditionFromText($r->sub);
+            // Movie categories ("DVD / Sci-Fi") don't say used: they are the used shelf.
+            if ($cond === null && in_array($format, ['dvd', 'bluray', '4k', 'vhs'], true)) $cond = 'used';
             $out[] = [
                 'id' => (int) $r->id,
                 'variation_id' => (int) $r->variation_id,
@@ -132,8 +136,8 @@ class BuyScanService
                 'name' => $r->name,
                 'artist' => $r->artist,
                 'category' => trim($r->cat . ($r->sub ? ' / ' . $r->sub : '')),
-                'format' => self::formatFromText($r->cat . ' ' . $r->sub),
-                'condition' => self::conditionFromText($r->cat) ?: self::conditionFromText($r->sub),
+                'format' => $format,
+                'condition' => $cond,
                 'genre' => $r->sub,
                 'genre_text' => $catText,
                 'price' => $r->price !== null ? round((float) $r->price, 2) : null,

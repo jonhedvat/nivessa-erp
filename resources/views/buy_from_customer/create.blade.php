@@ -2725,7 +2725,7 @@ HTML;
                     $title.val(d.title).trigger('input');
                     $row.data('bfcScanTitle', d.title);
                 }
-                if (d.found) $row.find('.bfc-sealed').prop('checked', !!d.sealed);
+                // Sealed is the cashier's call (same barcode either way); default Used.
                 apply($row);
                 var $link = $row.find('input[name$="[discogs_link]"]');
                 if (d.discogs_release_id && !$.trim($link.val())
