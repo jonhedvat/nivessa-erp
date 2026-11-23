@@ -183,6 +183,15 @@ class DiscogsService
         return $response;
     }
 
+    /** A master's main release id (a pasted /master/ link), or null. */
+    public function getMasterMainRelease($masterId)
+    {
+        if (!$this->isConfigured() || (int) $masterId < 1) return null;
+        $res = $this->callApi($this->baseUrl . 'masters/' . (int) $masterId . '?token=' . urlencode($this->token));
+        $id = (int) ($res['data']->main_release ?? 0);
+        return $id > 0 ? $id : null;
+    }
+
     /** Release search by exact barcode (type=release). */
     public function searchByBarcode($barcode)
     {

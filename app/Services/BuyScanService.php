@@ -54,6 +54,14 @@ class BuyScanService
         if ($q === '') return $out;
 
         $releaseId = self::discogsReleaseId($q);
+        // A /master/ link (what Discogs search often gives): use its main release.
+        if (!$releaseId && preg_match('#discogs\.com/.*master/(\d+)#i', $q, $m)) {
+            try {
+                $releaseId = (new DiscogsService($business_id))->getMasterMainRelease((int) $m[1]);
+            } catch (\Throwable $e) {
+                $releaseId = null;
+            }
+        }
         if (!$releaseId && self::isUpc($q)) {
             $upc = self::digits($q);
             $out['upc'] = $upc;
