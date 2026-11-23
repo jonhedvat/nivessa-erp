@@ -36,6 +36,19 @@
     .bfc-quote-card td { padding:2px 6px 2px 0; border-top:1px solid #f0f0f0; }
     .bfc-quote-card .bfc-q-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
     .bfc-quote-error { margin-top:8px; color:#a12a1f; font-weight:600; }
+    /* Scan mode (Jon 11/23). Off = the form looks exactly like before. */
+    .bfc-scan-wrap, .bfc-scan-on-only { display: none; }
+    body.bfc-scan-on .bfc-scan-wrap, body.bfc-scan-on .bfc-scan-on-only { display: block; }
+    .bfc-scan-wrap { margin-bottom: 4px; }
+    .bfc-scan-wrap .bfc-scan { border: 2px dashed #3c8dbc; background: #f5faff; }
+    .bfc-sealed-toggle { font-weight: 400; font-size: 12px; margin: 2px 0 0; cursor: pointer; }
+    .bfc-scan-info { font-size: 12px; line-height: 1.35; margin-top: 2px; }
+    .bfc-scan-info .ok { color: #1b6e20; }
+    .bfc-scan-info .warn { color: #8a6d00; }
+    .bfc-scan-info .ours { color: #31708f; }
+    .bfc-scan-banner { margin: 6px 0; font-size: 13px; }
+    body.bfc-scan-on .bfc-scan-banner { background: #eef6fc; border: 1px solid #bcdff1; border-radius: 4px; padding: 6px 10px; }
+    .bfc-scan-toggle { font-size: 12px; margin-left: 6px; }
 </style>
     <style>
         /* Buy-from-customer create — Sarah 2026-04-28: tighter, easier to read.
@@ -713,6 +726,10 @@ HTML;
                         </ol>
                         <small>The link is only required for items worth more than ${{ (int) \App\Services\BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER }} (not records or cassettes). Any eBay link works.</small>
                     </details>
+                    <div class="bfc-scan-banner">
+                        <span class="bfc-scan-on-only"><strong><i class="fa fa-barcode"></i> Scan mode (new, testing):</strong> scan a CD/DVD barcode or paste a Discogs link on each line. Title and item type fill in. Check <em>Sealed</em> for sealed items.</span>
+                        <a href="#" id="bfc_scan_toggle" class="bfc-scan-toggle"></a>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-bordered" id="offer_lines_table">
                             <thead>
@@ -739,7 +756,8 @@ HTML;
                                     @php $bfcRowTypes = isset($itemTypes[$line['item_type'] ?? '']) || empty($line['item_type']) ? $itemTypes : $itemTypes + [$line['item_type'] => $bfcAllTypes[$line['item_type']] ?? $line['item_type']]; $bfcRowDemand = $bfcDemand[$i] ?? null; $bfcRowGenres = $bfcGenres[$line['item_type'] ?? ''] ?? []; $bfcRowGenre = (string) ($line['genre'] ?? ''); @endphp
                                     <tr @if($bfcRowDemand) data-demand-mult="{{ (float) ($bfcRowDemand['demand_multiplier'] ?? 1) }}" @if(($bfcRowDemand['demand_level'] ?? '') === 'margin') data-pay-pct="{{ round((100 - (float) ($bfcRowDemand['demand_base_margin'] ?? $bfcRowDemand['demand_margin'] ?? 65)) / 100, 4) }}" data-super-fast="{{ !empty($bfcRowDemand['demand_super_fast']) ? 1 : 0 }}" data-tier="{{ $bfcRowDemand['demand_tier'] ?? 'normal' }}" @endif @endif>
                                         <td>{!! Form::select("lines[$i][item_type]", $bfcRowTypes, $line['item_type'] ?? null, ['class' => 'form-control']) !!}</td>
-                                        <td>{!! Form::text("lines[$i][title]", $line['title'] ?? null, ['class' => 'form-control']) !!}
+                                        <td><div class="bfc-scan-wrap"><input type="text" class="form-control bfc-scan" placeholder="Scan barcode or paste Discogs link" autocomplete="off"><label class="bfc-sealed-toggle"><input type="checkbox" class="bfc-sealed" @if(strpos((string) ($line['item_type'] ?? ''), 'sealed') !== false) checked @endif> Sealed</label><div class="bfc-scan-info"></div></div><input type="hidden" name="lines[{{ $i }}][upc]" value="{{ $line['upc'] ?? '' }}" class="bfc-upc">
+                                        {!! Form::text("lines[$i][title]", $line['title'] ?? null, ['class' => 'form-control']) !!}
                                         @if($bfcBeta)
                                             <select name="lines[{{ $i }}][genre]" class="form-control bfc-genre" @if(empty($bfcRowGenres)) style="display:none;" @endif>
                                                 <option value="">{{ ($line['item_type'] ?? '') === 'ebay_value' ? 'Category (sets the margin)' : 'Genre (optional)' }}</option>
@@ -1485,7 +1503,7 @@ HTML;
             var idx = $tbody.find('tr').length;
             var row = '<tr>'
                 + '<td><select name="lines[' + idx + '][item_type]" class="form-control">@foreach($itemTypes as $k => $label)<option value="{{$k}}">{{ $label }}</option>@endforeach</select></td>'
-                + '<td><input type="text" name="lines[' + idx + '][title]" class="form-control">' + (BFC_BETA ? '<select name="lines[' + idx + '][genre]" class="form-control bfc-genre" style="display:none;"></select>' : '') + '</td>'
+                + '<td><div class="bfc-scan-wrap"><input type="text" class="form-control bfc-scan" placeholder="Scan barcode or paste Discogs link" autocomplete="off"><label class="bfc-sealed-toggle"><input type="checkbox" class="bfc-sealed"> Sealed</label><div class="bfc-scan-info"></div></div><input type="hidden" name="lines[' + idx + '][upc]" class="bfc-upc"><input type="text" name="lines[' + idx + '][title]" class="form-control">' + (BFC_BETA ? '<select name="lines[' + idx + '][genre]" class="form-control bfc-genre" style="display:none;"></select>' : '') + '</td>'
                 + '<td><select name="lines[' + idx + '][condition_grade]" class="form-control bfc-grade"><option value="">Pick grade</option>@foreach($grades as $g)<option value="{{$g}}">{{ $g }}</option>@endforeach</select></td>'
                 + '<td><input type="number" step="0.01" min="0.01" name="lines[' + idx + '][quantity]" value="1" class="form-control"></td>'
                 + '<td><input type="number" step="0.01" min="0" name="lines[' + idx + '][discogs_median_price]" class="form-control"><input type="hidden" name="lines[' + idx + '][standard_multiplier]" value="' + prevStdMult + '" class="bfc-std"><input type="text" name="lines[' + idx + '][discogs_link]" class="form-control bfc-link" placeholder="Release ID or URL"><a class="bfc-ebay-search" href="#" target="_blank" rel="noopener" style="display:none;">Search eBay sold items ↗</a><a class="bfc-ebay-howto" href="#bfc_ebay_help" style="display:none;">How?</a>' + (BFC_BETA ? '<div class="bfc-lastsold" style="display:none;"><small>Last sold on Discogs</small><input type="date" name="lines[' + idx + '][discogs_last_sold]" max="{{ date('Y-m-d') }}" class="form-control bfc-lastsold-date"><label class="bfc-lastsold-never"><input type="checkbox" name="lines[' + idx + '][discogs_never_sold]" value="1"> never sold</label></div>' : '') + '</td>'
@@ -2619,6 +2637,137 @@ HTML;
             });
         })();
         @endif
+    })();
+
+    // Scan mode (Jon 11/23): one box per line takes a UPC or a Discogs
+    // link/ID, fills the title and picks the item type whose rate applies.
+    // Turned on per device with ?scan=1 (off with ?scan=0) while it's tested.
+    (function () {
+        var KEY = 'bfc_scan_mode';
+        var url = @json(route('buy-from-customer.scan-lookup'));
+        var qs = new URLSearchParams(window.location.search);
+        try {
+            if (qs.get('scan') === '1') localStorage.setItem(KEY, '1');
+            if (qs.get('scan') === '0') localStorage.removeItem(KEY);
+        } catch (e) {}
+        var on = qs.get('scan') === '1';
+        try { on = on || localStorage.getItem(KEY) === '1'; } catch (e) {}
+        function paint() {
+            $('body').toggleClass('bfc-scan-on', on);
+            $('#bfc_scan_toggle').text(on ? 'Turn scan mode off' : 'Try the new scan mode (barcodes + Discogs links)');
+        }
+        paint();
+        $('#bfc_scan_toggle').on('click', function (e) {
+            e.preventDefault();
+            on = !on;
+            try { on ? localStorage.setItem(KEY, '1') : localStorage.removeItem(KEY); } catch (err) {}
+            paint();
+        });
+
+        function esc(t) { return $('<div>').text(t == null ? '' : String(t)).html(); }
+        function money(n) { return '$' + Number(n || 0).toFixed(2); }
+        var ICON = { cd: '💿', dvd: '📀', bluray: '📀', '4k': '📀', vinyl: '🎵', rpm45: '🎵', cassette: '📼', vhs: '📼' };
+
+        function setType($row, type) {
+            var $sel = $row.find('select[name$="[item_type]"]');
+            if (!type || !$sel.find('option[value="' + type + '"]').length || $sel.val() === type) return;
+            $sel.val(type).trigger('change');
+        }
+
+        function render($row) {
+            var d = $row.data('bfcScan');
+            var $info = $row.find('.bfc-scan-info');
+            if (!d) { $info.empty(); return; }
+            var sealed = $row.find('.bfc-sealed').prop('checked');
+            var html = '';
+            if (!d.found) {
+                html = '<span class="warn"><i class="fa fa-question-circle"></i> Not found' + (d.upc ? ' (barcode ' + esc(d.upc) + ')' : '')
+                    + '. Type the title and pick the item type.</span>';
+            } else {
+                html = '<span class="ok">' + (ICON[d.format] || '✓') + ' ' + esc(d.format_label || 'Found')
+                    + (d.source === 'discogs' ? ' · from Discogs' : ' · from our products') + '</span>';
+                if (!d.item_type_used && !d.item_type_sealed) html += ' <span class="warn">· pick the item type</span>';
+            }
+            var want = sealed ? 'sealed' : 'used';
+            var fmt = d.format;
+            (d.ours || []).slice(0, 3).forEach(function (p) {
+                var stock = Object.keys(p.stock || {}).map(function (k) { return esc(k) + ' ' + Number(p.stock[k]); }).join(', ');
+                var same = p.single && p.format === fmt && p.condition === want && !(want === 'used' && (fmt === 'vinyl' || fmt === 'rpm45'))
+                    && (d.ours || []).filter(function (o) { return o.format === fmt && o.condition === want; }).length === 1;
+                html += '<div class="ours"><i class="fa fa-archive"></i> We carry: ' + esc(p.name) + ' <small>(' + esc(p.category) + ')</small>'
+                    + (p.price != null ? ' · ' + money(p.price) : '') + (stock ? ' · ' + stock : '')
+                    + (same ? ' · <strong>this copy will be added to its stock</strong>' : '') + '</div>';
+            });
+            $info.html(html);
+        }
+
+        function apply($row) {
+            var d = $row.data('bfcScan');
+            if (!d) return;
+            var sealed = $row.find('.bfc-sealed').prop('checked');
+            setType($row, sealed ? (d.item_type_sealed || d.item_type_used) : (d.item_type_used || d.item_type_sealed));
+            render($row);
+        }
+
+        function lookup($input) {
+            var q = $.trim($input.val());
+            var $row = $input.closest('tr');
+            if (!q || $input.data('lastQ') === q) return;
+            $input.data('lastQ', q);
+            $row.find('.bfc-scan-info').html('<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Looking up…</span>');
+            $.getJSON(url, { q: q }).done(function (d) {
+                if ($.trim($input.val()) !== q) return; // rescanned meanwhile
+                $row.data('bfcScan', d);
+                $row.find('.bfc-upc').val(d.upc || '');
+                var $title = $row.find('input[name$="[title]"]');
+                var cur = $.trim($title.val());
+                if (d.found && d.title && (cur === '' || cur === $row.data('bfcScanTitle'))) {
+                    $title.val(d.title).trigger('input');
+                    $row.data('bfcScanTitle', d.title);
+                }
+                if (d.found) $row.find('.bfc-sealed').prop('checked', !!d.sealed);
+                apply($row);
+                var $link = $row.find('input[name$="[discogs_link]"]');
+                if (d.discogs_release_id && !$.trim($link.val())
+                    && $row.find('select[name$="[item_type]"]').val() === 'individual_vinyl') {
+                    $link.val('https://www.discogs.com/release/' + d.discogs_release_id).trigger('input');
+                }
+                if (typeof bfcRecalcAll === 'function') bfcRecalcAll();
+            }).fail(function () {
+                $input.data('lastQ', '');
+                $row.find('.bfc-scan-info').html('<span class="warn">Lookup failed. Try again or type it in.</span>');
+            });
+        }
+
+        // Lines scanned before a Calculate keep their barcode; say so.
+        $('#offer_lines_table .bfc-upc').each(function () {
+            if (this.value) $(this).closest('td').find('.bfc-scan-info').html('<span class="ok"><i class="fa fa-barcode"></i> Barcode ' + esc(this.value) + '</span>');
+        });
+
+        // Scanners type the code and press Enter: look it up, never submit the form.
+        $(document).on('keydown', '#offer_lines_table .bfc-scan', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                lookup($(this));
+                // Next scan goes on the next line (adds one at the end).
+                var $next = $(this).closest('tr').next('tr');
+                if (!$next.length) { $('#add_line_btn').click(); $next = $('#offer_lines_table tbody tr').last(); }
+                $next.find('.bfc-scan').focus();
+            }
+        });
+        $(document).on('change paste', '#offer_lines_table .bfc-scan', function () {
+            var $i = $(this);
+            setTimeout(function () { lookup($i); }, 0);
+        });
+        $(document).on('change', '#offer_lines_table .bfc-sealed', function () {
+            var $row = $(this).closest('tr');
+            if ($row.data('bfcScan')) { apply($row); return; }
+            // No scan on this line: flip between the USED and SEALED version of the picked type.
+            var $sel = $row.find('select[name$="[item_type]"]');
+            var v = $sel.val() || '';
+            var flip = this.checked ? v.replace(/_used$/, '_sealed') : v.replace(/_sealed$/, '_used');
+            if (flip !== v) setType($row, flip);
+        });
     })();
 </script>
 @include('contact.partials.store_credit_js')

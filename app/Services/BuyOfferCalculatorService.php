@@ -566,6 +566,12 @@ class BuyOfferCalculatorService
             if ($demandInfo !== null) {
                 $row += $demandInfo;
             }
+            // Scanned barcode (buy form scan box, 11/23). Only set when present so
+            // callers that never scan (website quotes) don't need the column.
+            $upc = preg_replace('/\D+/', '', (string) ($line['upc'] ?? ''));
+            if (strlen($upc) >= 8 && strlen($upc) <= 14) {
+                $row['upc'] = $upc;
+            }
             $normalized[] = $row;
         }
 

@@ -5182,11 +5182,28 @@ class ProductController extends Controller
         }
         $costs = $offer->lineUnitCosts();
 
+        // Lines that went straight onto a product we already carry (scanned
+        // barcode matched at accept) are done — nothing to list.
+        $carriedIds = [];
+        $lineProductIds = $offer->lines->pluck('product_id')->filter()->all();
+        if ($lineProductIds) {
+            $carriedIds = DB::table('products')->whereIn('id', $lineProductIds)
+                ->where(function ($q) { $q->whereNull('added_via')->orWhere('added_via', '!=', 'buy_from_customer'); })
+                ->pluck('id')->map(function ($x) { return (int) $x; })->all();
+        }
+        $dupService = app(\App\Services\ProductDuplicateService::class);
+
         $lots = [];
+        $carriedCount = 0;
         foreach ($offer->lines as $line) {
             if ((float) $line->quantity <= 0) {
                 continue;
             }
+            if (!empty($line->product_id) && in_array((int) $line->product_id, $carriedIds, true)) {
+                $carriedCount += (float) $line->quantity;
+                continue;
+            }
+            $upc = !empty($line->upc) ? (string) $line->upc : null;
             $releaseId = null;
             if (preg_match('#/release/(\d+)#', (string) $line->discogs_link, $m) || preg_match('#^\s*(\d+)\s*$#', (string) $line->discogs_link, $m)) {
                 $releaseId = (int) $m[1];
@@ -5195,8 +5212,14 @@ class ProductController extends Controller
                 'id' => $line->id,
                 'type' => $labels[$line->item_type] ?? $line->item_type,
                 'title' => $line->title,
-                'individual' => $line->item_type === 'individual_vinyl',
+                // Scanned items are one-of-a-kind too: one row per copy.
+                'individual' => $line->item_type === 'individual_vinyl' || $upc !== null,
                 'discogs_release_id' => $releaseId,
+                'upc' => $upc,
+                // Barcode already on another product (e.g. the sealed copy):
+                // leave the SKU blank so the duplicate guard doesn't skip the row.
+                'upc_taken' => $upc !== null && $dupService->findConflict($business_id, '', '', $upc) !== null,
+                'format' => \App\Services\BuyScanService::formatOfItemType($line->item_type),
                 'grade' => $line->condition_grade,
                 'qty' => (float) $line->quantity,
                 'unit_cost' => $costs[$line->id] ?? 0,
@@ -5214,6 +5237,7 @@ class ProductController extends Controller
                 'store' => optional($offer->location)->name,
             ],
             'lots' => $lots,
+            'carried' => $carriedCount,
         ]);
     }
 

@@ -174,6 +174,7 @@ class BuyFromCustomerController extends Controller
                     'discogs_median_price' => $line->discogs_median_price,
                     'standard_multiplier' => $line->standard_multiplier,
                     'disposition' => $line->disposition,
+                    'upc' => $line->upc ?? null,
                 ];
             })->all();
 
@@ -639,12 +640,16 @@ class BuyFromCustomerController extends Controller
         }
 
         $msg = sprintf(
-            'Offer accepted. Created %d draft purchase line(s)%s. Price each item at /products before finalizing the purchase.',
+            'Offer accepted. Created %d draft purchase line(s)%s. Use "Send to Mass Add" on this sheet to list them.',
             $result['materialized'],
             $result['skipped_no_title'] > 0
                 ? sprintf(' (skipped %d untitled line(s) — not added to inventory)', $result['skipped_no_title'])
                 : ''
         );
+        if (!empty($result['carried'])) {
+            $msg .= sprintf(' %d item(s) we already carry were added to stock right away (purchase %s).',
+                $result['carried'], optional($result['carried_purchase'])->ref_no);
+        }
 
         // Straight to the intake sheet — that's the printout Sarah wants in
         // hand right after the box changes ownership, not buried in History.
@@ -1515,6 +1520,7 @@ class BuyFromCustomerController extends Controller
     protected function saveOffer(Request $request, $status = 'draft', $offerId = null, $createContact = true)
     {
         $this->ensureCollectionStorageAndDispositionColumns();
+        $this->ensureOfferLineUpcColumn();
 
         $business_id = request()->session()->get('user.business_id');
         $user_id = request()->session()->get('user.id');
@@ -1850,6 +1856,8 @@ class BuyFromCustomerController extends Controller
             }
         }
         $flatUnitPaid = ($totalTitledQty > 0) ? round($finalTotal / $totalTitledQty, 4) : 0.0;
+        $scan = new \App\Services\BuyScanService();
+        $carriedLines = [];
 
         foreach ($offer->lines as $line) {
             $qty = (float) ($line->quantity ?: 0);
@@ -1874,6 +1882,16 @@ class BuyFromCustomerController extends Controller
                 $unitPaid = $qty > 0 ? round(($lineCalculated * $payoutRatio) / $qty, 4) : 0;
             } else {
                 $unitPaid = $flatUnitPaid;
+            }
+
+            // Scanned copy of something we already carry (same barcode, format,
+            // sealed/used): it goes on that product's stock, not a new listing.
+            $carried = !empty($line->upc)
+                ? $scan->carriedProductFor($business_id, $line->upc, $line->item_type, $line->condition_grade)
+                : null;
+            if ($carried) {
+                $carriedLines[] = ['line' => $line, 'product' => $carried, 'qty' => $qty, 'unit' => $unitPaid];
+                continue;
             }
 
             $description = sprintf(
@@ -1961,6 +1979,8 @@ class BuyFromCustomerController extends Controller
         $purchase->final_total = round($linesTotal, 2);
         $purchase->save();
 
+        $carriedPurchase = $carriedLines ? $this->receiveCarriedLines($offer, $purchase, $location_id, $carriedLines, $payoutType) : null;
+
         if (!empty($snapshotLines)) {
             $timestamp = now()->format('Y-m-d_His');
             $snapshotKey = "bfc-receive-{$offer->id}-{$timestamp}";
@@ -1983,7 +2003,78 @@ class BuyFromCustomerController extends Controller
             'purchase' => $purchase,
             'materialized' => count($snapshotLines),
             'skipped_no_title' => $skippedNoTitle,
+            'carried' => count($carriedLines),
+            'carried_purchase' => $carriedPurchase,
         ];
+    }
+
+    /**
+     * Copies of items we already carry (scanned barcode matched one product):
+     * their own RECEIVED purchase, so the stock lands on that product now at
+     * what we paid — the same way any received purchase adds stock. They stay
+     * off the draft purchase, so finalizing that one later can't add them twice.
+     */
+    protected function receiveCarriedLines(BuyCustomerOffer $offer, Transaction $draft, $location_id, array $carriedLines, $payoutType)
+    {
+        $recv = new Transaction();
+        $recv->business_id = $offer->business_id;
+        $recv->location_id = $location_id;
+        $recv->type = 'purchase';
+        $recv->status = 'received';
+        $recv->payment_status = 'due';
+        $recv->contact_id = $draft->contact_id;
+        $recv->transaction_date = now();
+        $recv->total_before_tax = 0;
+        $recv->tax_amount = 0;
+        $recv->discount_amount = 0;
+        $recv->shipping_charges = 0;
+        $recv->final_total = 0;
+        $recv->created_by = $offer->created_by;
+        $recv->additional_notes = sprintf(
+            '%sBuy from customer %s | items we already carry, added to stock at accept | payout: %s | record: %s | rest of the buy: purchase %s',
+            $offer->is_donated ? '[DONATED] ' : '',
+            $offer->id,
+            $payoutType,
+            $offer->buy_record_number,
+            $draft->ref_no
+        );
+        $recv->ref_no = $this->productUtil->generateReferenceNumber('purchase', $this->productUtil->setAndGetReferenceCount('purchase'));
+        $recv->save();
+
+        $total = 0.0;
+        $touched = [];
+        foreach ($carriedLines as $c) {
+            $p = $c['product'];
+            $pl = new PurchaseLine();
+            $pl->product_id = $p['id'];
+            $pl->variation_id = $p['variation_id'];
+            $pl->item_tax = 0;
+            $pl->tax_id = null;
+            $pl->quantity = $c['qty'];
+            $pl->pp_without_discount = $c['unit'];
+            $pl->purchase_price = $c['unit'];
+            $pl->purchase_price_inc_tax = $c['unit'];
+            $recv->purchase_lines()->save($pl);
+            $this->productUtil->updateProductQuantity($location_id, $p['id'], $p['variation_id'], $c['qty'], 0, null, false);
+            $total += $c['unit'] * $c['qty'];
+            $touched[] = (int) $p['id'];
+
+            $line = $c['line'];
+            $line->product_id = $p['id'];
+            $line->variation_id = $p['variation_id'];
+            $line->purchase_line_id = $pl->id;
+            $line->save();
+        }
+        $recv->total_before_tax = round($total, 2);
+        $recv->final_total = round($total, 2);
+        $recv->save();
+        $this->productUtil->adjustStockOverSelling($recv);
+
+        try {
+            (new \App\Services\NivessaStockNotifier())->pushProductChanged($touched);
+        } catch (\Throwable $e) {
+        }
+        return $recv;
     }
 
     // Credits the seller's store-credit balance for an accepted store-credit
@@ -2060,6 +2151,30 @@ class BuyFromCustomerController extends Controller
     // buy_customer_offer_lines if not already present. Mirrors the migration
     // file 2026_05_07_120000_add_product_refs_to_buy_customer_offer_lines.php
     // for environments where artisan migrate hasn't been run yet.
+    /** Scanned barcode per bought line (scan box, 11/23). Self-heals like the others. */
+    protected function ensureOfferLineUpcColumn()
+    {
+        if (Schema::hasTable('buy_customer_offer_lines') && !Schema::hasColumn('buy_customer_offer_lines', 'upc')) {
+            Schema::table('buy_customer_offer_lines', function (Blueprint $table) {
+                $table->string('upc', 20)->nullable();
+            });
+        }
+    }
+
+    /**
+     * Scan box on the buy form: a UPC or Discogs release ID/link -> title,
+     * format, the item type whose rate applies (used + sealed), and whether
+     * we already carry it.
+     */
+    public function scanLookup(Request $request)
+    {
+        if (!auth()->user()->can('purchase.create')) {
+            abort(403);
+        }
+        $business_id = (int) $request->session()->get('user.business_id');
+        return response()->json((new \App\Services\BuyScanService())->lookup($business_id, $request->input('q')));
+    }
+
     protected function ensureOfferLineProductRefColumns()
     {
         if (!Schema::hasTable('buy_customer_offer_lines')) {

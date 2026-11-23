@@ -65,6 +65,10 @@
                 <strong>This buy is NOT finished.</strong> Nothing is paid and no store credit is added until you open it and click Accept and finish buy.
             </div>
         @endif
+        @if($offer->status === 'accepted' && auth()->user()->can('product.create'))
+            {{-- Jon 11/23: list the buy without retyping it — Mass Add loads this buy and adds its rows. --}}
+            <a href="{{ route('product.massCreate', ['buy' => $offer->buy_record_number, 'add' => 1]) }}" class="btn btn-success"><i class="fa fa-arrow-right"></i> Send to Mass Add</a>
+        @endif
         <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fa fa-print"></i> Print</button>
         <button type="button" class="btn btn-default" id="bfc_copy_discogs_links"><i class="fa fa-copy"></i> Copy Discogs Links</button>
         <a href="{{ route('buy-from-customer.history') }}" class="btn btn-default"><i class="fa fa-arrow-left"></i> Back to History</a>

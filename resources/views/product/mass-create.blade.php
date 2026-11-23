@@ -4161,9 +4161,13 @@ a, b, c, d, e</textarea>
             if (l.individual && (l.title || l.discogs_release_id) && l.listed < l.qty) individual++;
         });
         html += '</tbody></table>';
+        if (buy.carried) {
+            html += '<div class="text-muted small" style="margin-top:4px;">' + Number(buy.carried) + ' item' + (buy.carried == 1 ? '' : 's')
+                + ' we already carry went straight onto stock when the buy was accepted — nothing to list for those.</div>';
+        }
         if (individual) {
             html += '<button type="button" id="bfc_add_individual" class="btn btn-primary btn-sm" style="margin-top:6px;">'
-                + '<i class="fa fa-plus"></i> Add the ' + individual + ' individually entered record' + (individual === 1 ? '' : 's') + ' as rows</button>'
+                + '<i class="fa fa-plus"></i> Add the ' + individual + ' individually entered or scanned item' + (individual === 1 ? '' : 's') + ' as rows</button>'
                 + ' <span id="bfc_add_status" class="text-muted small"></span>';
         }
         html += '</div>';
@@ -4208,6 +4212,29 @@ a, b, c, d, e</textarea>
     }
     $('#bfc_buy_clear').on('click', function () { clearBuy(); $('#bfc_buy_number').val('').focus(); });
 
+    // "Send to Mass Add" on the buy's intake sheet opens ?buy=BFC-…&add=1:
+    // load the buy and add its rows without any typing.
+    (function () {
+        var qs = new URLSearchParams(window.location.search);
+        var b = qs.get('buy');
+        if (!b) return;
+        $('#bfc_buy_number').val(b);
+        var autoAdd = qs.get('add') === '1';
+        var tries = 0;
+        var wait = setInterval(function () {
+            // Row builder loads with the page; wait for it before adding rows.
+            if (typeof window.addRowFromDiscogsData !== 'function' && typeof addRowFromDiscogsData !== 'function' && ++tries < 40) return;
+            clearInterval(wait);
+            $('#bfc_buy_load').click();
+            if (!autoAdd) return;
+            var waitBuy = 0;
+            var w2 = setInterval(function () {
+                if ($('#bfc_add_individual').length) { clearInterval(w2); $('#bfc_add_individual').click(); }
+                else if (buy || ++waitBuy > 60) clearInterval(w2);
+            }, 250);
+        }, 250);
+    })();
+
     // One row per not-yet-listed copy of each individually entered record,
     // through the same row builder the bulk Discogs add uses. Sequential to
     // stay under Discogs' rate limit.
@@ -4232,6 +4259,8 @@ a, b, c, d, e</textarea>
                     var $row = $('#product_rows_container .product-row[data-row-index="' + idx + '"]');
                     $row.find('.bfc-lot-select').val(String(l.id));
                     setRowCost($row, l);
+                    // Scanned barcode = the SKU, so the next scan finds it.
+                    if (l.upc && !l.upc_taken) $row.find('input[name*="[sku]"]').first().val(l.upc);
                     done++;
                     next();
                 });
