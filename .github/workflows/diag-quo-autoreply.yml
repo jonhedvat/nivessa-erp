@@ -1,0 +1,25 @@
+# Read-only: shows the text of Quo's missed-call auto-reply as logged in the Hub, and missed-call volume. SELECTs only.
+name: Diag Quo missed-call auto-reply (read-only)
+on:
+  workflow_dispatch:
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script: |
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAidmVuZG9yL2F1dG9sb2FkLnBocCI7ICRhcHAgPSByZXF1aXJlICJib290c3RyYXAvYXBwLnBocCI7ICRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CiRyb3dzID0gSWxsdW1pbmF0ZVxTdXBwb3J0XEZhY2FkZXNcREI6OnNlbGVjdCgiU0VMRUNUIGlkLCBjaGFubmVsLCBjcmVhdGVkX2F0LCByZXNvbHV0aW9uX25vdGVzIEZST00gY29tbXVuaWNhdGlvbnMgV0hFUkUgcmVzb2x1dGlvbl9ub3RlcyBMSUtFID8gT1JERVIgQlkgaWQgREVTQyBMSU1JVCA2IiwgWyIlbWlzc2VkIHlvdXIgY2FsbCUiXSk7CmZvcmVhY2ggKCRyb3dzIGFzICRyKSB7IGZvcmVhY2ggKHByZWdfc3BsaXQoIi9cbi8iLCAkci0+cmVzb2x1dGlvbl9ub3RlcykgYXMgJGwpIGlmIChzdHJpcG9zKCRsLCAibWlzc2VkIHlvdXIgY2FsbCIpICE9PSBmYWxzZSkgeyBlY2hvICRyLT5jaGFubmVsLCAiICIsICRyLT5jcmVhdGVkX2F0LCAiIDo6ICIsIHByZWdfcmVwbGFjZSgiLzwhLS0uKj8tLT4vIiwgIiIsICRsKSwgIlxuIjsgfSB9CmVjaG8gIm1pc3NlZCBjYWxscyBsYXN0IDE0ZDogIiwgSWxsdW1pbmF0ZVxTdXBwb3J0XEZhY2FkZXNcREI6OnNlbGVjdE9uZSgiU0VMRUNUIENPVU5UKCopIG4gRlJPTSBjb21tdW5pY2F0aW9ucyBXSEVSRSBtZXNzYWdlIExJS0UgPyBBTkQgY3JlYXRlZF9hdCA+IE5PVygpIC0gSU5URVJWQUwgMTQgREFZIiwgWyIlTWlzc2VkIGNhbGwlIl0pLT5uLCAiXG4iOw==' | base64 -d > /tmp/diag_qar.php
+            php /tmp/diag_qar.php
+            rm -f /tmp/diag_qar.php
