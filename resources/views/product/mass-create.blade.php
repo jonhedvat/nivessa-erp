@@ -513,27 +513,33 @@ a, b, c, d, e</textarea>
                 <details style="margin-top:10px;">
                     <summary style="cursor:pointer; color:#555; font-size:13px;">Already have a priced list? (CSV, pipe or tab format)</summary>
                     <div style="margin-top:8px; font-size:13px;">
-                        Paste it in the box above and use these buttons instead. Formats:
+                        Paste it in the box above. Formats:
                         <ul style="margin:4px 0 8px; padding-left:20px;">
                             <li><code>Product Name - Artist</code></li>
                             <li><code>Product Name,Artist,Category,Subcategory,SKU,Price,Bin,Location</code> (Bin/Location optional)</li>
                             <li><code>Product Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade</code></li>
                             <li>Tab-separated, same order as CSV</li>
                         </ul>
-                        <button type="button" class="btn btn-success btn-sm" id="parse_bulk_text">
-                            <i class="fa fa-plus"></i> Parse &amp; Add Products
-                        </button>
-                        <button type="button" class="btn btn-info btn-sm" id="preview_bulk_text">
-                            <i class="fa fa-eye"></i> Preview
-                        </button>
-                        <button type="button" class="btn btn-default btn-sm" id="clear_bulk_text">
-                            <i class="fa fa-eraser"></i> Clear
-                        </button>
-                        <button type="button" class="btn btn-warning btn-sm" id="format_bulk_text">
-                            <i class="fa fa-align-left"></i> Auto-Format
-                        </button>
+                        Then click <strong>Parse &amp; Add Products</strong> below.
                     </div>
                 </details>
+
+                {{-- Sarah 2026-11-22: Parse & Add was hidden inside the collapsed "priced list" section,
+                     so after pricing on eBay/ChatGPT staff couldn't find it. Always visible now. --}}
+                <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
+                    <button type="button" class="btn btn-success btn-sm" id="parse_bulk_text">
+                        <i class="fa fa-plus"></i> Parse &amp; Add Products
+                    </button>
+                    <button type="button" class="btn btn-info btn-sm" id="preview_bulk_text">
+                        <i class="fa fa-eye"></i> Preview
+                    </button>
+                    <button type="button" class="btn btn-default btn-sm" id="clear_bulk_text">
+                        <i class="fa fa-eraser"></i> Clear
+                    </button>
+                    <button type="button" class="btn btn-warning btn-sm" id="format_bulk_text">
+                        <i class="fa fa-align-left"></i> Auto-Format
+                    </button>
+                </div>
             </div>
             <div id="bulk_preview_container" style="display: none; margin-top: 15px;">
                 <div class="alert alert-warning">
