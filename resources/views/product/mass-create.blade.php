@@ -490,11 +490,6 @@
                 <details id="chatgpt_way" style="margin-top:14px;">
                     <summary style="cursor:pointer; color:#333; font-size:14px; font-weight:700;"><i class="fa fa-comments"></i> Use ChatGPT instead (old way, no web lookups)</summary>
                     <div style="margin-top:8px; font-size:13px; padding:10px 12px; background:#fff; border:1px solid #e3e3e8; border-radius:8px;">
-                        <ol style="margin:0 0 8px; padding-left:20px;">
-                            <li>Click <strong>Copy prompt</strong> and paste it into ChatGPT.</li>
-                            <li>Swap <code>a, b, c, d, e</code> at the bottom for your items (add format + condition, like <em>Rumours LP VG+</em>).</li>
-                            <li>Copy ChatGPT&rsquo;s answer, paste it in the box above, and click <strong>Parse &amp; Add Products</strong> below.</li>
-                        </ol>
                         <textarea id="mass_ai_prompt" style="position:absolute; left:-9999px;" aria-hidden="true" tabindex="-1">Price these items for a Hollywood / Pico Blvd retail record store, using fair current market value (Discogs / eBay) for the condition. Fill in the best category and subcategory for each, and leave SKU blank. Return one item per line in this exact format, nothing else:
 Product Name,Artist,Category,Subcategory,SKU,Price,
 
@@ -503,10 +498,20 @@ Copy the Category and Subcategory exactly from this list (Category: Subcategorie
 
 Items:
 a, b, c, d, e</textarea>
+                        {{-- Sarah 2026-11-22: "paste it in the box above + Parse & Add below" was confusing.
+                             Self-contained steps now, with its own paste box + Add button. --}}
+                        <div style="font-weight:700; margin-bottom:4px;">Step 1 &middot; Copy the prompt</div>
                         <button type="button" class="btn btn-success btn-sm" id="mass_ai_prompt_copy"><i class="fa fa-clipboard"></i> Copy prompt</button>
                         <a href="https://chatgpt.com/" target="_blank" rel="noopener" class="btn btn-default btn-sm"><i class="fa fa-external-link"></i> Open ChatGPT</a>
-                        <span id="mass_ai_prompt_copied" class="text-success" style="display:none; margin-left:6px;">Copied. Paste it into ChatGPT and swap a, b, c, d, e for your items.</span>
-                        <div style="margin-top:6px; color:#777;">Prices still get raised to what we usually sell it for (green), and Save still checks for too-low prices.</div>
+                        <span id="mass_ai_prompt_copied" class="text-success" style="display:none; margin-left:6px;">Copied!</span>
+
+                        <div style="font-weight:700; margin:12px 0 4px;">Step 2 &middot; In ChatGPT</div>
+                        <div>Paste the prompt. At the very bottom, replace <code>a, b, c, d, e</code> with your items (add format + condition, like <em>Rumours LP VG+</em>). Send it.</div>
+
+                        <div style="font-weight:700; margin:12px 0 4px;">Step 3 &middot; Paste ChatGPT&rsquo;s answer here</div>
+                        <textarea id="chatgpt_answer" class="form-control" rows="5" placeholder="Paste ChatGPT's whole answer here" style="font-size:14px;"></textarea>
+                        <button type="button" class="btn btn-primary btn-sm" id="chatgpt_answer_add" style="margin-top:6px;"><i class="fa fa-plus"></i> Add to table</button>
+                        <div style="margin-top:6px; color:#777;">Then check the rows in the table and hit <strong>Save All Products</strong>. Prices still get raised to what we usually sell it for (green), and Save still checks for too-low prices.</div>
                     </div>
                 </details>
 
@@ -3028,6 +3033,23 @@ a, b, c, d, e</textarea>
     })();
 
     // Sarah 2026-11-15: "Price it & add to table" — rough typed list → Claude → CSV → table.
+    // ChatGPT way step 3: send the pasted answer through the normal parser.
+    $('#chatgpt_answer_add').on('click', function () {
+        // Keep only the product rows (Name,Artist,Category,Subcategory,SKU,Price,) — drops ChatGPT's
+        // "Here are your items:" chatter and ``` code fences.
+        const answer = ($('#chatgpt_answer').val() || '').split('\n')
+            .filter(function (l) { return l.split(',').length >= 5 && l.indexOf('```') === -1; })
+            .join('\n').trim();
+        if (!answer) {
+            toastr.warning($.trim($('#chatgpt_answer').val())
+                ? "Couldn't find product lines. ChatGPT's answer should look like: Rumours,Fleetwood Mac,Vinyl - Used,Rock,,22,"
+                : "Paste ChatGPT's answer in the Step 3 box first.");
+            return;
+        }
+        $('#bulk_product_text').val(answer);
+        $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
+        $('#chatgpt_answer').val('');
+    });
     $('#mass_ai_prompt_copy').on('click', function () {
         const t = document.getElementById('mass_ai_prompt');
         const done = function () { $('#mass_ai_prompt_copied').show(); };
