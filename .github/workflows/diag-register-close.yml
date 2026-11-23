@@ -1,0 +1,75 @@
+name: Diag register close
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Close date YYYY-MM-DD (LA time; includes closes up to 6am next day)"
+        required: true
+      location:
+        description: "Location name fragment (e.g. pico, hollywood); blank = all"
+        required: false
+        default: ""
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+      - name: Register closes for a date (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          D: ${{ inputs.date }}
+          LOC: ${{ inputs.location }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          envs: D,LOC
+          script_stop: false
+          command_timeout: 60s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export D LOC
+            php artisan tinker --no-ansi <<'PHP'
+            $d = getenv('D'); $loc = trim((string) getenv('LOC'));
+            $tz = config('app.timezone'); echo "TZ app=$tz\n";
+            $from = \Carbon\Carbon::parse($d.' 06:00', 'America/Los_Angeles');
+            $to = $from->copy()->addDay();
+            $q = DB::table('cash_registers as cr')
+              ->leftJoin('users as u','u.id','=','cr.user_id')
+              ->leftJoin('business_locations as bl','bl.id','=','cr.location_id')
+              ->whereBetween('cr.closed_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()]);
+            if ($loc !== '') $q->where('bl.name','like',"%$loc%");
+            $rows = $q->orderBy('cr.closed_at')->get(['cr.*','u.first_name','u.last_name','u.username','bl.name as loc']);
+            echo "COUNT=".count($rows)."\n";
+            foreach ($rows as $r) {
+              echo "=== register #{$r->id} | {$r->loc} | {$r->first_name} {$r->last_name} ({$r->username}) | opened {$r->created_at} closed {$r->closed_at} status={$r->status}\n";
+              echo "  closing_amount(counted cash)=".$r->closing_amount." safe_drop=".($r->safe_drop_amount ?? 'n/a')." card_slips={$r->total_card_slips} cheques={$r->total_cheques}\n";
+              echo "  denominations=".($r->denominations ?? '')."\n  note=[".($r->closing_note ?? '')."]\n";
+              $tx = DB::table('cash_register_transactions')->where('cash_register_id',$r->id)
+                ->selectRaw("pay_method, type, transaction_type, ROUND(SUM(amount),2) amt, COUNT(*) n")
+                ->groupBy('pay_method','type','transaction_type')->get();
+              foreach ($tx as $t) echo "  TX {$t->transaction_type} {$t->type} {$t->pay_method} n={$t->n} amt={$t->amt}\n";
+            }
+            PHP
