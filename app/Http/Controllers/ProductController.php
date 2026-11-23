@@ -5214,7 +5214,7 @@ class ProductController extends Controller
                 'type' => $labels[$line->item_type] ?? $line->item_type,
                 'title' => $line->title,
                 // Scanned items are one-of-a-kind too: one row per copy.
-                'individual' => $line->item_type === 'individual_vinyl' || $upc !== null,
+                'individual' => $line->item_type === 'individual_vinyl' || $upc !== null || ($releaseId && (float) $line->quantity < 10),
                 'discogs_release_id' => $releaseId,
                 'upc' => $upc,
                 // Barcode already on another product (e.g. the sealed copy):

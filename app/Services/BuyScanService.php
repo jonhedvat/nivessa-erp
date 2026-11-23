@@ -428,13 +428,17 @@ class BuyScanService
 
         $cats = DB::table('categories')->where('business_id', $business_id)->whereNull('deleted_at')->get(['id', 'name', 'parent_id']);
         $parents = [];
+        $anyCond = [];
         foreach ($cats as $c) {
             if ((int) $c->parent_id !== 0) continue;
             if (self::formatFromText($c->name) !== $format) continue;
             $cond = self::conditionFromText($c->name);
             if ($cond === null && in_array($format, ['dvd', 'bluray', '4k', 'vhs'], true)) $cond = 'used';
             if ($cond === $want) $parents[] = (int) $c->id;
+            if ($cond === null) $anyCond[] = (int) $c->id;
         }
+        // A format with one category for both (e.g. '7", 45 RPM').
+        if (!$parents) $parents = $anyCond;
         if (!$parents) return null;
         $genres = $ours ? self::canons(array_map(function ($p) { return (string) $p['genre']; }, $ours)) : [];
         foreach ($genres as $g) {

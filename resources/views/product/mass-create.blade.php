@@ -4256,8 +4256,25 @@ a, b, c, d, e</textarea>
             $('#bfc_add_status').text('Adding ' + (done + 1) + '…');
             var addRow = function (data) {
                 // Category from the scanned barcode wins (it knows used vs sealed).
+                // When it only knows the format ("CD - Used"), keep the genre the
+                // Discogs match found, moved under that format.
                 if (l.category && l.category[0]) {
-                    data = $.extend({}, data, { category_id: l.category[0], sub_category_id: l.category[1] || 0 });
+                    var parent = String(l.category[0]), sub = l.category[1] ? String(l.category[1]) : '';
+                    if (!sub && data.sub_category_id) {
+                        if (String(data.category_id) === parent) {
+                            sub = String(data.sub_category_id);
+                        } else {
+                            var $opts = $('.category-combo-select').first().find('option');
+                            var genre = (($opts.filter('[value="' + data.category_id + '_' + data.sub_category_id + '"]').text() || '').split(' > ')[1] || '').toLowerCase().trim();
+                            if (genre) {
+                                $opts.each(function () {
+                                    var v = String(this.value), t = $(this).text().split(' > ');
+                                    if (v.indexOf(parent + '_') === 0 && t[1] && t[1].toLowerCase().trim() === genre) { sub = v.split('_')[1]; return false; }
+                                });
+                            }
+                        }
+                    }
+                    data = $.extend({}, data, { category_id: parent, sub_category_id: sub || 0 });
                 }
                 return addRowFromDiscogsData(data, idx, '').then(function () {
                     var $row = $('#product_rows_container .product-row[data-row-index="' + idx + '"]');

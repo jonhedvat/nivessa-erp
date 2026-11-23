@@ -2749,8 +2749,9 @@ HTML;
                 // Sealed is the cashier's call (same barcode either way); default Used.
                 apply($row);
                 var $link = $row.find('input[name$="[discogs_link]"]');
-                if (d.discogs_release_id && !$.trim($link.val())
-                    && $row.find('select[name$="[item_type]"]').val() === 'individual_vinyl') {
+                // Keep the Discogs match on every kind of line: Mass Add uses it for the
+                // cover, artist and genre later. (Only single records price off it.)
+                if (d.discogs_release_id && !$.trim($link.val())) {
                     $link.val('https://www.discogs.com/release/' + d.discogs_release_id).trigger('input');
                 }
                 if (typeof bfcRecalcAll === 'function') bfcRecalcAll();
