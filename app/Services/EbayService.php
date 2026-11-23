@@ -116,6 +116,9 @@ class EbayService
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
+            // Sarah 2026-11-22: no timeout meant a slow eBay hung Mass Add until the page gave up.
+            CURLOPT_CONNECTTIMEOUT => 6,
+            CURLOPT_TIMEOUT => 20,
         ];
 
         if (isset($options['headers'])) {

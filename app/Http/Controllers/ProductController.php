@@ -5617,6 +5617,7 @@ class ProductController extends Controller
                             \Cache::put($key, $ebayOut, now()->addDays(7));
                         }
                     } catch (\Throwable $e) {
+                        $ebayBudget = 0; // eBay is down or slow: don't make Save wait on it for every row (Sarah 2026-11-22)
                         \Log::warning('mass-add price guard eBay "' . $q . '": ' . $e->getMessage());
                     }
                 }

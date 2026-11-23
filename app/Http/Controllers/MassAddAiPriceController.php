@@ -49,13 +49,30 @@ class MassAddAiPriceController extends Controller
     /** Ordinary cards this much or more online get a red "check this card" note. */
     const CARD_CHECK_ONLINE = 20;
 
+    /** Seconds per request spent on Discogs/eBay lookups before the rest of the list skips them. */
+    const WEB_BUDGET_SECONDS = 25;
+
+    /** Set when a lookup fails, so the rest of this request doesn't wait on the same dead service. */
+    private $discogsDown = false;
+    private $ebayDown = false;
+
+    private function webCacheKey($businessId, $line)
+    {
+        return 'ai_web_comp_v2:' . $businessId . ':' . md5(mb_strtolower($line));
+    }
+
     private function webComparables($businessId, $line)
     {
-        $key = 'ai_web_comp_v2:' . $businessId . ':' . md5(mb_strtolower($line));
-        return \Cache::remember($key, 24 * 3600, function () use ($businessId, $line) {
+        $key = $this->webCacheKey($businessId, $line);
+        $cached = \Cache::get($key);
+        if (is_array($cached)) return $cached;
+        $failed = false; // a timed-out lookup is not cached, so the next try asks again
+        $out = (function () use ($businessId, $line, &$failed) {
             $out = ['discogs' => null, 'ebay' => null];
-            try {
+            if ($this->discogsDown) $failed = true;
+            if (!$this->discogsDown) try {
                 $d = (new \App\Services\DiscogsService($businessId))->searchProductPrice($line);
+                if (!empty($d['error'])) { $failed = true; $this->discogsDown = true; }
                 if (empty($d['error'])) {
                     foreach ((array) ($d['prices'] ?? []) as $p) {
                         if (stripos((string) ($p['condition'] ?? ''), 'Very Good Plus') === 0 || stripos((string) ($p['condition'] ?? ''), 'VG+') !== false) {
@@ -65,9 +82,12 @@ class MassAddAiPriceController extends Controller
                     }
                 }
             } catch (\Throwable $e) {
+                $failed = true;
+                $this->discogsDown = true;
                 \Log::info('MassAddAiPrice discogs lookup failed', ['error' => $e->getMessage()]);
             }
-            try {
+            if ($this->ebayDown) $failed = true;
+            if (!$this->ebayDown) try {
                 $res = (new \App\Services\EbayService($businessId))->browseSearch([
                     'q' => mb_substr($line, 0, 100),
                     'limit' => 50,
@@ -93,10 +113,14 @@ class MassAddAiPriceController extends Controller
                     $out['ebay'] = ['median' => round($median * self::EBAY_SOLD_SHARE, 2), 'asking' => round($median, 2), 'n' => $n];
                 }
             } catch (\Throwable $e) {
+                $failed = true;
+                $this->ebayDown = true;
                 \Log::info('MassAddAiPrice eBay lookup failed', ['error' => $e->getMessage()]);
             }
             return $out;
-        });
+        })();
+        if (!$failed) \Cache::put($key, $out, 24 * 3600);
+        return $out;
     }
 
     public function price(Request $request)
@@ -278,13 +302,25 @@ class MassAddAiPriceController extends Controller
             $this->comparables = [];
             $conflict = [];
             $this->web = [];
+            // Sarah 2026-11-22: staff got "couldn't reach the server" when eBay/Discogs were slow.
+            // "Quick price" skips the web lookups; otherwise they stop after WEB_BUDGET_SECONDS
+            // and the remaining lines are priced from our sales + the AI alone.
+            $skipWeb = $request->boolean('skip_web');
+            $webStart = microtime(true);
+            $webSkipped = 0;
             foreach ($numbered as $n => $l) {
                 $c = $this->storeHistory($businessId, $l, '', '');
                 $this->comparables[$n] = $c;
                 // Our sales for this title are spread out (e.g. a $5 copy and a $40 copy).
                 $conflict[$n] = $c && $c['median'] > 0 && $c['p75'] > 2 * $c['median'];
                 // Live web prices: Discogs (VG+ suggestion) and eBay (asking median).
-                $w = $this->webComparables($businessId, $l);
+                if ($skipWeb || microtime(true) - $webStart > self::WEB_BUDGET_SECONDS) {
+                    $w = \Cache::get($this->webCacheKey($businessId, $l)) ?: ['discogs' => null, 'ebay' => null];
+                    if (!$skipWeb) $webSkipped++;
+                } else {
+                    $w = $this->webComparables($businessId, $l);
+                    if ($this->discogsDown && $this->ebayDown) $webSkipped++;
+                }
                 $this->web[$n] = $w;
                 // Discogs and eBay disagree by 2x or more.
                 $prices = array_filter([$w['discogs'], $w['ebay']['median'] ?? null]);
@@ -456,7 +492,7 @@ class MassAddAiPriceController extends Controller
                 return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
             }
 
-            return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines), 'history' => $notes]);
+            return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines), 'history' => $notes, 'skip_web' => $skipWeb, 'web_skipped' => $webSkipped]);
         } catch (\Exception $e) {
             \Log::warning('MassAddAiPrice failed', ['error' => $e->getMessage()]);
             return response()->json(['ok' => false, 'error' => "Couldn't reach the AI service. Try again in a minute."]);

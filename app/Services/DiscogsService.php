@@ -237,6 +237,9 @@ class DiscogsService
 
                 curl_setopt($ch, CURLOPT_URL, $url);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                // Sarah 2026-11-22: no timeout meant a slow Discogs hung Mass Add until the page gave up.
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 6);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
                 $headers = [
                     'User-Agent: NivessaPlaylist/1.0 +https://playlist.nivessa.com',

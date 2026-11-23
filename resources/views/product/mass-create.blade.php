@@ -474,6 +474,10 @@
                     <button type="button" class="btn btn-primary btn-lg" id="ai_price_bulk_text" style="border-radius:8px;">
                         <i class="fa fa-magic"></i> Price it &amp; add to table
                     </button>
+                    {{-- Sarah 2026-11-22: same AI + our sales, but skips the eBay/Discogs lookups (for when they're down or slow). --}}
+                    <button type="button" class="btn btn-default btn-lg" id="ai_price_quick" style="border-radius:8px;" title="Prices from AI + our sales only. Use when eBay/Discogs aren't connecting.">
+                        <i class="fa fa-bolt"></i> Quick price (skip eBay/Discogs)
+                    </button>
                     <span class="text-muted" id="bulk_parse_status"></span>
                 </div>
                 <div id="ai_price_history" style="display:none; margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e3e3e8; border-radius:8px; font-size:13px;"></div>
@@ -482,7 +486,31 @@
                     <span style="color:#15803d;font-weight:700;">green</span>. Fill anything left blank in the table, then hit <strong>Save All Products</strong>.
                 </div>
 
-                <details style="margin-top:14px;">
+                {{-- Sarah 2026-11-22: bring back the ChatGPT copy-paste way (no web lookups at all). --}}
+                <details id="chatgpt_way" style="margin-top:14px;">
+                    <summary style="cursor:pointer; color:#333; font-size:14px; font-weight:700;"><i class="fa fa-comments"></i> Use ChatGPT instead (old way, no web lookups)</summary>
+                    <div style="margin-top:8px; font-size:13px; padding:10px 12px; background:#fff; border:1px solid #e3e3e8; border-radius:8px;">
+                        <ol style="margin:0 0 8px; padding-left:20px;">
+                            <li>Click <strong>Copy prompt</strong> and paste it into ChatGPT.</li>
+                            <li>Swap <code>a, b, c, d, e</code> at the bottom for your items (add format + condition, like <em>Rumours LP VG+</em>).</li>
+                            <li>Copy ChatGPT&rsquo;s answer, paste it in the box above, and click <strong>Parse &amp; Add Products</strong> below.</li>
+                        </ol>
+                        <textarea id="mass_ai_prompt" style="position:absolute; left:-9999px;" aria-hidden="true" tabindex="-1">Price these items for a Hollywood / Pico Blvd retail record store, using fair current market value (Discogs / eBay) for the condition. Fill in the best category and subcategory for each, and leave SKU blank. Return one item per line in this exact format, nothing else:
+Product Name,Artist,Category,Subcategory,SKU,Price,
+
+Copy the Category and Subcategory exactly from this list (Category: Subcategories). LPs / albums go in Vinyl - Used or Vinyl - Sealed, not 7", 45 RPM:
+{{ collect($category_combos ?? [])->groupBy(function ($c) { return explode(' > ', $c['label'], 2)[0]; })->map(function ($g, $cat) { $subs = $g->map(function ($c) { return explode(' > ', $c['label'], 2)[1] ?? null; })->filter()->implode('; '); return $cat . ($subs !== '' ? ': ' . $subs : ''); })->implode("\n") }}
+
+Items:
+a, b, c, d, e</textarea>
+                        <button type="button" class="btn btn-success btn-sm" id="mass_ai_prompt_copy"><i class="fa fa-clipboard"></i> Copy prompt</button>
+                        <a href="https://chatgpt.com/" target="_blank" rel="noopener" class="btn btn-default btn-sm"><i class="fa fa-external-link"></i> Open ChatGPT</a>
+                        <span id="mass_ai_prompt_copied" class="text-success" style="display:none; margin-left:6px;">Copied. Paste it into ChatGPT and swap a, b, c, d, e for your items.</span>
+                        <div style="margin-top:6px; color:#777;">Prices still get raised to what we usually sell it for (green), and Save still checks for too-low prices.</div>
+                    </div>
+                </details>
+
+                <details style="margin-top:10px;">
                     <summary style="cursor:pointer; color:#555; font-size:13px;">Already have a priced list? (CSV, pipe or tab format)</summary>
                     <div style="margin-top:8px; font-size:13px;">
                         Paste it in the box above and use these buttons instead. Formats:
@@ -2902,8 +2930,26 @@
     })();
 
     // Sarah 2026-11-15: "Price it & add to table" — rough typed list → Claude → CSV → table.
-    $('#ai_price_bulk_text').on('click', function() {
+    $('#mass_ai_prompt_copy').on('click', function () {
+        const t = document.getElementById('mass_ai_prompt');
+        const done = function () { $('#mass_ai_prompt_copied').show(); };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(t.value).then(done, function () { t.select(); document.execCommand('copy'); done(); });
+        } else { t.select(); document.execCommand('copy'); done(); }
+    });
+    const aiPriceBtnHtml = {
+        ai_price_bulk_text: '<i class="fa fa-magic"></i> Price it &amp; add to table',
+        ai_price_quick: '<i class="fa fa-bolt"></i> Quick price (skip eBay/Discogs)',
+    };
+    const aiPriceFallbackHint = ' Try <strong>Quick price</strong>, or <a href="#" class="open-chatgpt-way">use ChatGPT instead</a>.';
+    $(document).on('click', '.open-chatgpt-way', function (e) {
+        e.preventDefault();
+        $('#chatgpt_way').prop('open', true);
+        $('html, body').animate({ scrollTop: $('#chatgpt_way').offset().top - 80 }, 200);
+    });
+    $('#ai_price_bulk_text, #ai_price_quick').on('click', function() {
         const $btn = $(this);
+        const skipWeb = this.id === 'ai_price_quick';
         const items = $('#bulk_product_text').val().trim();
         if (!items) {
             toastr.warning('Type your items in the box first, one per line.');
@@ -2911,17 +2957,18 @@
             return;
         }
         const n = items.split('\n').filter(l => l.trim()).length;
-        $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Pricing ' + n + ' item' + (n === 1 ? '' : 's') + '...');
-        $('#bulk_parse_status').html('This can take up to a minute for long lists.');
+        $('#ai_price_bulk_text, #ai_price_quick').prop('disabled', true);
+        $btn.html('<i class="fa fa-spinner fa-spin"></i> Pricing ' + n + ' item' + (n === 1 ? '' : 's') + '...');
+        $('#bulk_parse_status').html(skipWeb ? 'Skipping eBay/Discogs.' : 'This can take up to a minute for long lists.');
         $.ajax({
             url: "{{ route('product.massCreate.aiPrice') }}",
             method: 'POST',
-            data: { items: items },
+            data: { items: items, skip_web: skipWeb ? 1 : 0 },
             headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
             timeout: 120000
         }).done(function(res) {
             if (!res || !res.ok) {
-                $('#bulk_parse_status').html('<span class="text-danger">' + $('<div>').text((res && res.error) || 'Something went wrong.').html() + '</span>');
+                $('#bulk_parse_status').html('<span class="text-danger">' + $('<div>').text((res && res.error) || 'Something went wrong.').html() + '</span>' + aiPriceFallbackHint);
                 return;
             }
             const esc = t => $('<div>').text(String(t)).html();
@@ -2962,13 +3009,19 @@
             } else {
                 $('#ai_price_history').html('<span class="text-muted">None of these have sold in our store in the last 2 years, so prices are the AI&rsquo;s market estimate.</span>').show();
             }
+            if (res.web_skipped > 0) {
+                $('#ai_price_history').prepend('<div style="color:#b45309; margin-bottom:6px;"><i class="fa fa-exclamation-triangle"></i> eBay/Discogs were slow, so ' + res.web_skipped + ' item' + (res.web_skipped === 1 ? ' was' : 's were') + ' priced from the AI + our sales only.</div>').show();
+            } else if (res.skip_web) {
+                $('#ai_price_history').prepend('<div class="text-muted" style="margin-bottom:6px;"><i class="fa fa-bolt"></i> Quick price: no eBay/Discogs lookups.</div>').show();
+            }
             $('#bulk_product_text').val(res.csv);
             $('#bulk_preview_container').hide();
             $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
         }).fail(function() {
-            $('#bulk_parse_status').html('<span class="text-danger">Couldn\'t reach the server. Try again.</span>');
+            $('#bulk_parse_status').html('<span class="text-danger">Couldn\'t reach the server.</span>' + (skipWeb ? ' Try again, or <a href="#" class="open-chatgpt-way">use ChatGPT instead</a>.' : aiPriceFallbackHint));
         }).always(function() {
-            $btn.prop('disabled', false).html('<i class="fa fa-magic"></i> Price it &amp; add to table');
+            $('#ai_price_bulk_text, #ai_price_quick').prop('disabled', false);
+            $btn.html(aiPriceBtnHtml[$btn.attr('id')]);
         });
     });
 
