@@ -326,6 +326,72 @@ class BuyOfferCalculatorService
                 'toy_other' => ['label' => 'Toy: Other / mixed (blind boxes, keychains…)', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.50],
                 // Jon 2026-10-25: pins come in bags, mostly not $15 pins: $0.33 each.
                 'pin' => ['label' => 'Pin', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.33],
+
+                // Jon 2026-11-23: every ERP category we can buy into now has a line.
+                // Flat rates from the last 365 days of sales (avg price x how fast
+                // that subcategory sells vs its stock), conservative where sales are
+                // thin. Gear with wide price ranges is paid off its eBay value like
+                // Camera (15% under $30, 20% at $30+).
+                'eight_track' => ['label' => '8-Track Tape', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.25],
+                'record_cover_only' => ['label' => 'Record Cover Only (no record)', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.05],
+                // Magazines (avg $13.44): Rolling Stone 32 sold $10.03, Music 25 $12.20,
+                // Nat Geo 48 $6.50 (cheap), Adult 14 $18.14, Film/TV/Horror 16 $9.69,
+                // News & Celebrity 37 $15.78, Video Games 28 $13.15, Sports 7 $12.86.
+                'magazine_rolling_stone' => ['label' => 'Magazine: Rolling Stone', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.60],
+                'magazine_music' => ['label' => 'Magazine: Music', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.75],
+                'magazine_natgeo' => ['label' => 'Magazine: National Geographic', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.35],
+                'magazine_adult' => ['label' => 'Magazine: Adult (not Playboy)', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 1.00],
+                'magazine_film_tv_horror' => ['label' => 'Magazine: Film, TV & Horror', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.50],
+                'magazine_news_celebrity' => ['label' => 'Magazine: News & Celebrity', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.85],
+                'magazine_video_games' => ['label' => 'Magazine: Video Games', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.75],
+                'magazine_sports' => ['label' => 'Magazine: Sports', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.50],
+                // Books: Photo Books 6 sold $11.67 (fast), Sci-Fi 2 $11, Romance 3 $7.27, Kids/YA slow.
+                'book_photo' => ['label' => 'Book: Photo Books', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.60],
+                'book_scifi' => ['label' => 'Book: Sci-Fi', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.30],
+                'book_romance' => ['label' => 'Book: Romance', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.20],
+                'book_kids_ya' => ['label' => 'Book: Kids / Young Adult', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.15],
+                // Apparel: Jerseys 6 sold $40.83, Pants 5 $30.60, Shirts 1 $22 (15 in stock), Tote Bags 3 $44.
+                'apparel_jersey' => ['label' => 'Apparel: Jersey', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 3.00],
+                'apparel_pants' => ['label' => 'Apparel: Pants', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 1.50],
+                'apparel_shirt' => ['label' => 'Apparel: Shirt (button-up / other)', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 1.00],
+                'apparel_tote' => ['label' => 'Apparel: Tote Bag', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 1.50],
+                // Art & gifts: Photography Prints 8 sold $5.75 (39 in stock); keychains/
+                // stickers/magnets ~$2-5; slipmats & tech accessories 12 sold $12.92;
+                // animatronics/decor 1 sold $10.
+                'art_photo_print' => ['label' => 'Art: Photography Print', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.50],
+                'gift_small' => ['label' => 'Gift item: Keychain / Magnet / Sticker', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.10],
+                'gift_tech_accessory' => ['label' => 'Gift item: Slipmat / Tech Accessory', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.75],
+                'decor_collectible' => ['label' => 'Decorative Collectible / Animatronic', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 1.00],
+                // Toys: Mini vinyl replicas 8 sold $24.05, Plush 7 $18.57 (slow), Puzzles 3 $8, Blind Box 66 $3.58.
+                'toy_mini_replica' => ['label' => 'Toy: Mini Vinyl Replica / Collectible', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 2.00],
+                'toy_plush' => ['label' => 'Toy: Plush / Doll', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 1.00],
+                'toy_puzzle' => ['label' => 'Toy: Puzzle', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.50],
+                'toy_blind_box' => ['label' => 'Toy: Blind Box', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.35],
+                // Cards: GPK 31 sold $4.95 (166 in stock), One Piece 15 $2.77 — regular
+                // non-sports cards are bulk like sports cards; $10+ ones and graded
+                // slabs pay 20% of value like the Pokemon/Magic $10+ lines.
+                'card_nonsports' => ['label' => 'Trading Card: Non-sports (GPK, One Piece, Marvel, Star Wars…)', 'mode' => 'bulk_fixed', 'no_grading' => true, 'unit_rate' => 0.03],
+                'rare_other_card' => ['min_value' => 10, 'label' => 'Other trading card $10+ (One Piece, Marvel, WWE, soccer… pays 20% of value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'pay_fraction' => 0.20],
+                'graded_slab' => ['label' => 'Graded card slab (PSA / BGS / CGC, pays 20% of value)', 'mode' => 'ebay_margin', 'no_grading' => true, 'pay_fraction' => 0.20],
+                // Gear: Audio Gear avg $87.72 (speakers, headphones, decks, walkmen,
+                // needles, VCRs), music gear (guitars 9 sold $166.78, pedals, amps,
+                // synths, mixers), photo/video gear (lenses, lighting, film cameras).
+                'audio_gear_value' => ['label' => 'Audio gear: speakers, headphones, decks, Walkman, VCR… (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'music_gear_value' => ['label' => 'Music gear: guitar, amp, pedal, keyboard, mixer… (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                'photo_gear_value' => ['label' => 'Photo / video gear: lens, lighting, film camera… (enter eBay sold value)', 'mode' => 'value_percent', 'no_grading' => true, 'value_tiers' => [
+                    ['under' => 30, 'percent' => 0.15],
+                    ['under' => null, 'percent' => 0.20],
+                ]],
+                // Anything not listed: 15% of its eBay sold value, eBay link always required.
+                'other_ebay' => ['label' => 'Other (not listed): pays 15% of eBay sold value', 'mode' => 'value_percent', 'no_grading' => true, 'no_demand' => true, 'ebay_link_always' => true, 'value_tiers' => [
+                    ['under' => null, 'percent' => 0.15],
+                ]],
             ],
         ];
     }
@@ -620,6 +686,10 @@ class BuyOfferCalculatorService
         $cfg = $this->getRules()['item_types'][$itemType] ?? null;
         if (!$cfg || !in_array($cfg['mode'], ['ebay_margin', 'value_percent'], true)) {
             return false;
+        }
+        // "Other (not listed)": no price list to fall back on, so always show the eBay proof.
+        if (!empty($cfg['ebay_link_always'])) {
+            return true;
         }
         if (preg_match('/vinyl|record|cassette|^cd_|\b7"|45 ?rpm/i', $itemType . ' ' . ($cfg['label'] ?? '') . ' ' . $genre)) {
             return false;

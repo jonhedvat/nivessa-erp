@@ -1319,7 +1319,9 @@ class BuyFromCustomerController extends Controller
             }
             if ($qty > 0 && $this->calculator->requiresEbaySoldLink($type, $value, $genre)) {
                 if ($link === '') {
-                    $errors["lines.$i.discogs_link"] = sprintf('Line %s: items worth more than $%d need an eBay link (paste the eBay page link).', $n, BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER);
+                    $errors["lines.$i.discogs_link"] = !empty($cfg['ebay_link_always'])
+                        ? sprintf('Line %s: "Other" items need the eBay sold link (paste the eBay page link).', $n)
+                        : sprintf('Line %s: items worth more than $%d need an eBay link (paste the eBay page link).', $n, BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER);
                 } elseif (!BuyOfferCalculatorService::isEbayUrl($link)) {
                     $errors["lines.$i.discogs_link"] = sprintf('Line %s: that is not an eBay link. Paste a link from ebay.com.', $n);
                 }

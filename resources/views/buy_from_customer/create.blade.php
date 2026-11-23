@@ -1658,7 +1658,7 @@ HTML;
                 if (type === 'cd_10_plus' && qty > 0 && !$row.find('select.bfc-grade').val()) sanity.push('Line ' + (i + 1) + ': pick the CD\'s condition grade.');
                 var tcfg = BFC_RULES.types[type] || {};
                 if (bfcEbayLinkRequired(type + ' ' + ($row.find('select.bfc-genre').val() ? $row.find('select.bfc-genre option:selected').text().split(' › ')[0] : ''), tcfg, val) && qty > 0) {
-                    if (!link) sanity.push('Line ' + (i + 1) + ': items worth more than ${{ (int) \App\Services\BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER }} need an eBay link (paste the eBay page link).');
+                    if (!link) sanity.push('Line ' + (i + 1) + ': ' + (tcfg.ebay_link_always ? '"Other" items need the eBay sold link' : 'items worth more than ${{ (int) \App\Services\BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER }} need an eBay link') + ' (paste the eBay page link).');
                     else if (!bfcIsEbayUrl(link)) sanity.push('Line ' + (i + 1) + ': that is not an eBay link. Paste a link from ebay.com.');
                 }
                 if (tcfg.min_value && qty > 0 && val < tcfg.min_value) sanity.push('Line ' + (i + 1) + ': "' + $row.find('select[name$="[item_type]"] option:selected').text() + '" is for items worth $' + tcfg.min_value + '+ on eBay. Use the regular line for cheaper ones.');
@@ -1696,6 +1696,7 @@ HTML;
                     'fixed_hv' => !empty($bfcCfg['fixed_hv']),
                     'speed_pay' => !empty($bfcCfg['speed_pay']),
                     'min_value' => $bfcCfg['min_value'] ?? null,
+                    'ebay_link_always' => !empty($bfcCfg['ebay_link_always']),
                 ];
             }
         @endphp
@@ -1969,6 +1970,7 @@ HTML;
         // BuyOfferCalculatorService::requiresEbaySoldLink / isEbayUrl).
         function bfcNeedsEbaySold(t) { return t.mode === 'ebay_margin' || t.mode === 'value_percent'; }
         function bfcEbayLinkRequired(type, t, val) {
+            if (t.ebay_link_always) return true;
             return bfcNeedsEbaySold(t) && !/^cd_|vinyl|record|cassette|\b7"|45 ?rpm/i.test((type || '') + ' ' + (t.label || '')) && val > {{ (int) \App\Services\BuyOfferCalculatorService::EBAY_LINK_REQUIRED_OVER }};
         }
         function bfcIsEbayUrl(u) {
