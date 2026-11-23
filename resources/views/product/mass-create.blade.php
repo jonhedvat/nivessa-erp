@@ -470,18 +470,26 @@
                     rows="8"
                     placeholder="Rumours LP VG+&#10;Thriller sealed&#10;Kind of Blue CD&#10;Nevermind cassette&#10;2024 Topps Bobby Witt Jr. #17"
                     style="font-size:16px; line-height:1.6; border-radius:10px; padding:12px 14px; background:#fff;"></textarea>
-                <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                    <button type="button" class="btn btn-primary btn-lg" id="ai_price_bulk_text" style="border-radius:8px;">
-                        <i class="fa fa-magic"></i> Price from web research
-                    </button>
-                    {{-- Sarah 2026-11-22: same AI + our sales, but skips the eBay/Discogs lookups (for when they're down or slow). --}}
-                    <button type="button" class="btn btn-default btn-lg" id="ai_price_quick" style="border-radius:8px;" title="Prices from AI + our sales only. Use when eBay/Discogs aren't connecting.">
-                        <i class="fa fa-bolt"></i> Price from ERP history
-                    </button>
-                    {{-- Sarah 2026-11-22: items already have prices typed in ("Rumours LP VG+ $22") — skip AI, just add them. --}}
-                    <button type="button" class="btn btn-default btn-lg" id="already_priced" style="border-radius:8px;" title="Type a $ price on each line, like: Rumours LP VG+ $22">
-                        <i class="fa fa-check"></i> I already priced the items
-                    </button>
+                {{-- Sarah 2026-11-22: one-line description under each pricing button. --}}
+                <div style="margin-top:10px; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+                    <div>
+                        <button type="button" class="btn btn-primary btn-lg" id="ai_price_bulk_text" style="border-radius:8px;">
+                            <i class="fa fa-magic"></i> Price from web research
+                        </button>
+                        <div style="font-size:12px; color:#666; margin-top:4px; max-width:230px; line-height:1.35;">Researches eBay, Discogs and our past ERP sales to set each price.</div>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-default btn-lg" id="ai_price_quick" style="border-radius:8px;">
+                            <i class="fa fa-bolt"></i> Price from ERP history
+                        </button>
+                        <div style="font-size:12px; color:#666; margin-top:4px; max-width:230px; line-height:1.35;">Uses what we&rsquo;ve sold it for before in the ERP. Never sold? AI estimates it (no eBay/Discogs lookups).</div>
+                    </div>
+                    <div>
+                        <button type="button" class="btn btn-default btn-lg" id="already_priced" style="border-radius:8px;">
+                            <i class="fa fa-check"></i> I already priced the items
+                        </button>
+                        <div style="font-size:12px; color:#666; margin-top:4px; max-width:230px; line-height:1.35;">You priced them yourself (ChatGPT, Claude, eBay, Discogs&hellip;). Put the price after each item, like <em>Rumours LP VG+ $22</em>.</div>
+                    </div>
                     <span class="text-muted" id="bulk_parse_status"></span>
                 </div>
                 <div id="ai_price_history" style="display:none; margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e3e3e8; border-radius:8px; font-size:13px;"></div>
