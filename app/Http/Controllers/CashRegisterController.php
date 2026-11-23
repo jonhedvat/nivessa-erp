@@ -593,6 +593,26 @@ class CashRegisterController extends Controller
             \Log::warning('detectShiftKeyingErrors failed: ' . $ex->getMessage());
         }
 
+        // Expected drawer cash (2026-11-23): opening count (already net of
+        // any open safe drop) + cash sales - cash refunds/payouts for this
+        // register. The modal never shows this number (blind count); it
+        // only warns the cashier when their count is off by more than $5
+        // so they recount (11/22 Pico: $20s typed into the $50 row, and a
+        // close that counted only the $20s). Never breaks the close.
+        $expected_cash = null;
+        try {
+            $openReg = CashRegister::where('user_id', $user_id)->where('status', 'open')->latest('id')->first();
+            if ($openReg) {
+                $expected_cash = round((float) \DB::table('cash_register_transactions')
+                    ->where('cash_register_id', $openReg->id)
+                    ->where('pay_method', 'cash')
+                    ->selectRaw("COALESCE(SUM(CASE WHEN type = 'debit' THEN -amount ELSE amount END), 0) AS net")
+                    ->value('net'), 2);
+            }
+        } catch (\Throwable $ex) {
+            \Log::warning('close_register expected_cash failed: ' . $ex->getMessage());
+        }
+
         // Next deposit number to write on the post-it for the safe drop at
         // close. Location is known here (this register's store).
         $next_deposit_seq = $this->nextDepositSeq($business_id, $register_details->location_id);
@@ -665,7 +685,7 @@ class CashRegisterController extends Controller
         // ("clicking Close Register does nothing"). If the modal fails to
         // render for any reason, fall back to the legacy modal with no
         // summary. The close flow MUST never break.
-        $view_data = compact('register_details', 'details', 'payment_types', 'pos_settings', 'keying_errors', 'next_deposit_seq', 'cashier_name', 'shift_summary', 'due_tasks', 'end_tasks');
+        $view_data = compact('register_details', 'details', 'payment_types', 'pos_settings', 'keying_errors', 'next_deposit_seq', 'cashier_name', 'shift_summary', 'due_tasks', 'end_tasks', 'expected_cash');
         try {
             return view('cash_register.close_register_modal')->with($view_data)->render();
         } catch (\Throwable $ex) {

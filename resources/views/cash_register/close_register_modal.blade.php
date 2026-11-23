@@ -427,6 +427,18 @@
 					<span class="cr-denom-total" id="cr_denom_total">$0.00</span>
 				</div>
 				{!! Form::hidden('closing_amount', 0, ['id' => 'cr_closing_amount']) !!}
+				@if(isset($expected_cash) && $expected_cash !== null)
+				{{-- Count-mismatch warning (2026-11-23). Blind count: the expected
+				     amount is not shown, only whether the count is over or short
+				     by more than $5. Closing needs the recount box ticked. --}}
+				<div class="cr-count-off" id="cr-count-off" data-expected="{{ number_format((float) $expected_cash, 2, '.', '') }}" style="display:none;margin:10px 0 4px;padding:12px 14px;border:2px solid #C62828;background:#FDECEA;border-radius:10px;">
+					<div style="font-weight:800;color:#B71C1C;font-size:15px;margin-bottom:4px;">Your count doesn't match the register. It looks <span class="cr-count-off-dir"></span>.</div>
+					<div style="font-size:13px;color:#3B2E2A;margin-bottom:8px;">Please recount the drawer. Check that every bill is in the right row (a $20 is not a $50), and that you counted every bill, not just the $20s. Include the cash under the tray.</div>
+					<label style="font-size:13px;font-weight:600;display:flex;gap:8px;align-items:center;margin:0;">
+						<input type="checkbox" class="cr-count-off-ok" name="count_mismatch_confirmed" value="1"> I recounted and this is correct
+					</label>
+				</div>
+				@endif
 				{{-- Coins aren't counted above; this feeds the change-run task (Sarah 2026-10-11). --}}
 				<label class="cr-hero-hint" style="display:block; margin-top:8px; font-weight:600;">
 					<input type="checkbox" name="low_on_coins" value="1"> Low on coins
@@ -458,11 +470,40 @@
 						});
 						if (totalEl) totalEl.textContent = fmt(total);
 						hidden.value = total.toFixed(2);
+						checkCountOff(total);
 						// Fire input/change so the safe-drop alert recomputes
 						// off the new total (it binds to #cr_closing_amount).
 						if (window.jQuery) {
 							window.jQuery(hidden).trigger('input').trigger('change');
 						}
+					}
+					var off = document.getElementById('cr-count-off');
+					var offOk = off ? off.querySelector('.cr-count-off-ok') : null;
+					var lastTotal = 0;
+					function isOff(total) {
+						if (!off) return false;
+						var exp = parseFloat(off.getAttribute('data-expected'));
+						return isFinite(exp) && Math.abs(total - exp) > 5;
+					}
+					function checkCountOff(total) {
+						lastTotal = total;
+						if (!off) return;
+						var touched = counts.some(function (c) { return c.value !== ''; });
+						if (!touched || !isOff(total)) { off.style.display = 'none'; return; }
+						var exp = parseFloat(off.getAttribute('data-expected'));
+						off.querySelector('.cr-count-off-dir').textContent = total > exp ? 'OVER' : 'SHORT';
+						off.style.display = 'block';
+					}
+					if (off && window.jQuery) {
+						window.jQuery(off).closest('form').on('submit.countoff', function (e) {
+							if (isOff(lastTotal) && !(offOk && offOk.checked)) {
+								e.preventDefault();
+								off.style.display = 'block';
+								off.style.borderColor = '#7F0000';
+								off.scrollIntoView({ behavior: 'smooth', block: 'center' });
+								return false;
+							}
+						});
 					}
 					counts.forEach(function (c) {
 						c.addEventListener('input', recompute);
