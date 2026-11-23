@@ -232,6 +232,28 @@ class SellQuoteController extends StoreOrDiscogsController
     }
 
     /** POST /sell-quote/start: name + phone (+ email) first, so we keep the lead. */
+    /** Funnel step beacon from the website form (see sell_quote_events). Never errors. */
+    public function track(Request $request)
+    {
+        try {
+            $sid = (string) $request->input('sid');
+            $step = (string) $request->input('step');
+            $ok = preg_match('/^[a-z0-9]{6,40}$/', $sid)
+                && in_array($step, ['view', 'view_shared', 'item_added', 'info_step', 'quote_shown', 'error_2', 'error_3', 'error_4'], true);
+            if ($ok && \Schema::hasTable('sell_quote_events')) {
+                DB::table('sell_quote_events')->insertOrIgnore([
+                    'sid' => $sid,
+                    'step' => $step,
+                    'detail' => mb_substr(strip_tags((string) $request->input('detail')), 0, 120) ?: null,
+                    'ip' => mb_substr((string) $request->ip(), 0, 64),
+                    'created_at' => now(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+        }
+        return $this->cors(response('', 204));
+    }
+
     public function start(Request $request)
     {
         $name = trim(strip_tags((string) $request->input('name')));

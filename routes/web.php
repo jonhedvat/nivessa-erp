@@ -118,6 +118,7 @@ Route::middleware(['setData'])->group(function () {
     Route::middleware('throttle:60,1')->group(function () {
         Route::get('/sell-quote/options', 'SellQuoteController@options');
         Route::post('/sell-quote/start', 'SellQuoteController@start');
+        Route::post('/sell-quote/track', 'SellQuoteController@track');
         Route::get('/sell-quote/search', 'SellQuoteController@search');
         Route::get('/sell-quote/release-value', 'SellQuoteController@releaseValue');
         Route::get('/sell-quote/discogs-collection', 'SellQuoteController@discogsCollection')->middleware('throttle:10,1');
