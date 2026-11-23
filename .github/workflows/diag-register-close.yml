@@ -53,30 +53,19 @@ jobs:
             export D LOC
             php artisan tinker --no-ansi <<'PHP'
             $d = getenv('D'); $loc = trim((string) getenv('LOC'));
-            $tz = config('app.timezone'); echo "TZ app=$tz\n";
-            $from = \Carbon\Carbon::parse($d.' 06:00', 'America/Los_Angeles');
-            $to = $from->copy()->addDay();
-            $q = DB::table('cash_registers as cr')
-              ->leftJoin('users as u','u.id','=','cr.user_id')
-              ->leftJoin('business_locations as bl','bl.id','=','cr.location_id')
-              ->whereBetween('cr.closed_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()]);
-            if ($loc !== '') $q->where('bl.name','like',"%$loc%");
-            $rows = $q->orderBy('cr.closed_at')->get(['cr.*','u.first_name','u.last_name','u.username','bl.name as loc']);
-            echo "COUNT=".count($rows)."\n";
-            $recent = DB::table('cash_registers as cr')->leftJoin('users as u','u.id','=','cr.user_id')->leftJoin('business_locations as bl','bl.id','=','cr.location_id')
-              ->where('cr.created_at','>=',$from->copy()->subDays(2)->setTimezone($tz)->toDateTimeString())
-              ->orderBy('cr.id')->get(['cr.id','cr.status','cr.created_at','cr.closed_at','cr.updated_at','cr.closing_amount','u.first_name','bl.name as loc']);
-            foreach ($recent as $x) echo "RECENT #{$x->id} {$x->loc} {$x->first_name} status={$x->status} opened={$x->created_at} closed={$x->closed_at} updated={$x->updated_at} closing={$x->closing_amount}\n";
-            if (count($rows) === 0) $rows = DB::table('cash_registers as cr')->leftJoin('users as u','u.id','=','cr.user_id')->leftJoin('business_locations as bl','bl.id','=','cr.location_id')
-              ->whereIn('cr.id', $recent->pluck('id'))->when($loc !== '', fn($qq) => $qq->where('bl.name','like',"%$loc%"))
-              ->orderBy('cr.id')->get(['cr.*','u.first_name','u.last_name','u.username','bl.name as loc']);
+            $tz = config('app.timezone'); echo 'TZ app=' . $tz . "\n";
+            $from = \Carbon\Carbon::parse($d . ' 00:00', 'America/Los_Angeles')->subDay();
+            $to = $from->copy()->addDays(3);
+            $q = \DB::table('cash_registers as cr')->leftJoin('users as u', 'u.id', '=', 'cr.user_id')->leftJoin('business_locations as bl', 'bl.id', '=', 'cr.location_id')
+              ->where(fn ($w) => $w->whereBetween('cr.created_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()])
+                ->orWhereBetween('cr.closed_at', [$from->copy()->setTimezone($tz)->toDateTimeString(), $to->copy()->setTimezone($tz)->toDateTimeString()]));
+            if ($loc !== '') $q->where('bl.name', 'like', '%' . $loc . '%');
+            $rows = $q->orderBy('cr.id')->get(['cr.*', 'u.first_name', 'u.last_name', 'bl.name as loc']);
+            echo 'COUNT=' . count($rows) . "\n";
             foreach ($rows as $r) {
-              echo "=== register #{$r->id} | {$r->loc} | {$r->first_name} {$r->last_name} ({$r->username}) | opened {$r->created_at} closed {$r->closed_at} status={$r->status}\n";
-              echo "  closing_amount(counted cash)=".$r->closing_amount." safe_drop=".($r->safe_drop_amount ?? 'n/a')." card_slips={$r->total_card_slips} cheques={$r->total_cheques}\n";
-              echo "  denominations=".($r->denominations ?? '')."\n  note=[".($r->closing_note ?? '')."]\n";
-              $tx = DB::table('cash_register_transactions')->where('cash_register_id',$r->id)
-                ->selectRaw("pay_method, type, transaction_type, ROUND(SUM(amount),2) amt, COUNT(*) n")
-                ->groupBy('pay_method','type','transaction_type')->get();
-              foreach ($tx as $t) echo "  TX {$t->transaction_type} {$t->type} {$t->pay_method} n={$t->n} amt={$t->amt}\n";
+              echo 'REG ' . json_encode($r) . "\n";
+              $tx = \DB::table('cash_register_transactions')->where('cash_register_id', $r->id)
+                ->selectRaw('pay_method, type, transaction_type, ROUND(SUM(amount),2) amt, COUNT(*) n')->groupBy('pay_method', 'type', 'transaction_type')->get();
+              echo 'TX ' . json_encode($tx) . "\n";
             }
             PHP
