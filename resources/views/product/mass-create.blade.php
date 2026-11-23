@@ -2452,15 +2452,23 @@ a, b, c, d, e</textarea>
             let rowsHtml = '';
             const rowHtml = function (it, high) {
                 const r = res[it.idx];
+                // Sarah 2026-11-22: pick one of the two prices per row (radio next to each price)
+                // instead of a far-away checkbox. The "Suggested" radio keeps class pg-use, so
+                // checked = use suggested, same as before.
+                const nm = 'pg_choice_' + esc(it.idx);
+                const lab = 'display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;font-weight:400;padding:4px 8px;border-radius:6px;';
                 return '<tr data-idx="' + esc(it.idx) + '" class="' + (high ? 'pg-high' : 'pg-low') + '">'
-                    + '<td><input type="checkbox" class="pg-use"' + (high ? '' : ' checked') + (r.locked ? ' disabled title="Almost none for sale on Discogs - only a manager can price this low"' : '') + '></td>'
                     + '<td><strong>' + esc(it.artist ? it.artist + ' - ' : '') + esc(it.name) + '</strong>'
                     + (it.condition ? ' <span class="text-muted">' + esc(it.condition) + '</span>' : '')
                     + '<div style="font-size:11px;">' + priceGuardSources(r) + '</div></td>'
-                    + '<td style="color:' + (high ? '#b45309' : '#b91c1c') + ';font-weight:700;">$' + Number(it.price).toFixed(2)
+                    + '<td><label class="pg-opt" style="' + lab + '"' + (r.locked ? ' title="Almost none for sale on Discogs - only a manager can price this low"' : '') + '>'
+                    + '<input type="radio" name="' + nm + '" class="pg-mine"' + (high ? ' checked' : '') + (r.locked ? ' disabled' : '') + '>'
+                    + '<span style="color:' + (high ? '#b45309' : '#b91c1c') + ';font-weight:700;">$' + Number(it.price).toFixed(2)
                     + '<div style="font-size:10px;font-weight:400;">' + (high ? 'too high' : 'too low') + '</div>'
-                    + (r.locked ? '<div style="font-size:10px;font-weight:400;">rare - manager only</div>' : '') + '</td>'
-                    + '<td><input type="number" step="0.01" min="' + (r.locked ? (Math.ceil(r.discogs.scarce * 0.7)) : 0) + '" class="form-control input-sm pg-new" style="width:90px;" value="' + Number(r.suggested).toFixed(2) + '"></td>'
+                    + (r.locked ? '<div style="font-size:10px;font-weight:400;">rare - manager only</div>' : '') + '</span></label></td>'
+                    + '<td><label class="pg-opt" style="' + lab + '">'
+                    + '<input type="radio" name="' + nm + '" class="pg-use"' + (high ? '' : ' checked') + '>'
+                    + '<span style="font-weight:700;">$</span><input type="number" step="0.01" min="' + (r.locked ? (Math.ceil(r.discogs.scarce * 0.7)) : 0) + '" class="form-control input-sm pg-new" style="width:90px;" value="' + Number(r.suggested).toFixed(2) + '"></label></td>'
                     + '</tr>';
             };
             flagged.forEach(function (it) { rowsHtml += rowHtml(it, false); });
@@ -2471,29 +2479,36 @@ a, b, c, d, e</textarea>
             $('#price_guard_modal').remove();
             const $m = $('<div class="modal fade" id="price_guard_modal" tabindex="-1" role="dialog"><div class="modal-dialog modal-lg" role="document"><div class="modal-content">'
                 + '<div class="modal-header"><h4 class="modal-title"><i class="fa fa-exclamation-triangle" style="color:#dc2626;"></i> ' + (titleBits.length ? titleBits.join(', ') : 'Some prices could not be checked') + '</h4></div>'
-                + '<div class="modal-body">' + (flagged.length ? '<p><strong>Too low</strong> = much less than it sells for on Discogs, eBay, or in our store. Ticked rows switch to the suggested price; to keep a low price, untick it and give a reason.</p>' : '')
-                + (highs.length ? '<p><strong>Too high</strong> = more than 2.5x what it sells for. Unticked by default: tick to switch to the suggested price, or leave it if you know it is worth more.</p>' : '')
+                + '<div class="modal-body">' + (flagged.length ? '<p><strong>Too low</strong> = much less than it sells for on Discogs, eBay, or in our store. Pick <strong>your price</strong> or the <strong>suggested price</strong> on each row. Keeping a too-low price needs a reason.</p>' : '')
+                + (highs.length ? '<p><strong>Too high</strong> = more than 2.5x what it sells for. Your price is picked by default: pick the suggested price instead, or keep yours if you know it is worth more.</p>' : '')
                 + (unchecked.length ? '<div class="alert alert-warning" style="padding:8px 10px;"><strong>' + unchecked.length + ' row' + (unchecked.length > 1 ? 's' : '') + ' could not be checked against Discogs</strong> (Discogs is limiting how fast we can look things up). Go back, wait a minute and save again to check them, or save anyway: '
                     + unchecked.map(function (it) { return esc((it.artist ? it.artist + ' - ' : '') + it.name) + ' ($' + Number(it.price).toFixed(2) + ')'; }).join(', ') + '</div>' : '')
-                + (rowsHtml ? '<table class="table table-condensed"><thead><tr><th style="white-space:nowrap;"><label style="font-weight:600;font-size:11px;margin:0;cursor:pointer;" title="Select or unselect all"><input type="checkbox" id="pg_all"> All</label></th><th>Item</th><th>Your price</th><th>Use</th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
-                + '<div id="pg_reason_wrap" style="display:none;"><label>Why keep the low price on the unticked rows? (required)</label>'
+                + (rowsHtml ? '<table class="table table-condensed"><thead><tr><th>Item</th><th>Your price <button type="button" class="btn btn-default btn-xs pg-all" data-to="mine" style="margin-left:4px;">Keep all mine</button></th><th>Suggested price <button type="button" class="btn btn-default btn-xs pg-all" data-to="suggested" style="margin-left:4px;">Use all suggested</button></th></tr></thead><tbody>' + rowsHtml + '</tbody></table>' : '')
+                + '<div id="pg_reason_wrap" style="display:none;"><label>Why keep your low price? (required)</label>'
                 + '<input type="text" class="form-control" id="pg_reason" placeholder="e.g. damaged cover, bargain bin, matching another copy"></div></div>'
                 + '<div class="modal-footer"><button type="button" class="btn btn-default" data-dismiss="modal">Go back</button>'
-                + '<button type="button" class="btn btn-success" id="pg_apply">' + (rowsHtml ? 'Use ticked prices &amp; save' : 'Save anyway') + '</button></div>'
+                + '<button type="button" class="btn btn-success" id="pg_apply">' + (rowsHtml ? 'Save with picked prices' : 'Save anyway') + '</button></div>'
                 + '</div></div></div>');
             $('body').append($m);
-            // Header "All" box (Sarah 2026-11-22): ticks/unticks every row; manager-only (disabled) rows stay as they are.
-            const syncAll = function () {
-                const $boxes = $m.find('.pg-use:not(:disabled)'), on = $boxes.filter(':checked').length;
-                $m.find('#pg_all').prop('checked', $boxes.length > 0 && on === $boxes.length).prop('indeterminate', on > 0 && on < $boxes.length);
+            // Highlight the chosen price in each row; header buttons flip every row (manager-only rows stay on suggested).
+            const syncPick = function () {
+                $m.find('.pg-opt').each(function () {
+                    $(this).css('background', $(this).find('input[type=radio]').is(':checked') ? '#ecfdf5' : '');
+                });
             };
-            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('tr.pg-low .pg-use:not(:checked)').length > 0); syncAll(); };
-            $m.on('change', '.pg-use', syncReason);
-            $m.on('change', '#pg_all', function () {
-                $m.find('.pg-use:not(:disabled)').prop('checked', this.checked);
+            const syncReason = function () { $('#pg_reason_wrap').toggle($m.find('tr.pg-low .pg-use:not(:checked)').length > 0); syncPick(); };
+            $m.on('change', '.pg-use, .pg-mine', syncReason);
+            $m.on('focus click', '.pg-new', function () { $(this).closest('label').find('.pg-use').prop('checked', true); syncReason(); });
+            $m.on('click', '.pg-all', function () {
+                const toMine = $(this).data('to') === 'mine';
+                $m.find('tbody tr').each(function () {
+                    const $mine = $(this).find('.pg-mine');
+                    if (toMine && !$mine.is(':disabled')) $mine.prop('checked', true);
+                    if (!toMine) $(this).find('.pg-use').prop('checked', true);
+                });
                 syncReason();
             });
-            syncAll();
+            syncPick();
             $m.on('click', '#pg_apply', function () {
                 const kept = [];
                 $m.find('tbody tr').each(function () {
@@ -2509,7 +2524,7 @@ a, b, c, d, e</textarea>
                             markPriceGuard($row, null);
                         }
                     } else if ($tr.hasClass('pg-low')) {
-                        kept.push($.trim($tr.find('td').eq(1).find('strong').text()));
+                        kept.push($.trim($tr.find('td').eq(0).find('strong').text()));
                     }
                 });
                 const reason = $.trim($('#pg_reason').val() || '');
