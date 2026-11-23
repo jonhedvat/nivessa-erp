@@ -60,6 +60,8 @@ jobs:
             if ($loc !== '') $q->where('bl.name', 'like', '%' . $loc . '%');
             $rows = $q->orderBy('cr.id')->get(['cr.*', 'u.first_name', 'u.last_name', 'bl.name as loc']);
             echo 'COUNT=' . count($rows) . "\n";
+            foreach (\DB::table('cash_registers')->where('status', 'open')->get(['id', 'user_id', 'location_id', 'created_at']) as $o) { echo 'OPEN ' . json_encode($o) . ' expected_cash=' . \DB::table('cash_register_transactions')->where('cash_register_id', $o->id)->where('pay_method', 'cash')->selectRaw("COALESCE(SUM(CASE WHEN type = 'debit' THEN -amount ELSE amount END), 0) AS net")->value('net') . "\n"; }
+            try { echo 'VIEW ' . (view()->exists('cash_register.close_register_modal') ? 'exists' : 'missing') . ' has_countoff=' . (strpos(file_get_contents(resource_path('views/cash_register/close_register_modal.blade.php')), 'cr-count-off') !== false ? 'yes' : 'no') . "\n"; } catch (\Throwable $e) { echo 'VIEWERR ' . $e->getMessage() . "\n"; }
             foreach ($rows as $r) {
               echo 'REG ' . json_encode($r) . "\n";
               $tx = \DB::table('cash_register_transactions')->where('cash_register_id', $r->id)->selectRaw('pay_method, type, transaction_type, ROUND(SUM(amount),2) amt, COUNT(*) n')->groupBy('pay_method', 'type', 'transaction_type')->get();
