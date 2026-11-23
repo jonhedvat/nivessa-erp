@@ -685,6 +685,12 @@ a, b, c, d, e</textarea>
         </div>
     </div>
 
+    {{-- Sarah 2026-11-22: one click puts back every price the ERP changed (our-sales raises, category minimums, card math). --}}
+    <div id="erp_price_undo_bar" style="display:none; margin:0 0 10px; padding:10px 14px; background:#f0fdf4; border:1px solid #86efac; border-radius:8px; font-size:14px;">
+        <i class="fa fa-info-circle" style="color:#15803d;"></i>
+        The ERP changed <strong id="erp_price_undo_count">0</strong> price(s) in the table (shown in green).
+        <button type="button" class="btn btn-default btn-sm erp-price-undo-btn" id="erp_price_undo_all" style="margin-left:8px;"><i class="fa fa-undo"></i> Undo all ERP price changes</button>
+    </div>
     <div class="responsive-table">
         <table class="table-wrapper" id="mass_create_table">
             <!-- Шапка таблицы с восстановленными колонками -->
@@ -743,6 +749,9 @@ a, b, c, d, e</textarea>
             <button type="button" class="btn btn-info" id="verify_all_categories">
                 <i class="fa fa-check-circle"></i> Verify All Categories
             </button>
+        </div>
+        <div id="erp_price_undo_bar2" style="display:none; margin-bottom:8px;">
+            <button type="button" class="btn btn-default btn-sm erp-price-undo-btn"><i class="fa fa-undo"></i> Undo all ERP price changes (<span class="erp-price-undo-n">0</span>)</button>
         </div>
         <div id="mass_add_action_buttons">
             {{-- Sarah 2026-05-06: Save & send to add purchase is the primary
@@ -2530,6 +2539,9 @@ a, b, c, d, e</textarea>
 
     // Green price + "was $X" note on a table row whose price we raised.
     function markStorePriceRaised($input, fromPrice, toPrice, note) {
+        if ($input.data('erpOrigPrice') === undefined) $input.data('erpOrigPrice', String(fromPrice));
+        $input.addClass('erp-price-changed');
+        setTimeout(refreshErpUndoBar, 0);
         $input.css({ 'border-color': '#16a34a', 'background': '#f0fdf4' })
               .attr('title', 'Raised from $' + fromPrice + '. ' + note);
         $input.siblings('.store-price-raised').remove();
@@ -2538,6 +2550,38 @@ a, b, c, d, e</textarea>
             .attr('title', note)
             .insertAfter($input);
     }
+
+    // Sarah 2026-11-22: "Undo all ERP price changes".
+    function refreshErpUndoBar() {
+        const n = $('#product_rows_container input.erp-price-changed').length;
+        $('#erp_price_undo_count, .erp-price-undo-n').text(n);
+        $('#erp_price_undo_bar, #erp_price_undo_bar2').toggle(n > 0);
+    }
+    $(document).on('click', '.erp-price-undo-btn', function () {
+        const $inputs = $('#product_rows_container input.erp-price-changed');
+        if (!$inputs.length) return;
+        if (!confirm('Put ' + $inputs.length + ' price' + ($inputs.length === 1 ? '' : 's') + ' back to what they were before the ERP changed them?')) return;
+        $inputs.each(function () {
+            const $p = $(this);
+            const orig = $p.data('erpOrigPrice');
+            $p.val(orig).removeClass('erp-price-changed').removeData('erpOrigPrice')
+              .css({ 'border-color': '', 'background': '' }).attr('title', '');
+            // Keep it: don't let the category minimum raise it again (page or server).
+            $p.data('floorRaised', true).data('floorOverride', true);
+            const m = ($p.attr('name') || '').match(/^products\[([^\]]+)\]/);
+            if (m && !$p.siblings('input[name$="[floor_override]"]').length) {
+                $('<input type="hidden" value="1">').attr('name', 'products[' + m[1] + '][floor_override]').insertAfter($p);
+            }
+            $p.siblings('.store-price-raised').remove();
+            $('<div class="store-price-raised" style="font-size:11px;color:#6b7280;line-height:1.2;margin-top:2px;"></div>')
+                .text('ERP change undone').insertAfter($p);
+            $p.trigger('change');
+        });
+        refreshErpUndoBar();
+        toastr.success('Put back ' + $inputs.length + ' price' + ($inputs.length === 1 ? '' : 's') + '. Save still checks for too-low prices.');
+    });
+    // Row deleted → recount.
+    $(document).on('click', '#product_rows_container .remove_row', function () { setTimeout(refreshErpUndoBar, 50); });
 
     function storePriceNote(sp) {
         return 'Our store sold this ' + sp.sales + '\u00d7 (median $' + Number(sp.median).toFixed(2)
@@ -2741,8 +2785,14 @@ a, b, c, d, e</textarea>
                         const $sp = $row.find('input[name*="[single_dsp_inc_tax]"]')
                             .val(productData.price)
                             .attr('data-parsed-price', '1');
+                        // AI's own price when the ERP changed it on the server (Sarah 2026-11-22).
+                        const aiOrig = productData.ai_orig !== undefined && productData.ai_orig !== '' ? Number(productData.ai_orig).toFixed(2) : null;
+                        const serverChanged = aiOrig !== null && Number(aiOrig) > 0 && Math.abs(Number(aiOrig) - Number(productData.store_price_from || productData.price)) > 0.009;
                         if (productData.store_price_from) {
-                            markStorePriceRaised($sp, productData.store_price_from, productData.price, productData.store_price_note);
+                            markStorePriceRaised($sp, serverChanged ? aiOrig : productData.store_price_from, productData.price, productData.store_price_note);
+                        } else if (serverChanged) {
+                            markStorePriceRaised($sp, aiOrig, productData.price, 'The ERP changed the AI price (our sales, category minimum or card pricing).');
+                            $sp.siblings('.store-price-raised').text('AI said $' + aiOrig + ' \u2014 ERP set $' + Number(productData.price).toFixed(2));
                         }
                     }
 
@@ -2856,6 +2906,12 @@ a, b, c, d, e</textarea>
         // Confirm before adding (skipped when "Price it" just filled the box)
         const skipConfirm = $(this).data('skipConfirm');
         $(this).data('skipConfirm', false);
+        // AI prices before the ERP changed them, one per line (set by Price it).
+        const aiOrig = $(this).data('aiOrig');
+        $(this).data('aiOrig', null);
+        if (Array.isArray(aiOrig) && aiOrig.length === products.length) {
+            products.forEach(function (p, i) { p.ai_orig = aiOrig[i]; });
+        }
         if (!skipConfirm && !confirm(`Are you sure you want to add ${products.length} products to the table?`)) {
             return;
         }
@@ -3060,7 +3116,7 @@ a, b, c, d, e</textarea>
             }
             $('#bulk_product_text').val(res.csv);
             $('#bulk_preview_container').hide();
-            $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
+            $('#parse_bulk_text').data('skipConfirm', true).data('aiOrig', res.ai_prices || null).trigger('click');
         }).fail(function(xhr, status) {
             const tooSlow = status === 'timeout' || (xhr && (xhr.status === 504 || xhr.status === 502));
             $('#bulk_parse_status').html('<span class="text-danger">' + (tooSlow ? window.massAddTooSlowMsg(n) : 'Couldn\'t reach the server.') + '</span>'

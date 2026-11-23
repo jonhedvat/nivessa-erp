@@ -1,0 +1,33 @@
+# Read-only: runs a fixed list of sports cards through the Mass Add AI pricer
+# on prod and prints the prices it gives. No writes.
+
+name: Diag quick price test (temp)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKc2V0X3RpbWVfbGltaXQoMCk7CiR1ID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ0pvbmF0aGFuJyktPndoZXJlKCdsYXN0X25hbWUnLCdsaWtlJywnSGVkdmF0JScpLT5maXJzdCgpOwpJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xBdXRoOjpsb2dpblVzaW5nSWQoJHUtPmlkKTsKJHMgPSBhcHAoJ3Nlc3Npb24nKS0+ZHJpdmVyKCdhcnJheScpOyAkcy0+cHV0KCd1c2VyLmJ1c2luZXNzX2lkJywgJHUtPmJ1c2luZXNzX2lkKTsKZm9yZWFjaCAoWydza2lwX3dlYj0xJyA9PiBbJ3NraXBfd2ViJyA9PiAxXV0gYXMgJGxhYmVsID0+ICRleHRyYSkgewogICRyZXEgPSBJbGx1bWluYXRlXEh0dHBcUmVxdWVzdDo6Y3JlYXRlKCcvcHJvZHVjdC9tYXNzLWNyZWF0ZS9haS1wcmljZScsICdQT1NUJywgWydpdGVtcycgPT4gIlB1cnBsZSBSYWluIExQIFZHK1xuT0sgQ29tcHV0ZXIgQ0QgdXNlZFxuQmx1ZSBUcmFpbiBMUCBWR1xuTWljaGFlbCBKb3JkYW4gMTk5MCBIb29wcyBjYXJkXG5SYW5kb20gaG9ycm9yIERWRCJdICsgJGV4dHJhKTsKICAkcmVxLT5zZXRMYXJhdmVsU2Vzc2lvbigkcyk7CiAgJHQgPSBtaWNyb3RpbWUodHJ1ZSk7CiAgJGQgPSBqc29uX2RlY29kZShhcHAoQXBwXEh0dHBcQ29udHJvbGxlcnNcTWFzc0FkZEFpUHJpY2VDb250cm9sbGVyOjpjbGFzcyktPnByaWNlKCRyZXEpLT5nZXRDb250ZW50KCksIHRydWUpOwogIGVjaG8gIiMjIyAkbGFiZWwgIiAuIHJvdW5kKG1pY3JvdGltZSh0cnVlKS0kdCwxKSAuICJzIG9rPSIgLiBqc29uX2VuY29kZSgkZFsnb2snXSA/PyBudWxsKSAuICcgJyAuICgkZFsnZXJyb3InXSA/PyAnJykgLiAnIHNraXBfd2ViPScgLiBqc29uX2VuY29kZSgkZFsnc2tpcF93ZWInXSA/PyBudWxsKSAuICcgYWlfcHJpY2VzPScgLiBqc29uX2VuY29kZSgkZFsnYWlfcHJpY2VzJ10gPz8gbnVsbCkgLiAiXG4iIC4gKCRkWydjc3YnXSA/PyAnJykgLiAiXG4iOwp9CnRyeSB7CiAgJHJlcSA9IElsbHVtaW5hdGVcSHR0cFxSZXF1ZXN0OjpjcmVhdGUoJy9wcm9kdWN0L21hc3MtY3JlYXRlJywgJ0dFVCcpOyAkcmVxLT5zZXRMYXJhdmVsU2Vzc2lvbigkcyk7IGFwcCgpLT5pbnN0YW5jZSgncmVxdWVzdCcsICRyZXEpOwogICRodG1sID0gKHN0cmluZykgYXBwKEFwcFxIdHRwXENvbnRyb2xsZXJzXFByb2R1Y3RDb250cm9sbGVyOjpjbGFzcyktPm1hc3NDcmVhdGUoJHJlcSktPnJlbmRlcigpOwogIGZvcmVhY2ggKFsnZXJwX3ByaWNlX3VuZG9fYWxsJywnZXJwX3ByaWNlX3VuZG9fYmFyMicsJ3JlZnJlc2hFcnBVbmRvQmFyJywnYWlPcmlnJ10gYXMgJGspIGVjaG8gInBhZ2UgaGFzICRrOiAiIC4gKHN0cnBvcygkaHRtbCwgJGspICE9PSBmYWxzZSA/ICd5ZXMnIDogJ05PJykgLiAiXG4iOwp9IGNhdGNoIChcVGhyb3dhYmxlICRlKSB7IGVjaG8gInBhZ2UgcmVuZGVyIEVSUiAiIC4gJGUtPmdldE1lc3NhZ2UoKSAuICJcbiI7IH0K' | base64 -d > /tmp/diag_qp.php
+            for f in app/Http/Controllers/MassAddAiPriceController.php app/Services/EbayService.php app/Services/DiscogsService.php app/Http/Controllers/ProductController.php; do php -l $f; done; php /tmp/diag_qp.php
+            rm -f /tmp/diag_qp.php

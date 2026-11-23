@@ -379,6 +379,7 @@ class MassAddAiPriceController extends Controller
             // Output is pipe-separated: some subcategories contain commas ("R&B, Soul & Funk").
             $clean = function ($v) { return trim(str_replace(['|', "\n", "\r"], ' ', (string) $v)); };
             $lines = [];
+            $aiPrices = [];
             $notes = [];
             $webList = array_values($this->web);
             foreach ($rows as $idx => $r) {
@@ -487,12 +488,13 @@ class MassAddAiPriceController extends Controller
 
                 // Name | Artist | Category | Subcategory | SKU | Price | Bin | Location | Media grade
                 $lines[] = implode(' | ', [$name, $artist, $cat, $sub, '', $price > 0 ? number_format($price, 2, '.', '') : '', '', '', $cond]);
+                $aiPrices[] = $ai > 0 ? number_format($ai, 2, '.', '') : ''; // before our-sales / minimum / card changes (undo button)
             }
             if (empty($lines)) {
                 return response()->json(['ok' => false, 'error' => "Couldn't read the AI's answer. Try again, or list fewer items."]);
             }
 
-            return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines), 'history' => $notes, 'skip_web' => $skipWeb, 'web_skipped' => $webSkipped]);
+            return response()->json(['ok' => true, 'csv' => implode("\n", $lines), 'count' => count($lines), 'history' => $notes, 'ai_prices' => $aiPrices, 'skip_web' => $skipWeb, 'web_skipped' => $webSkipped]);
         } catch (\Exception $e) {
             \Log::warning('MassAddAiPrice failed', ['error' => $e->getMessage()]);
             return response()->json(['ok' => false, 'error' => "Couldn't reach the AI service. Try again in a minute."]);
