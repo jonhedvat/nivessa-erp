@@ -2207,6 +2207,31 @@ a, b, c, d, e</textarea>
         return products;
     }
     
+    // ---- Slow lookup warning (Sarah 2026-11-22) ---------------------------
+    // Price lookups hit eBay, Discogs and the web. Big batches are slow, so:
+    // a heads-up before starting a big batch, a warning once it passes ~8s,
+    // and a "try a smaller batch" message if it times out.
+    const MASS_ADD_BIG_BATCH = 25;
+    const MASS_ADD_SLOW_MS = 8000;
+    window.massAddSlowWatch = function (what, n, extraHtml) {
+        n = n || 0;
+        // One big batch runs several lookups back to back; say it once.
+        if (n > MASS_ADD_BIG_BATCH && Date.now() - (window.__massAddBigToastAt || 0) > 30000) {
+            window.__massAddBigToastAt = Date.now();
+            toastr.info(n + ' items is a big batch, so ' + what + ' may be slow. Batches of ' + MASS_ADD_BIG_BATCH + ' or fewer go much faster.');
+        }
+        let $t = null;
+        const timer = setTimeout(function () {
+            $t = toastr.warning('This is taking a while' + (n > 1 ? ' (' + n + ' items)' : '') + '. Still ' + what + '&hellip; Next time, try a smaller batch'
+                + (n > MASS_ADD_BIG_BATCH ? ' (' + MASS_ADD_BIG_BATCH + ' or fewer)' : '') + '.' + (extraHtml || ''), 'Taking too long', { timeOut: 0, extendedTimeOut: 0, closeButton: true });
+        }, MASS_ADD_SLOW_MS);
+        return function done() { clearTimeout(timer); if ($t) toastr.clear($t); };
+    };
+    window.massAddTooSlowMsg = function (n) {
+        return 'That took too long' + (n > 1 ? ' for ' + n + ' items' : '') + '. Try a smaller batch'
+            + (n > MASS_ADD_BIG_BATCH ? ' (' + MASS_ADD_BIG_BATCH + ' or fewer at a time)' : '') + '.';
+    };
+
     // ---- Underpricing guard (Sarah 2026-11-17) ----------------------------
     // Server compares each row's price to Discogs (sales-based value for its
     // grade + cheapest copy listed), our own sales, and eBay asking prices.
@@ -2263,6 +2288,8 @@ a, b, c, d, e</textarea>
     function runPriceGuard(items) {
         return new Promise(function (resolve) {
             if (!items.length) return resolve({});
+            // Single-row checks run in the background as you type; only warn on batches.
+            const done = items.length > 1 ? window.massAddSlowWatch('checking prices on eBay/Discogs', items.length) : function () {};
             $.ajax({
                 url: "{{ route('product.massCreate.priceGuard') }}",
                 type: 'POST',
@@ -2270,8 +2297,12 @@ a, b, c, d, e</textarea>
                 contentType: 'application/json',
                 headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
                 timeout: 240000,
-                success: function (resp) { resolve((resp && resp.results) || {}); },
-                error: function () { resolve(null); },
+                success: function (resp) { done(); resolve((resp && resp.results) || {}); },
+                error: function (xhr, status) {
+                    done();
+                    if (items.length > 1 && status === 'timeout') toastr.error(window.massAddTooSlowMsg(items.length));
+                    resolve(null);
+                },
             });
         });
     }
@@ -2376,7 +2407,7 @@ a, b, c, d, e</textarea>
             $btns.prop('disabled', false);
             $('#save_all_products').html(oldHtml);
             if (!res) {
-                if (confirm('Could not check prices against Discogs/eBay right now. Save anyway?')) proceed();
+                if (confirm('Could not check prices against Discogs/eBay right now' + (items.length > MASS_ADD_BIG_BATCH ? ' (' + items.length + ' rows is a lot; try saving ' + MASS_ADD_BIG_BATCH + ' or fewer at a time)' : '') + '. Save anyway?')) proceed();
                 return;
             }
             const flagged = items.filter(function (it) { return res[it.idx] && res[it.idx].flag; });
@@ -2473,6 +2504,7 @@ a, b, c, d, e</textarea>
         }));
         // Native Promise; resolves null on failure (never rejects).
         return new Promise(function (resolve) {
+            const done = items.length > 1 ? window.massAddSlowWatch('looking up prices', items.length) : function () {};
             $.ajax({
                 url: "{{ route('product.massCreate.pastSalesLookup') }}",
                 type: 'POST',
@@ -2480,8 +2512,12 @@ a, b, c, d, e</textarea>
                 contentType: 'application/json',
                 headers: { 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content') },
                 timeout: 180000,
-                success: function (resp) { resolve((resp && resp.results) || {}); },
-                error: function () { resolve(null); },
+                success: function (resp) { done(); resolve((resp && resp.results) || {}); },
+                error: function (xhr, status) {
+                    done();
+                    if (items.length > 1 && status === 'timeout') toastr.error(window.massAddTooSlowMsg(items.length));
+                    resolve(null);
+                },
             });
         });
     }
@@ -2959,7 +2995,9 @@ a, b, c, d, e</textarea>
         const n = items.split('\n').filter(l => l.trim()).length;
         $('#ai_price_bulk_text, #ai_price_quick').prop('disabled', true);
         $btn.html('<i class="fa fa-spinner fa-spin"></i> Pricing ' + n + ' item' + (n === 1 ? '' : 's') + '...');
-        $('#bulk_parse_status').html(skipWeb ? 'Skipping eBay/Discogs.' : 'This can take up to a minute for long lists.');
+        $('#bulk_parse_status').html((skipWeb ? 'Skipping eBay/Discogs.' : 'This can take up to a minute for long lists.')
+            + (n > MASS_ADD_BIG_BATCH ? ' <strong>' + n + ' items is a big batch; ' + MASS_ADD_BIG_BATCH + ' or fewer at a time is much faster.</strong>' : ''));
+        const doneSlow = window.massAddSlowWatch(skipWeb ? 'pricing' : 'pricing on eBay and the web', n, skipWeb ? '' : ' Or use <strong>Quick price</strong> to skip eBay/Discogs.');
         $.ajax({
             url: "{{ route('product.massCreate.aiPrice') }}",
             method: 'POST',
@@ -3017,9 +3055,12 @@ a, b, c, d, e</textarea>
             $('#bulk_product_text').val(res.csv);
             $('#bulk_preview_container').hide();
             $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
-        }).fail(function() {
-            $('#bulk_parse_status').html('<span class="text-danger">Couldn\'t reach the server.</span>' + (skipWeb ? ' Try again, or <a href="#" class="open-chatgpt-way">use ChatGPT instead</a>.' : aiPriceFallbackHint));
+        }).fail(function(xhr, status) {
+            const tooSlow = status === 'timeout' || (xhr && (xhr.status === 504 || xhr.status === 502));
+            $('#bulk_parse_status').html('<span class="text-danger">' + (tooSlow ? window.massAddTooSlowMsg(n) : 'Couldn\'t reach the server.') + '</span>'
+                + (skipWeb ? ' Try again, or <a href="#" class="open-chatgpt-way">use ChatGPT instead</a>.' : aiPriceFallbackHint));
         }).always(function() {
+            doneSlow();
             $('#ai_price_bulk_text, #ai_price_quick').prop('disabled', false);
             $btn.html(aiPriceBtnHtml[$btn.attr('id')]);
         });
