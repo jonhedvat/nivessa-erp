@@ -2705,7 +2705,10 @@ HTML;
             var d = $row.data('bfcScan');
             if (!d) return;
             var sealed = $row.find('.bfc-sealed').prop('checked');
-            setType($row, sealed ? (d.item_type_sealed || d.item_type_used) : (d.item_type_used || d.item_type_sealed));
+            var type = sealed ? (d.item_type_sealed || d.item_type_used) : (d.item_type_used || d.item_type_sealed);
+            setType($row, type);
+            // Nothing to go on: make the cashier pick (the blank line's default is a vinyl type).
+            $row.find('select[name$="[item_type]"]').next('.select2').find('.select2-selection').css('border', type ? '' : '2px solid #d9534f');
             render($row);
         }
 
@@ -2758,6 +2761,9 @@ HTML;
         $(document).on('change paste', '#offer_lines_table .bfc-scan', function () {
             var $i = $(this);
             setTimeout(function () { lookup($i); }, 0);
+        });
+        $(document).on('change', '#offer_lines_table select[name$="[item_type]"]', function () {
+            $(this).next('.select2').find('.select2-selection').css('border', '');
         });
         $(document).on('change', '#offer_lines_table .bfc-sealed', function () {
             var $row = $(this).closest('tr');
