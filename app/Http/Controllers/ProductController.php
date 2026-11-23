@@ -5192,6 +5192,7 @@ class ProductController extends Controller
                 ->pluck('id')->map(function ($x) { return (int) $x; })->all();
         }
         $dupService = app(\App\Services\ProductDuplicateService::class);
+        $scan = new \App\Services\BuyScanService();
 
         $lots = [];
         $carriedCount = 0;
@@ -5220,6 +5221,8 @@ class ProductController extends Controller
                 // leave the SKU blank so the duplicate guard doesn't skip the row.
                 'upc_taken' => $upc !== null && $dupService->findConflict($business_id, '', '', $upc) !== null,
                 'format' => \App\Services\BuyScanService::formatOfItemType($line->item_type),
+                // Category + subcategory for the new product (Jon 11/23), from the barcode.
+                'category' => $upc !== null ? $scan->categoryForLine($business_id, $upc, $line->item_type, $line->condition_grade) : null,
                 'grade' => $line->condition_grade,
                 'qty' => (float) $line->quantity,
                 'unit_cost' => $costs[$line->id] ?? 0,

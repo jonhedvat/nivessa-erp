@@ -2716,6 +2716,15 @@ HTML;
             var sealed = $row.find('.bfc-sealed').prop('checked');
             var type = sealed ? (d.item_type_sealed || d.item_type_used) : (d.item_type_used || d.item_type_sealed);
             setType($row, type);
+            // Genre dropdown on this line (broad types): pick the scanned item's genre.
+            var $g = $row.find('select.bfc-genre');
+            if ($g.length && !$g.val()) {
+                (d.genre_candidates || []).some(function (c) {
+                    if (!$g.find('option[value="' + c + '"]').length) return false;
+                    $g.val(c).trigger('change');
+                    return true;
+                });
+            }
             // Nothing to go on: make the cashier pick (the blank line's default is a vinyl type).
             $row.find('select[name$="[item_type]"]').next('.select2').find('.select2-selection').css('border', type ? '' : '2px solid #d9534f');
             render($row);

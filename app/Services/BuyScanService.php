@@ -77,6 +77,7 @@ class BuyScanService
                 $out['genre'] = $p['genre'];
                 $out['sealed'] = $p['condition'] === 'sealed';
                 $this->setTypes($out, $p['format'], $p['genre_text'], $p['name']);
+                $out['genre_candidates'] = self::canons([$p['genre']]);
                 return $out;
             }
             $hit = $this->discogsByBarcode($business_id, $upc);
@@ -116,7 +117,7 @@ class BuyScanService
                 $x->whereRaw("TRIM(LEADING '0' FROM REPLACE(REPLACE(p.sku,' ',''),'-','')) = ?", [$key])
                   ->orWhereRaw("TRIM(LEADING '0' FROM REPLACE(REPLACE(va.sub_sku,' ',''),'-','')) = ?", [$key]);
             })
-            ->select('p.id', 'p.name', 'p.artist', 'p.type', 'va.id as variation_id', 'va.sell_price_inc_tax as price', 'c.name as cat', 's.name as sub')
+            ->select('p.id', 'p.name', 'p.artist', 'p.type', 'p.category_id', 'p.sub_category_id', 'va.id as variation_id', 'va.sell_price_inc_tax as price', 'c.name as cat', 's.name as sub')
             ->limit(10)->get();
         if ($rows->isEmpty()) return [];
 
@@ -146,6 +147,8 @@ class BuyScanService
                 'category' => trim($r->cat . ($r->sub ? ' / ' . $r->sub : '')),
                 'format' => $format,
                 'condition' => $cond,
+                'category_id' => $r->category_id ? (int) $r->category_id : null,
+                'sub_category_id' => $r->sub_category_id ? (int) $r->sub_category_id : null,
                 'genre' => $r->sub,
                 'genre_text' => $catText,
                 'price' => $r->price !== null ? round((float) $r->price, 2) : null,
@@ -185,7 +188,7 @@ class BuyScanService
                 'artist' => $artist,
                 'image' => $h->cover_image ?? ($h->thumb ?? null),
             ];
-            return $out + $this->discogsTyping($fmtText, $genreText, $title);
+            return $out + $this->discogsTyping($fmtText, $genreText, $title, array_merge((array) ($h->style ?? []), (array) ($h->genre ?? [])));
         } catch (\Throwable $e) {
             \Log::warning('buy scan barcode ' . $upc . ': ' . $e->getMessage());
             return null;
@@ -219,21 +222,22 @@ class BuyScanService
                 'image' => $d->thumb ?? null,
                 'upc' => $upc,
             ];
-            return $out + $this->discogsTyping(implode(' ', $fmt), $genreText, $title);
+            return $out + $this->discogsTyping(implode(' ', $fmt), $genreText, $title, array_merge((array) ($d->styles ?? []), (array) ($d->genres ?? [])));
         } catch (\Throwable $e) {
             \Log::warning('buy scan release ' . $releaseId . ': ' . $e->getMessage());
             return null;
         }
     }
 
-    protected function discogsTyping($fmtText, $genreText, $title)
+    protected function discogsTyping($fmtText, $genreText, $title, array $genreWords = [])
     {
         $format = self::formatFromText($fmtText);
         // Discogs "DVD" is a music DVD (concert/doc) — that's its own rate.
         if (in_array($format, ['dvd', 'bluray'], true) && !preg_match('/stage & screen/i', $genreText)) {
             $genreText = 'music';
         }
-        $out = ['format' => $format, 'genre' => self::genreKey($genreText), 'sealed' => false];
+        $out = ['format' => $format, 'genre' => self::genreKey($genreText), 'sealed' => false,
+            'genre_candidates' => self::canons($genreWords)];
         $this->setTypes($out, $format, $genreText, $fmtText . ' ' . $title);
         return $out;
     }
@@ -388,5 +392,59 @@ class BuyScanService
             return $p['single'] && $p['format'] === $format && $p['condition'] === $want;
         }));
         return count($hits) === 1 ? $hits[0] : null;
+    }
+
+    /** Genre names -> the canon keys the buy form's genre dropdown and categories use. */
+    public static function canons(array $names)
+    {
+        $out = [];
+        foreach ($names as $n) {
+            $c = \App\Http\Controllers\GenreFixController::canon((string) $n);
+            if ($c !== '' && !in_array($c, $out, true)) $out[] = $c;
+        }
+        return $out;
+    }
+
+    /**
+     * Category + subcategory for a bought line's product in Mass Add, from its
+     * barcode: a product we carry in the same format and condition -> its exact
+     * category; same title in the other condition -> the matching genre under
+     * this condition's format; otherwise just the format category (e.g.
+     * "CD - Used"). [category_id, sub_category_id|null] or null.
+     */
+    public function categoryForLine($business_id, $upc, $itemType, $grade = null)
+    {
+        $format = self::formatOfItemType($itemType);
+        if (!$format) return null;
+        $sealed = strpos((string) $itemType, 'sealed') !== false
+            || in_array(mb_strtolower(trim((string) $grade)), ['m', 'mint', 'mint (m)', 'sealed'], true);
+        $want = $sealed ? 'sealed' : 'used';
+        $ours = self::isUpc($upc) ? array_values(array_filter($this->ourProductsByUpc($business_id, $upc), function ($p) use ($format) {
+            return $p['format'] === $format && $p['category_id'];
+        })) : [];
+        foreach ($ours as $p) {
+            if ($p['condition'] === $want) return [$p['category_id'], $p['sub_category_id']];
+        }
+
+        $cats = DB::table('categories')->where('business_id', $business_id)->whereNull('deleted_at')->get(['id', 'name', 'parent_id']);
+        $parents = [];
+        foreach ($cats as $c) {
+            if ((int) $c->parent_id !== 0) continue;
+            if (self::formatFromText($c->name) !== $format) continue;
+            $cond = self::conditionFromText($c->name);
+            if ($cond === null && in_array($format, ['dvd', 'bluray', '4k', 'vhs'], true)) $cond = 'used';
+            if ($cond === $want) $parents[] = (int) $c->id;
+        }
+        if (!$parents) return null;
+        $genres = $ours ? self::canons(array_map(function ($p) { return (string) $p['genre']; }, $ours)) : [];
+        foreach ($genres as $g) {
+            foreach ($cats as $c) {
+                if (in_array((int) $c->parent_id, $parents, true)
+                    && \App\Http\Controllers\GenreFixController::canon($c->name) === $g) {
+                    return [(int) $c->parent_id, (int) $c->id];
+                }
+            }
+        }
+        return [$parents[0], null];
     }
 }

@@ -4255,6 +4255,10 @@ a, b, c, d, e</textarea>
             var idx = nextMassRowIndex();
             $('#bfc_add_status').text('Adding ' + (done + 1) + '…');
             var addRow = function (data) {
+                // Category from the scanned barcode wins (it knows used vs sealed).
+                if (l.category && l.category[0]) {
+                    data = $.extend({}, data, { category_id: l.category[0], sub_category_id: l.category[1] || 0 });
+                }
                 return addRowFromDiscogsData(data, idx, '').then(function () {
                     var $row = $('#product_rows_container .product-row[data-row-index="' + idx + '"]');
                     $row.find('.bfc-lot-select').val(String(l.id));
