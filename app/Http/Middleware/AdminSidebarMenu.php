@@ -45,6 +45,12 @@ class AdminSidebarMenu
                 $menu->url(url('/manager-dashboard'), 'Manager Dashboard', ['icon' => 'fa fas fa-chart-bar', 'active' => request()->segment(1) == 'manager-dashboard'])->order(6);
             }
 
+            //Manager Check-ins: weekly 1:1 reports Jon reads. Pinned near the top
+            //(order 6 skips usage re-sort) so it's never hard to find (Sarah 2026-11-23).
+            if ($is_admin || \App\Http\Controllers\ManagerChecklistController::currentManagerKey()) {
+                $menu->url(url('/manager-checkins'), 'Manager Check-ins', ['icon' => 'fa fas fa-comments', 'active' => request()->segment(1) == 'manager-checkins'])->order(6);
+            }
+
             //EOS: leadership team only (admins + store managers).
             if ($is_admin || \App\Http\Controllers\ManagerChecklistController::currentManagerKey()) {
                 $menu->url(url('/eos'), 'EOS', ['icon' => 'fa fas fa-compass', 'active' => request()->segment(1) == 'eos'])->order(7);
