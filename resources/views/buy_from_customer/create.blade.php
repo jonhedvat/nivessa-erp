@@ -90,6 +90,7 @@
         .bfc-create .bfc-line-value { font-weight: 600; font-variant-numeric: tabular-nums; color: #333; }
         .bfc-create #offer_lines_table td.bfc-line-credit-cell { text-align: right; white-space: nowrap; }
         .bfc-create .bfc-line-credit { font-weight: 600; font-variant-numeric: tabular-nums; color: #2c699a; }
+        .bfc-create .bfc-line-value.bfc-needs-grade { color: #c77700; font-size: 12px; font-weight: 600; }
         .bfc-create .bfc-line-formula { display: block; font-size: 11px; color: #aaa; font-weight: 400; font-variant-numeric: tabular-nums; }
         /* Running totals bar above Calculate — offer builds live as items are typed. */
         .bfc-create .bfc-running { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0 8px; padding: 10px 14px; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
@@ -2045,9 +2046,17 @@ HTML;
             $('#offer_lines_table tbody tr').each(function () {
                 var $row = $(this);
                 var v = bfcLineValue($row);
-                $row.find('.bfc-line-value').text(bfcMoney(v));
+                // Jon 11/23: a filled-in line with no grade is $0 until graded; say so.
+                var type = $row.find('select[name$="[item_type]"]').val();
+                var tcfg = BFC_RULES.types[type];
+                var grade = $row.find('select.bfc-grade').val() || bfcDefaultGrade(type);
+                var inUse = $.trim($row.find('input[name$="[title]"]').val() || '') !== ''
+                    || (parseFloat($row.find('input[name$="[discogs_median_price]"]').val()) || 0) > 0
+                    || $.trim($row.find('input[name$="[discogs_link]"]').val() || '') !== '';
+                var needsGrade = inUse && tcfg && !tcfg.no_grading && (BFC_RULES.grades[grade] === undefined || BFC_RULES.grades[grade] === null);
+                $row.find('.bfc-line-value').text(needsGrade ? 'Select grade for price' : bfcMoney(v)).toggleClass('bfc-needs-grade', !!needsGrade);
                 // Jon 2026-11-10: store credit value = cash value x credit bonus (1.5x).
-                $row.find('.bfc-line-credit').text(bfcMoney(Math.round(v * (parseFloat(BFC_RULES.credit_bonus) || 1.5) * 100) / 100));
+                $row.find('.bfc-line-credit').text(needsGrade ? '—' : bfcMoney(Math.round(v * (parseFloat(BFC_RULES.credit_bonus) || 1.5) * 100) / 100));
                 $row.find('.bfc-line-formula').text(bfcLineFormula($row));
                 cashTotal += v;
             });
