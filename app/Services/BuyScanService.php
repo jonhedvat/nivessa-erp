@@ -68,7 +68,7 @@ class BuyScanService
                 $out['format'] = $p['format'];
                 $out['genre'] = $p['genre'];
                 $out['sealed'] = $p['condition'] === 'sealed';
-                $this->setTypes($out, $p['format'], $p['genre_text'], '');
+                $this->setTypes($out, $p['format'], $p['genre_text'], $p['name']);
                 return $out;
             }
             $hit = $this->discogsByBarcode($business_id, $upc);
@@ -204,6 +204,7 @@ class BuyScanService
                 if (($ident->type ?? '') === 'Barcode' && self::isUpc($ident->value ?? '')) { $upc = self::digits($ident->value); break; }
             }
             $genreText = implode(' ', array_merge((array) ($d->genres ?? []), (array) ($d->styles ?? [])));
+            if (trim($title) === '') return null;
             $out = [
                 'title' => $artist !== '' ? $artist . ' - ' . $title : $title,
                 'artist' => $artist,
@@ -307,10 +308,11 @@ class BuyScanService
     {
         $g = self::genreKey($genreText);
         $c = $sealed ? 'sealed' : 'used';
-        $x = mb_strtolower((string) $extra);
+        // Box sets show up in the genre ("DVD / Box Sets") or the Discogs format.
+        $x = mb_strtolower((string) $extra . ' ' . (string) $genreText);
         switch ($format) {
             case 'cd':
-                if (preg_match('/box ?set/', $x)) return $this->first(["cd_boxset_$c"]);
+                if (preg_match('/box ?sets?\b/', $x)) return $this->first(["cd_boxset_$c"]);
                 $map = ['hiphop' => 'hiphop', 'metal' => 'metal', 'punk' => 'punk', 'pop' => 'pop', 'electronic' => 'electronic',
                     'blues' => 'blues', 'country' => 'country', 'rock' => 'rock_alt_newwave', 'rnb' => 'rb_jazz', 'jazz' => 'rb_jazz',
                     'soundtracks' => 'soundtracks', 'classical' => 'classical_opera'];
@@ -322,7 +324,7 @@ class BuyScanService
             case 'dvd':
                 if ($sealed) return $this->first(['dvd_sealed']);
                 if (strpos($x, 'criterion') !== false) return $this->first(['dvd_criterion_used']);
-                if (preg_match('/box ?set|complete series|season/', $x)) return $this->first(['dvd_boxset_used', 'dvd_used']);
+                if (preg_match('/box ?sets?\b|complete series|\bseasons?\b/', $x)) return $this->first(['dvd_boxset_used', 'dvd_used']);
                 return $this->first([$g ? "dvd_{$g}_used" : null, 'dvd_used']);
             case 'bluray':
                 return $this->first(["bluray_$c"]);
