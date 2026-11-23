@@ -77,6 +77,8 @@
         @foreach($dayChoices as $dc)
             <a class="md-pill {{ $dc === $days ? 'on' : '' }}" href="{{ $qs(['days' => $dc]) }}">Last {{ $dc }} days</a>
         @endforeach
+        <span class="md-gap"></span>
+        <a class="md-pill" href="{{ url('/manager-checkins') . '?store=' . ($store === 'hollywood' ? 'hw' : 'pico') }}">Manager check-ins &rarr;</a>
     </div>
 
     <div class="md-cards">
