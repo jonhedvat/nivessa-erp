@@ -1,0 +1,37 @@
+# Files Video Games products under their console subcategory (NES, PS2, Xbox 360…)
+# when the name/description says the console. DRY RUN unless commit is ticked.
+# Only moves games that are unfiled or in "Other". Writes an undo log on the server.
+name: Fix video game consoles
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Actually write? (unchecked = dry run)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run on prod
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          COMMIT: ${{ github.event.inputs.commit == 'true' && '1' || '0' }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          P=${DEPLOY_PORT:-22}
+          for i in 1 2 3 4 5; do ssh-keyscan -T 15 -p $P -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null && grep -q . ~/.ssh/known_hosts && break; sleep 10; done
+          APP=/www/playlist.nivessa.com/app
+          scp -o ConnectTimeout=30 -i ~/.ssh/id -P $P scripts/diag/video_game_consoles.php "$DEPLOY_USER@$DEPLOY_HOST:$APP/storage/video_game_consoles.php"
+          ssh -o ConnectTimeout=30 -i ~/.ssh/id -p $P "$DEPLOY_USER@$DEPLOY_HOST" "cd $APP && sed -i \"s#__DIR__ . '/../../#'\$(pwd)/#g\" storage/video_game_consoles.php && COMMIT=$COMMIT php storage/video_game_consoles.php; rm -f storage/video_game_consoles.php"
