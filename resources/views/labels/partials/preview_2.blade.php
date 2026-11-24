@@ -36,8 +36,8 @@
 						@if(!empty($page_product->artist))
 							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 4, 15) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{$page_product->artist}}</span>
 						@endif
-						@if(!empty($page_product->category) || !empty($page_product->sub_category))
-							<span class="nv-pri" style="display: block !important; font-weight: bold; font-size: {{ max((int)($print['name_size'] ?? 10) + 5, 16) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ trim(($page_product->category ?? '') . (!empty($page_product->category) && !empty($page_product->sub_category) ? ' / ' : '') . ($page_product->sub_category ?? '')) }}</span>
+						@if(!empty($page_product->sub_category))
+							<span style="display: block !important; font-weight: bold; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ $page_product->sub_category }}</span>
 					@endif
 
 					@if(!empty($page_product->file_under))
@@ -104,10 +104,10 @@
 						</span>
 					@endif
 					
-					{{-- Genre (printed with or without the price; no subcategory -> the category, never a bare "Genre:") --}}
-					@if(!empty($page_product->sub_category) || !empty($page_product->category))
-						<span class="nv-pri" style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
-							Genre:<b style="font-size: {{ round($print['name_size']*$txt) + 3 }}px;">{{ !empty($page_product->sub_category) ? $page_product->sub_category : $page_product->category }}</b>
+					{{-- Genre = the subcategory only. No subcategory -> no Genre line (a category name like "Vinyl - Sealed" is not a genre). --}}
+					@if(!empty($page_product->sub_category))
+						<span style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
+							Genre: <b>{{ $page_product->sub_category }}</b>
 						</span>
 					@endif
 					@if(!empty($page_product->file_under))
@@ -258,7 +258,7 @@
     var imgs = Array.prototype.map.call(label.querySelectorAll('img'), function (el) {
       return { el: el, h: el.getBoundingClientRect().height };
     });
-    // t = other text, p = genre / file under (shrunk last), b = barcode height
+    // t = other text, p = File under (shrunk last), b = barcode height
     var t = 1, p = 1, b = 1;
     function apply() {
       texts.forEach(function (x) { x.el.style.setProperty('font-size', (x.px * (x.pri ? p : t)).toFixed(2) + 'px', 'important'); });
