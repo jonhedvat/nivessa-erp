@@ -67,3 +67,7 @@ jobs:
             php artisan tinker --no-ansi <<'PHP'
             foreach (DB::select("select p.id, p.name, p.created_at, c.name cat, concat(u.first_name,' ',coalesce(u.last_name,'')) who, p.sku, (select count(*) from purchase_lines pl join variations v on v.id=pl.variation_id where v.product_id=p.id) pls from products p left join categories c on c.id=p.category_id left join users u on u.id=p.created_by where p.created_at >= now() - interval 4 day and p.sub_category_id is null order by p.created_at desc limit 50") as $r) { echo "NOSUB | {$r->id} | {$r->created_at} | {$r->who} | ".($r->cat ?? '(no cat)')." | {$r->name} | pl={$r->pls}\n"; }
             PHP
+            echo "=== which purchase/import created them ==="
+            php artisan tinker --no-ansi <<'PHP'
+            foreach (DB::select("select t.id, t.type, t.ref_no, t.status, left(coalesce(t.additional_notes,''),80) notes, t.created_at, count(distinct p.id) n, sum(p.category_id is null) nocat, sum(p.sub_category_id is null) nosub from products p join variations v on v.product_id=p.id join purchase_lines pl on pl.variation_id=v.id join transactions t on t.id=pl.transaction_id where p.created_at >= now() - interval 4 day and p.sub_category_id is null group by t.id order by t.created_at") as $r) { echo "SRC | t{$r->id} | {$r->type} | {$r->ref_no} | {$r->created_at} | n={$r->n} nocat={$r->nocat} | {$r->notes}\n"; }
+            PHP
