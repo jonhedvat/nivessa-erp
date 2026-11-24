@@ -406,6 +406,147 @@ class BuyScanService
     }
 
     /**
+     * Buy item type -> [parent category name, subcategory name needle|null] for
+     * the non-media types (Sarah 11/23: bought video games landed in Mass Add
+     * with no category). Longest matching key wins; exact key or key + '_'.
+     */
+    const ITEM_TYPE_CATEGORIES = [
+        'videogame' => ['Video Games', null],
+        'magazine' => ['Magazines', null],
+        'magazine_mad' => ['Magazines', 'mad'],
+        'magazine_playboy' => ['Magazines', 'playboy'],
+        'magazine_pop_culture' => ['Magazines', 'pop culture'],
+        'magazine_rolling_stone' => ['Magazines', 'rolling stone'],
+        'magazine_music' => ['Magazines', 'music'],
+        'magazine_natgeo' => ['Magazines', 'national geographic'],
+        'magazine_adult' => ['Magazines', 'adult'],
+        'magazine_film_tv_horror' => ['Magazines', 'film'],
+        'magazine_news_celebrity' => ['Magazines', 'news'],
+        'magazine_video_games' => ['Magazines', 'video games'],
+        'magazine_sports' => ['Magazines', 'sports'],
+        'book' => ['Books', null],
+        'coffee_table_book' => ['Books', 'photo books'],
+        'book_artist_band' => ['Books', 'artist'],
+        'book_bio' => ['Books', 'biograph'],
+        'book_comic' => ['Books', 'comic'],
+        'book_fantasy' => ['Books', 'fantasy'],
+        'book_historical' => ['Books', 'historical'],
+        'book_manga' => ['Books', 'manga'],
+        'book_music_history' => ['Books', 'music history'],
+        'book_mystery' => ['Books', 'mystery'],
+        'book_zine' => ['Books', 'zine'],
+        'book_photo' => ['Books', 'photo books'],
+        'book_scifi' => ['Books', 'sci'],
+        'book_romance' => ['Books', 'romance'],
+        'book_kids_ya' => ['Books', 'kids'],
+        'hat' => ['Apparel', 'hats'],
+        'tshirt' => ['Apparel', null],
+        'tanktop' => ['Apparel', null],
+        'sweatshirt' => ['Apparel', 'sweatshirts'],
+        'apparel' => ['Apparel', null],
+        'apparel_jersey' => ['Apparel', 'jersey'],
+        'apparel_pants' => ['Apparel', 'pants'],
+        'apparel_shirt' => ['Apparel', 'shirts'],
+        'apparel_tote' => ['Apparel', 'tote'],
+        'poster' => ['Posters', null],
+        'signed_poster' => ['Posters', null],
+        'card_pack' => ['Trading Card Packs', null],
+        'mtg_cards' => ['Trading Cards', 'magic'],
+        'yugioh_cards' => ['Trading Cards', 'yu gi oh'],
+        'pokemon' => ['Trading Cards', 'pokemon cards'],
+        'sports_card' => ['Trading Cards', null],
+        'card_collection' => ['Trading Cards', null],
+        'card_nonsports' => ['Trading Cards', null],
+        'graded_slab' => ['Trading Cards', null],
+        'framed_art' => ['Art & Photography', 'framed'],
+        'art_photo_print' => ['Art & Photography', 'photography prints'],
+        'turntable' => ['Audio Gear', 'record players'],
+        'receiver' => ['Audio Gear', 'receiver'],
+        'cd_player' => ['Audio Gear', 'cd player'],
+        'cassette_player' => ['Audio Gear', null],
+        'audio_gear_value' => ['Audio Gear', null],
+        'instrument' => ['Audio Gear', null],
+        'instrument_guitar' => ['Audio Gear', 'guitar'],
+        'instrument_amp' => ['Audio Gear', 'guitar amp'],
+        'instrument_pedal' => ['Audio Gear', 'pedal'],
+        'instrument_keyboard' => ['Audio Gear', 'keyboard'],
+        'dvd_player' => ['Electronics', 'dvd player'],
+        'camera' => ['Photo/Video', null],
+        'camcorder_digital' => ['Photo/Video', 'video'],
+        'photo_gear_value' => ['Photo/Video', null],
+        'mask' => ['Accessories & Supplies', 'mask'],
+        'furry_doll' => ['Toys', 'plush'],
+        'funko_pop' => ['Toys', 'funko'],
+        'board_game' => ['Toys', 'board'],
+        'toy' => ['Toys', null],
+        'toy_action_figure' => ['Toys', 'action figure'],
+        'toy_squishy' => ['Toys', 'squishy'],
+        'toy_plush' => ['Toys', 'plush'],
+        'toy_puzzle' => ['Toys', 'puzzle'],
+        'toy_blind_box' => ['Toys', 'blind box'],
+        'toy_mini_replica' => ['Toys', 'mini vinyl'],
+        'gift_small' => ['Gift Items', null],
+        'gift_tech_accessory' => ['Gift Items', 'tech'],
+        'decor_collectible' => ['Decorative Collectibles', null],
+        'eight_track' => ['8 track', null],
+        'record_cover_only' => ['Record Cover Only', null],
+        'laserdisc' => ['Laser Disc', null],
+    ];
+
+    protected static function catKey($name)
+    {
+        return trim(preg_replace('/[^a-z0-9]+/', ' ', mb_strtolower((string) $name)));
+    }
+
+    /**
+     * Category for a bought line with no barcode: the media format's category
+     * (categoryForLine) or, for everything else, ITEM_TYPE_CATEGORIES matched
+     * to our categories by name. [category_id, sub_category_id|null] or null.
+     */
+    public function categoryForItemType($business_id, $itemType, $grade = null)
+    {
+        $t = (string) $itemType;
+        // Gear keys that start like a format (cd_player, dvd_player) are mapped first.
+        if (!isset(self::ITEM_TYPE_CATEGORIES[$t]) && self::formatOfItemType($t)) {
+            return $this->categoryForLine($business_id, null, $t, $grade);
+        }
+        $best = null;
+        foreach (self::ITEM_TYPE_CATEGORIES as $key => $map) {
+            if (($t === $key || strpos($t, $key . '_') === 0) && ($best === null || strlen($key) > strlen($best))) {
+                $best = $key;
+            }
+        }
+        if ($best === null) return null;
+        list($parentName, $subNeedle) = self::ITEM_TYPE_CATEGORIES[$best];
+
+        static $cache = [];
+        if (!isset($cache[$business_id])) {
+            $cache[$business_id] = DB::table('categories')->where('business_id', $business_id)->whereNull('deleted_at')
+                ->where('category_type', 'product')->get(['id', 'name', 'parent_id']);
+        }
+        $cats = $cache[$business_id];
+        $want = self::catKey($parentName);
+        $parent = null;
+        foreach ($cats as $c) {
+            if ((int) $c->parent_id === 0 && self::catKey($c->name) === $want) { $parent = (int) $c->id; break; }
+        }
+        if (!$parent) return null;
+        $sub = null;
+        if ($subNeedle !== null) {
+            // Exact name first ("Guitar", not "Guitar Pedal"), then contains.
+            $needle = self::catKey($subNeedle);
+            foreach ([true, false] as $exact) {
+                foreach ($cats as $c) {
+                    if ((int) $c->parent_id !== $parent) continue;
+                    $k = self::catKey($c->name);
+                    if ($exact ? $k === $needle : strpos($k, $needle) !== false) { $sub = (int) $c->id; break 2; }
+                }
+            }
+        }
+        return [$parent, $sub];
+    }
+
+    /**
      * Category + subcategory for a bought line's product in Mass Add, from its
      * barcode: a product we carry in the same format and condition -> its exact
      * category; same title in the other condition -> the matching genre under

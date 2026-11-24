@@ -2957,6 +2957,8 @@ a, b, c, d, e</textarea>
         if (!skipConfirm && !confirm(`Are you sure you want to add ${products.length} products to the table?`)) {
             return;
         }
+        // Buy record loaded: tag each priced item with the buy lot it came from.
+        if (typeof window.massAddTagParsed === 'function') window.massAddTagParsed(products);
         
         removeBlankMassRows();
         $('#bulk_parse_status').html(`<i class="fa fa-spinner fa-spin"></i> Adding ${products.length} products...`);
@@ -3021,8 +3023,10 @@ a, b, c, d, e</textarea>
             }
             
             currentRowIndex++;
+            const addedRowIndex = currentRowIndex;
             addProductFromParsedData(products[index], currentRowIndex)
                 .then(() => {
+                    if (typeof window.massAddRowAdded === 'function') window.massAddRowAdded(products[index], addedRowIndex);
                     addedCount++;
                     $('#bulk_parse_status').html(`<i class="fa fa-spinner fa-spin"></i> Adding ${addedCount}/${products.length} products...`);
                     setTimeout(() => addNextProduct(index + 1), 200); // Small delay between adds
@@ -4174,6 +4178,36 @@ a, b, c, d, e</textarea>
         return base + (l.grade ? ' ' + l.grade : '');
     }
 
+    // Combo value under category `parent`: `sub` if given; else the row's
+    // current pick when it's already under that parent; else the same genre
+    // name under the parent; else the parent's first option.
+    function comboUnderParent(parent, sub, cur) {
+        parent = String(parent);
+        var $opts = $('.category-combo-select').first().find('option');
+        if (sub) return parent + '_' + sub;
+        cur = String(cur || '');
+        if (cur.indexOf(parent + '_') === 0) return cur;
+        var genre = cur ? (($opts.filter('[value="' + cur + '"]').text() || '').split(' > ')[1] || '').toLowerCase().trim() : '';
+        var found = '', first = '';
+        $opts.each(function () {
+            var v = String(this.value), t = $(this).text().split(' > ');
+            if (v.indexOf(parent + '_') !== 0) return;
+            if (!first) first = v;
+            if (genre && t[1] && t[1].toLowerCase().trim() === genre) { found = v; return false; }
+        });
+        return found || first;
+    }
+
+    // The bought type decides the category (video games -> Video Games).
+    function applyLotCategory($row, lot) {
+        if (!lot || !lot.category || !lot.category[0]) return;
+        var $combo = $row.find('.category-combo-select').first();
+        var want = comboUnderParent(lot.category[0], lot.category[1], $combo.val());
+        if (want && want !== String($combo.val() || '') && $combo.find('option[value="' + want + '"]').length) {
+            $combo.val(want).trigger('change');
+        }
+    }
+
     function setRowCost($row, lot) {
         if (!lot) return;
         $row.find('input[name*="[single_dpp_inc_tax]"]').first().val(Number(lot.unit_cost).toFixed(4));
@@ -4200,6 +4234,77 @@ a, b, c, d, e</textarea>
         }
     }
 
+    // Items priced through the Bulk Entry box for this buy (Sarah 11/23):
+    // aiQueue = titled lines sent by "Add ... as rows"; typedLot = a bulk lot
+    // whose items staff are typing in ("Type these items").
+    var aiQueue = null, aiQueueAt = 0, typedLot = null;
+    function words(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(function (w) { return w.length > 1; }); }
+    window.massAddTagParsed = function (products) {
+        if (!buy) return;
+        if (aiQueue && Date.now() - aiQueueAt < 180000) {
+            var q = aiQueue.slice();
+            aiQueue = null;
+            if (q.length === products.length) {
+                products.forEach(function (p, i) { p._bfcLot = q[i]; });
+                return;
+            }
+            // AI merged/split lines: match by title words.
+            products.forEach(function (p) {
+                var pw = words((p.name || '') + ' ' + (p.artist || '')), best = -1, score = 0;
+                q.forEach(function (l, i) {
+                    if (!l) return;
+                    var lw = words(l.title), n = lw.filter(function (w) { return pw.indexOf(w) !== -1; }).length;
+                    if (n > score) { score = n; best = i; }
+                });
+                if (best >= 0) { p._bfcLot = q[best]; q[best] = null; }
+            });
+            return;
+        }
+        aiQueue = null;
+        if (typedLot) products.forEach(function (p) { p._bfcLot = typedLot; });
+    };
+    window.massAddRowAdded = function (p, idx) {
+        var l = p && p._bfcLot;
+        if (!l) return;
+        var $row = $('#product_rows_container .product-row[data-row-index="' + idx + '"]');
+        if (!$row.length) return;
+        applyLotCategory($row, l);
+        $row.find('.bfc-lot-select').val(String(l.id));
+        setRowCost($row, l);
+        if (l.upc && !l.upc_taken) $row.find('input[name*="[sku]"]').first().val(l.upc);
+    };
+    function openBulkEntry() {
+        var $box = $('#bulk_product_text').closest('.box');
+        $box.removeClass('collapsed-box').children('.box-body').show();
+        return $box;
+    }
+    function hint(l) {
+        return l.type.replace(/\s*\(enter[^)]*\)?/i, '').replace(/^1-9 items:\s*/i, '').replace(/[()]/g, '').trim() + (l.grade ? ', ' + l.grade : '');
+    }
+    function renderTypedLotBanner() {
+        $('#bfc_typed_lot').remove();
+        if (!typedLot) return;
+        $('<div id="bfc_typed_lot" class="alert alert-info" style="margin:0 0 10px; padding:8px 12px;"></div>')
+            .html('<i class="fa fa-archive"></i> Typing items for <strong>' + esc(buy.offer.number) + '</strong>: <strong>' + esc(lotName(typedLot)) + '</strong>'
+                + (typedLot.grade ? ' ' + esc(typedLot.grade) : '') + ' · paid ' + money(typedLot.unit_cost) + ' each. '
+                + 'Every row priced from this box goes to that lot and its category. '
+                + '<a href="#" id="bfc_typed_lot_done">Done with this lot</a>')
+            .insertBefore('#bulk_product_text');
+    }
+    $(document).on('click', '#bfc_typed_lot_done', function (e) { e.preventDefault(); typedLot = null; renderTypedLotBanner(); });
+    $(document).on('click', '.bfc-type-lot', function () {
+        var l = lotById($(this).data('lot'));
+        if (!l) return;
+        typedLot = l;
+        lastLot = String(l.id);
+        var $box = openBulkEntry();
+        renderTypedLotBanner();
+        var $ta = $('#bulk_product_text');
+        if (!$.trim($ta.val())) $ta.attr('placeholder', 'One ' + hint(l) + ' per line, e.g.\n' + (l.title ? l.title + '\n' : '') + 'Super Mario Bros 3 NES\nHalo 3 Xbox 360');
+        $('html, body').animate({ scrollTop: $box.offset().top - 60 }, 200);
+        $ta.focus();
+    });
+
     $(document).on('change', '#product_rows_container .bfc-lot-select', function () {
         lastLot = $(this).val();
         setRowCost($(this).closest('.product-row'), lotById(lastLot));
@@ -4225,12 +4330,15 @@ a, b, c, d, e</textarea>
             + (o.store ? ' at ' + esc(o.store) : '')
             + '. New rows are tagged with this buy; pick the lot on each row (it remembers the last one).'
             + '<table class="table table-condensed" style="margin:8px 0 0; background:transparent;"><thead><tr>'
-            + '<th>Lot</th><th class="text-right">Paid / unit</th><th class="text-right">Listed so far</th></tr></thead><tbody>';
+            + '<th>Lot</th><th class="text-right">Paid / unit</th><th class="text-right">Listed so far</th><th></th></tr></thead><tbody>';
         var individual = 0;
         buy.lots.forEach(function (l) {
             html += '<tr><td>' + esc(lotName(l)) + (l.grade ? ' <small class="text-muted">' + esc(l.grade) + '</small>' : '') + '</td>'
                 + '<td class="text-right">' + money(l.unit_cost) + '</td>'
-                + '<td class="text-right">' + l.listed + ' of ' + Number(l.qty) + '</td></tr>';
+                + '<td class="text-right">' + l.listed + ' of ' + Number(l.qty) + '</td>'
+                // Bulk lot: staff type its items into Bulk Entry, priced on the web.
+                + '<td class="text-right">' + (!l.individual && l.listed < l.qty
+                    ? '<button type="button" class="btn btn-default btn-xs bfc-type-lot" data-lot="' + l.id + '"><i class="fa fa-keyboard-o"></i> Type these items</button>' : '') + '</td></tr>';
             if (l.individual && (l.title || l.discogs_release_id) && l.listed < l.qty) individual++;
         });
         html += '</tbody></table>';
@@ -4318,9 +4426,29 @@ a, b, c, d, e</textarea>
             if (!l.individual || !(l.title || l.discogs_release_id)) return;
             for (var i = l.listed; i < l.qty; i++) queue.push(l);
         });
+        // No Discogs release: a typed title (video game, book…) or a barcode
+        // only. Price those on the web through Bulk Entry instead of a blank row.
+        var toPrice = queue.filter(function (l) { return !l.discogs_release_id; });
+        queue = queue.filter(function (l) { return !!l.discogs_release_id; });
         var done = 0;
+        function priceOnWeb() {
+            var lines = toPrice.map(function (l) {
+                return String(l.title || l.upc).replace(/\s+/g, ' ').trim() + ' (' + hint(l) + ')';
+            });
+            aiQueue = toPrice;
+            aiQueueAt = Date.now();
+            typedLot = null;
+            renderTypedLotBanner();
+            var $box = openBulkEntry();
+            $('#bulk_product_text').val(lines.join('\n'));
+            $('#bfc_add_status').html((done ? 'Added ' + done + ' from Discogs. ' : '') + 'Pricing ' + toPrice.length + ' item' + (toPrice.length === 1 ? '' : 's')
+                + ' on eBay and the web (see Bulk Product Entry)…');
+            $('html, body').animate({ scrollTop: $box.offset().top - 60 }, 200);
+            $('#ai_price_bulk_text').trigger('click');
+        }
         function next() {
             if (!queue.length) {
+                if (toPrice.length) return priceOnWeb();
                 $('#bfc_add_status').text('Added ' + done + ' row' + (done === 1 ? '' : 's') + '. Check each one and set the selling price.');
                 return;
             }

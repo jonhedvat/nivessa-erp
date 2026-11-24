@@ -5214,7 +5214,10 @@ class ProductController extends Controller
                 'type' => $labels[$line->item_type] ?? $line->item_type,
                 'title' => $line->title,
                 // Scanned items are one-of-a-kind too: one row per copy.
-                'individual' => $line->item_type === 'individual_vinyl' || $upc !== null || ($releaseId && (float) $line->quantity < 10),
+                // Sarah 11/23: a line typed with its own title (one video game,
+                // one book…) is a single item too, priced on the web in Mass Add.
+                'individual' => $line->item_type === 'individual_vinyl' || $upc !== null || ($releaseId && (float) $line->quantity < 10)
+                    || (trim((string) $line->title) !== '' && (float) $line->quantity == 1),
                 'discogs_release_id' => $releaseId,
                 'upc' => $upc,
                 // Barcode already on another product (e.g. the sealed copy):
@@ -5222,7 +5225,9 @@ class ProductController extends Controller
                 'upc_taken' => $upc !== null && $dupService->findConflict($business_id, '', '', $upc) !== null,
                 'format' => \App\Services\BuyScanService::formatOfItemType($line->item_type),
                 // Category + subcategory for the new product (Jon 11/23), from the barcode.
-                'category' => $upc !== null ? $scan->categoryForLine($business_id, $upc, $line->item_type, $line->condition_grade) : null,
+                // No barcode: the bought type's category (Video Games, Books, Toys…).
+                'category' => $upc !== null ? $scan->categoryForLine($business_id, $upc, $line->item_type, $line->condition_grade)
+                    : ($releaseId ? null : $scan->categoryForItemType($business_id, $line->item_type, $line->condition_grade)),
                 'grade' => $line->condition_grade,
                 'qty' => (float) $line->quantity,
                 'unit_cost' => $costs[$line->id] ?? 0,
