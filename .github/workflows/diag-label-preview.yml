@@ -63,3 +63,7 @@ jobs:
             php artisan tinker --no-ansi <<'PHP'
             foreach (DB::select("select c.name cat, s.name sub, count(*) n from products p left join categories c on c.id=p.category_id left join categories s on s.id=p.sub_category_id where p.created_at >= now() - interval 4 day group by c.name, s.name order by n desc limit 40") as $r) { echo str_pad($r->n,6).' | '.$r->cat.' | '.($r->sub ?? '(none)')."\n"; }
             PHP
+            echo "=== recent products with no subcategory: who/when/how ==="
+            php artisan tinker --no-ansi <<'PHP'
+            foreach (DB::select("select p.id, p.name, p.created_at, c.name cat, concat(u.first_name,' ',coalesce(u.last_name,'')) who, p.sku, (select count(*) from purchase_lines pl join variations v on v.id=pl.variation_id where v.product_id=p.id) pls from products p left join categories c on c.id=p.category_id left join users u on u.id=p.created_by where p.created_at >= now() - interval 4 day and p.sub_category_id is null order by p.created_at desc limit 50") as $r) { echo "NOSUB | {$r->id} | {$r->created_at} | {$r->who} | ".($r->cat ?? '(no cat)')." | {$r->name} | pl={$r->pls}\n"; }
+            PHP
