@@ -72,9 +72,9 @@
 			@php
 				// 2"x1" detection + a text downscale so the barcode can dominate the label.
 				$is_2x1 = (abs(($barcode_details->width * 1) - 2) < 0.01 && abs(($barcode_details->height * 1) - 1) < 0.01);
-				$txt = $is_2x1 ? 0.8 : 1;
+				$txt = 1;
 			@endphp
-			<div class="nv-label" style="overflow: hidden !important;display: flex; flex-wrap: wrap;align-content: center;width: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; justify-content: center;">
+			<div class="nv-label" style="overflow: hidden !important;display: flex; flex-wrap: wrap;align-content: {{ $is_2x1 ? 'flex-start' : 'center' }};@if($is_2x1) padding-top: 0.01in; box-sizing: border-box; line-height: 1.05;@endifwidth: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; justify-content: center;">
 
 
 				<div style="@if($is_2x1) width:{{ $barcode_details->width * 1 }}in; text-align:center; @endif">
@@ -158,7 +158,7 @@
 							{{$page_product->packing_date}}
 						</span>
 					@endif
-					<br>
+					@if(!$is_2x1)<br>@endif
 
 					{{-- Barcode --}}
 					@php
@@ -166,7 +166,7 @@
 						// the bars stay crisp at print size (CSS only constrains, never upscales).
 						// Symbology (barcode_type) is unchanged — only widthFactor/native height
 						// are raised. All other label sizes keep the standard (1,30) call.
-						$barcode_height_in   = $is_2x1 ? ($barcode_details->height * 0.66) : ($barcode_details->height * 0.24);
+						$barcode_height_in   = $is_2x1 ? ($barcode_details->height * 0.42) : ($barcode_details->height * 0.24);
 						$barcode_width_factor   = $is_2x1 ? 2  : 1;
 						$barcode_native_height  = $is_2x1 ? 60 : 30;
 						// 2"x1": size the bar image in ABSOLUTE inches (not %), because the
@@ -174,7 +174,7 @@
 						// Width = label width minus a ~0.12in quiet zone (white space) each side.
 						$barcode_width_in = ($barcode_details->width * 1) - 0.24;
 						$barcode_css = $is_2x1
-							? 'display:block; width:'.$barcode_width_in.'in !important; min-width:'.$barcode_width_in.'in !important; max-width:'.$barcode_width_in.'in !important; height:'.$barcode_height_in.'in !important; margin:0.02in auto; background:#fff;'
+							? 'display:block; width:'.$barcode_width_in.'in !important; min-width:'.$barcode_width_in.'in !important; max-width:'.$barcode_width_in.'in !important; height:'.$barcode_height_in.'in !important; margin:0.01in auto 0; background:#fff;'
 							: 'display:block; max-width:90% !important; height:'.$barcode_height_in.'in !important;';
 					@endphp
 					<img style="{{ $barcode_css }}" src="data:image/png;base64,{{DNS1D::getBarcodePNG($page_product->sub_sku, $page_product->barcode_type, $barcode_width_factor, $barcode_native_height, array(0, 0, 0), false)}}">
@@ -230,8 +230,8 @@
 
 <script>
 /* Shrink-to-fit: no text is ever cut off a 2"x1" / 2"x2" label (Sarah 11/23).
-   Per label, shrink the text first, then the barcode height (to 55%, still
-   scans), then the text again, until nothing pokes outside the label and no
+   Per label, shrink the text first, then the barcode height first
+   (to 80%), then text, then barcode again (to 55%, still scans), then the text again, until nothing pokes outside the label and no
    one-line field is ellipsised. The SKU under the barcode keeps its size. */
 (function () {
   if (window.__nvFitDone) return;
@@ -266,7 +266,8 @@
     }
     var guard = 0;
     while (overflows(label) && guard++ < 60) {
-      if (t > 0.6) t -= 0.05;
+      if (b > 0.8) b -= 0.05;
+      else if (t > 0.6) t -= 0.05;
       else if (b > 0.55) b -= 0.05;
       else if (t > 0.4) t -= 0.03;
       else if (p > 0.4) p -= 0.03;
