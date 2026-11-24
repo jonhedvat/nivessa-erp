@@ -1,0 +1,32 @@
+name: Diag contact store-credit history
+
+# Read-only: every store-credit movement for one contact id — balance_notes,
+# store_credit_logs, and all their transactions with payment lines (advance =
+# store credit spent). Used to explain negative / surprising balances.
+
+on:
+  workflow_dispatch:
+    inputs:
+      contact_id:
+        description: Contact id (from diag-customer-credit-lookup)
+        required: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run on prod
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          CONTACT_ID: ${{ inputs.contact_id }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: CONTACT_ID
+          command_timeout: 5m
+          script: |
+            echo 'PD9waHAKLy8gUmVhZC1vbmx5OiBmdWxsIHN0b3JlLWNyZWRpdCBoaXN0b3J5IGZvciBvbmUgY29udGFjdCBpZC4KJGNpZCA9IChpbnQpIGdldGVudignQ09OVEFDVF9JRCcpOwokYyA9IFxEQjo6dGFibGUoJ2NvbnRhY3RzJyktPndoZXJlKCdpZCcsICRjaWQpLT5maXJzdCgpOwplY2hvICJjb250YWN0ICN7JGMtPmlkfSB7JGMtPm5hbWV9IGJhbGFuY2UgeyRjLT5iYWxhbmNlfVxuLS0tIGJhbGFuY2Vfbm90ZXMgKGFsbClcbiIgLiAkYy0+YmFsYW5jZV9ub3RlcyAuICJcbiI7CmVjaG8gIi0tLSBzdG9yZV9jcmVkaXRfbG9nc1xuIjsKZm9yZWFjaCAoXERCOjp0YWJsZSgnc3RvcmVfY3JlZGl0X2xvZ3MnKS0+d2hlcmUoJ2NvbnRhY3RfaWQnLCAkY2lkKS0+b3JkZXJCeSgnaWQnKS0+Z2V0KCkgYXMgJHIpCiAgZWNobyAieyRyLT5jcmVhdGVkX2F0fSBzcmM9eyRyLT5zb3VyY2V9IGFtdD17JHItPmFtb3VudH0gYWZ0ZXI9eyRyLT5iYWxhbmNlX2FmdGVyfSB0eD17JHItPnRyYW5zYWN0aW9uX2lkfSBvZmZlcj17JHItPmJ1eV9jdXN0b21lcl9vZmZlcl9pZH0gdXNlcj17JHItPnVzZXJfaWR9IHJlYXNvbj17JHItPnJlYXNvbn1cbiI7CmVjaG8gIi0tLSB0cmFuc2FjdGlvbnMgKyBwYXltZW50c1xuIjsKZm9yZWFjaCAoXERCOjp0YWJsZSgndHJhbnNhY3Rpb25zJyktPndoZXJlKCdjb250YWN0X2lkJywgJGNpZCktPm9yZGVyQnkoJ2lkJyktPmdldChbJ2lkJywndHlwZScsJ3N0YXR1cycsJ3BheW1lbnRfc3RhdHVzJywnaW52b2ljZV9ubycsJ2ZpbmFsX3RvdGFsJywndHJhbnNhY3Rpb25fZGF0ZScsJ2NyZWF0ZWRfYnknLCdyZXR1cm5fcGFyZW50X2lkJ10pIGFzICR0KSB7CiAgJHUgPSBcREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnaWQnLCAkdC0+Y3JlYXRlZF9ieSktPnZhbHVlKCdmaXJzdF9uYW1lJyk7CiAgZWNobyAidHggeyR0LT5pZH0geyR0LT50eXBlfS97JHQtPnN0YXR1c30veyR0LT5wYXltZW50X3N0YXR1c30gaW52PXskdC0+aW52b2ljZV9ub30gdG90YWw9eyR0LT5maW5hbF90b3RhbH0gZGF0ZT17JHQtPnRyYW5zYWN0aW9uX2RhdGV9IGJ5PXskdX0gcmV0X3BhcmVudD17JHQtPnJldHVybl9wYXJlbnRfaWR9XG4iOwogIGZvcmVhY2ggKFxEQjo6dGFibGUoJ3RyYW5zYWN0aW9uX3BheW1lbnRzJyktPndoZXJlKCd0cmFuc2FjdGlvbl9pZCcsICR0LT5pZCktPmdldChbJ2lkJywnbWV0aG9kJywnYW1vdW50JywnaXNfcmV0dXJuJywnbm90ZScsJ3BhaWRfb24nXSkgYXMgJHApCiAgICBlY2hvICIgICAgcGF5IHskcC0+aWR9IHskcC0+bWV0aG9kfSB7JHAtPmFtb3VudH0gcmV0PXskcC0+aXNfcmV0dXJufSB7JHAtPnBhaWRfb259IG5vdGU9IiAuIHN1YnN0cigoc3RyaW5nKSRwLT5ub3RlLCAwLCAxMjApIC4gIlxuIjsKfQplY2hvICItLS0gcGF5bWVudHMgd2l0aCBwYXltZW50X2Zvcj1jb250YWN0IChhZHZhbmNlIHRvcC11cHMgZXRjKVxuIjsKZm9yZWFjaCAoXERCOjp0YWJsZSgndHJhbnNhY3Rpb25fcGF5bWVudHMnKS0+d2hlcmUoJ3BheW1lbnRfZm9yJywgJGNpZCktPndoZXJlTnVsbCgndHJhbnNhY3Rpb25faWQnKS0+Z2V0KFsnaWQnLCdtZXRob2QnLCdhbW91bnQnLCdpc19yZXR1cm4nLCdub3RlJywncGFpZF9vbicsJ3BhcmVudF9pZCddKSBhcyAkcCkKICBlY2hvICIgICAgcGF5IHskcC0+aWR9IHskcC0+bWV0aG9kfSB7JHAtPmFtb3VudH0gcmV0PXskcC0+aXNfcmV0dXJufSBwYXJlbnQ9eyRwLT5wYXJlbnRfaWR9IHskcC0+cGFpZF9vbn0gbm90ZT0iIC4gc3Vic3RyKChzdHJpbmcpJHAtPm5vdGUsIDAsIDEyMCkgLiAiXG4iOwplY2hvICJET05FXG4iOwo=' | base64 -d > /tmp/contact_credit_hist.php
+            cd /www/playlist.nivessa.com/app && CONTACT_ID="$CONTACT_ID" php artisan tinker /tmp/contact_credit_hist.php 2>&1
+            rm -f /tmp/contact_credit_hist.php
