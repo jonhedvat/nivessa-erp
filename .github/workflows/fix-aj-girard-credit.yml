@@ -1,0 +1,33 @@
+name: Fix AJ Girard credit (one-off)
+
+# One-off: contact 76's 4/16 sale was saved 7 times, taking $2 credit and
+# 49 points each time. Sets credit to $0 and points to 49, zeroes rp_earned on
+# the 6 duplicate sales, logs an audit line. Dry run unless commit=true.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Write changes (false = dry run)
+        type: boolean
+        default: false
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run on prod
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          COMMIT: ${{ inputs.commit && '1' || '0' }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: COMMIT
+          command_timeout: 5m
+          script: |
+            echo 'PD9waHAKLy8gT25lLW9mZjogQUogR2lyYXJkIChjb250YWN0IDc2KSDigJQgNC8xNiBzYWxlIHNhdmVkIDd4IChpbnYgMTY3MjItMTY3MjcgYXJlIGR1cGVzIG9mIDE2NzIxKS4KLy8gU2V0IHN0b3JlIGNyZWRpdCB0byAkMCBhbmQgcG9pbnRzIHRvIDQ5IChvbmUgc2FsZSkuIERyeSBydW4gdW5sZXNzIENPTU1JVD0xLgokY2lkID0gNzY7ICRkdXBlcyA9IFs1NjY1OSwgNTY2NjAsIDU2NjYyLCA1NjY2MywgNTY2NjQsIDU2NjY1XTsKJGNvbW1pdCA9IGdldGVudignQ09NTUlUJykgPT09ICcxJzsKJGMgPSBcREI6OnRhYmxlKCdjb250YWN0cycpLT53aGVyZSgnaWQnLCAkY2lkKS0+Zmlyc3QoKTsKZWNobyAiQkVGT1JFOiB7JGMtPm5hbWV9IGJhbGFuY2U9eyRjLT5iYWxhbmNlfSBsb3lhbHR5X3BvaW50cz17JGMtPmxveWFsdHlfcG9pbnRzfSB0b3RhbF9ycD17JGMtPnRvdGFsX3JwfSB0b3RhbF9ycF91c2VkPXskYy0+dG90YWxfcnBfdXNlZH1cbiI7CmVjaG8gImR1cGUgcnBfZWFybmVkOiAiIC4ganNvbl9lbmNvZGUoXERCOjp0YWJsZSgndHJhbnNhY3Rpb25zJyktPndoZXJlSW4oJ2lkJywgJGR1cGVzKS0+cGx1Y2soJ3JwX2Vhcm5lZCcsICdpZCcpKSAuICJcbiI7CmlmIChzdHJwb3MoKHN0cmluZykgJGMtPm5hbWUsICdHaXJhcmQnKSA9PT0gZmFsc2UpIHsgZWNobyAiQUJPUlQ6IHdyb25nIGNvbnRhY3RcbiI7IGV4aXQ7IH0KJGRlbHRhID0gMCAtIChmbG9hdCkgJGMtPmJhbGFuY2U7CiRsaW5lID0gc3ByaW50ZignWyVzXSBzdG9yZS1jcmVkaXQgJXMkJXMgYnkgYWRtaW4gKFNhcmFoKSDihpIgbmV3IGJhbGFuY2UgJDAuMDAuIFJlYXNvbjogNC8xNiBzYWxlIHNhdmVkIDcgdGltZXMgKGludiAxNjcyMi0xNjcyNyBkdXBsaWNhdGVzIG9mIDE2NzIxKSB0b29rICQyIGNyZWRpdCBlYWNoOyByZXNldCB0byAkMC4gUG9pbnRzIHJlc2V0IDM0MyDihpIgNDkuJywKICBkYXRlKCdZLW0tZCBIOmknKSwgJGRlbHRhID49IDAgPyAnKycgOiAnLScsIG51bWJlcl9mb3JtYXQoYWJzKCRkZWx0YSksIDIpKTsKZWNobyAibm90ZTogeyRsaW5lfVxuIjsKaWYgKCEkY29tbWl0KSB7IGVjaG8gIkRSWSBSVU4g4oCUIHJlLXJ1biB3aXRoIGNvbW1pdD10cnVlXG4iOyBleGl0OyB9ClxEQjo6dHJhbnNhY3Rpb24oZnVuY3Rpb24gKCkgdXNlICgkYywgJGNpZCwgJGR1cGVzLCAkZGVsdGEsICRsaW5lKSB7CiAgXERCOjp0YWJsZSgnY29udGFjdHMnKS0+d2hlcmUoJ2lkJywgJGNpZCktPnVwZGF0ZShbCiAgICAnYmFsYW5jZScgPT4gMCwgJ2xveWFsdHlfcG9pbnRzJyA9PiA0OSwgJ3RvdGFsX3JwJyA9PiA0OSwKICAgICdiYWxhbmNlX25vdGVzJyA9PiB0cmltKCgkYy0+YmFsYW5jZV9ub3RlcyA/PyAnJykgLiAiXG4iIC4gJGxpbmUpLCAndXBkYXRlZF9hdCcgPT4gbm93KCksCiAgXSk7CiAgXERCOjp0YWJsZSgndHJhbnNhY3Rpb25zJyktPndoZXJlSW4oJ2lkJywgJGR1cGVzKS0+dXBkYXRlKFsncnBfZWFybmVkJyA9PiAwXSk7CiAgLy8gRGlyZWN0IGluc2VydCAobm90IHRoZSBtb2RlbCkgc28gbm8gInlvdSBoYXZlIHN0b3JlIGNyZWRpdCIgZW1haWwgZ29lcyBvdXQgZm9yIGEgJDAgYmFsYW5jZS4KICBcREI6OnRhYmxlKCdzdG9yZV9jcmVkaXRfbG9ncycpLT5pbnNlcnQoWwogICAgJ2J1c2luZXNzX2lkJyA9PiAkYy0+YnVzaW5lc3NfaWQsICdjb250YWN0X2lkJyA9PiAkY2lkLCAndXNlcl9pZCcgPT4gbnVsbCwgJ3NvdXJjZScgPT4gJ21hbnVhbF9hZGp1c3QnLAogICAgJ2Ftb3VudCcgPT4gJGRlbHRhLCAnYmFsYW5jZV9hZnRlcicgPT4gMCwgJ3JlYXNvbicgPT4gJGxpbmUsICdjcmVhdGVkX2F0JyA9PiBub3coKSwgJ3VwZGF0ZWRfYXQnID0+IG5vdygpLAogIF0pOwp9KTsKJGMgPSBcREI6OnRhYmxlKCdjb250YWN0cycpLT53aGVyZSgnaWQnLCAkY2lkKS0+Zmlyc3QoKTsKZWNobyAiQUZURVI6IGJhbGFuY2U9eyRjLT5iYWxhbmNlfSBsb3lhbHR5X3BvaW50cz17JGMtPmxveWFsdHlfcG9pbnRzfSB0b3RhbF9ycD17JGMtPnRvdGFsX3JwfVxuIjsKZWNobyAiRE9ORVxuIjsK' | base64 -d > /tmp/fix_aj.php
+            cd /www/playlist.nivessa.com/app && COMMIT="$COMMIT" php artisan tinker /tmp/fix_aj.php 2>&1
+            rm -f /tmp/fix_aj.php
