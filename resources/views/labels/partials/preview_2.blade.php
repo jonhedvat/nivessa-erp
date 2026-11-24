@@ -74,7 +74,7 @@
 				$is_2x1 = (abs(($barcode_details->width * 1) - 2) < 0.01 && abs(($barcode_details->height * 1) - 1) < 0.01);
 				$txt = 1;
 			@endphp
-			<div class="nv-label" style="overflow: hidden !important;display: flex; flex-wrap: wrap;align-content: {{ $is_2x1 ? 'flex-start' : 'center' }};@if($is_2x1) padding-top: 0.01in; box-sizing: border-box; line-height: 1.05;@endifwidth: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; justify-content: center;">
+			<div class="nv-label" style="overflow: hidden !important;display: flex; flex-wrap: wrap;align-content: {{ $is_2x1 ? 'flex-start; padding-top: 0.01in; box-sizing: border-box; line-height: 1.05;' : 'center;' }}width: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; justify-content: center;">
 
 
 				<div style="@if($is_2x1) width:{{ $barcode_details->width * 1 }}in; text-align:center; @endif">
@@ -158,7 +158,7 @@
 							{{$page_product->packing_date}}
 						</span>
 					@endif
-					@if(!$is_2x1)<br>@endif
+					{!! $is_2x1 ? '' : '<br>' !!}
 
 					{{-- Barcode --}}
 					@php
