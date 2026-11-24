@@ -23,7 +23,7 @@
 			@php $is_nivessa_2x2 = (abs(($barcode_details->width * 1) - 2) < 0.01 && abs(($barcode_details->height * 1) - 2) < 0.01); @endphp
 			@if($is_nivessa_2x2)
 			{{-- Nivessa 2"x2" large-barcode layout --}}
-			<div style="overflow: hidden !important; width: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 0.02in; box-sizing: border-box; text-align: center;">
+			<div class="nv-label" style="overflow: hidden !important; width: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 0.02in; box-sizing: border-box; text-align: center;">
 
 				{{-- Nivessa logo --}}
 				@if(!empty($nivessa_logo_b64))<img src="data:image/png;base64,{{ $nivessa_logo_b64 }}" style="height: 0.3in; width: auto; display: block; margin: 0 auto; flex-shrink: 0;">@endif
@@ -65,7 +65,7 @@
 				{{-- Large barcode fills the remaining width --}}
 				<div style="width: 100%; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;">
 					<img style="max-width: 96% !important; height: 0.45in !important; width: auto; display: block;" src="data:image/png;base64,{{DNS1D::getBarcodePNG($page_product->sub_sku, $page_product->barcode_type, 1, 30, array(0, 0, 0), false)}}">
-					<span style="font-size: 13px !important; letter-spacing: 1px; flex-shrink: 0;">{{ $page_product->sub_sku }}</span>
+					<span class="nv-keep" style="font-size: 13px !important; letter-spacing: 1px; flex-shrink: 0;">{{ $page_product->sub_sku }}</span>
 				</div>
 			</div>
 			@else
@@ -74,7 +74,7 @@
 				$is_2x1 = (abs(($barcode_details->width * 1) - 2) < 0.01 && abs(($barcode_details->height * 1) - 1) < 0.01);
 				$txt = $is_2x1 ? 0.8 : 1;
 			@endphp
-			<div style="overflow: hidden !important;display: flex; flex-wrap: wrap;align-content: center;width: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; justify-content: center;">
+			<div class="nv-label" style="overflow: hidden !important;display: flex; flex-wrap: wrap;align-content: center;width: {{$barcode_details->width * 1}}in; height: {{$barcode_details->height * 1}}in; justify-content: center;">
 
 
 				<div style="@if($is_2x1) width:{{ $barcode_details->width * 1 }}in; text-align:center; @endif">
@@ -117,7 +117,7 @@
 					{{-- Artist --}}
 					@if(!empty($page_product->artist))
 						<span style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
-							Artist:<b>{{ $is_2x1 ? \Illuminate\Support\Str::limit($page_product->artist, 30, '') : $page_product->artist }}</b>
+							Artist:<b>{{ $page_product->artist }}</b>
 						</span>
 					@endif
 
@@ -185,7 +185,7 @@
 							: 'display:block; max-width:90% !important; height:'.$barcode_height_in.'in !important;';
 					@endphp
 					<img style="{{ $barcode_css }}" src="data:image/png;base64,{{DNS1D::getBarcodePNG($page_product->sub_sku, $page_product->barcode_type, $barcode_width_factor, $barcode_native_height, array(0, 0, 0), false)}}">
-					<span style="font-size: {{ $is_2x1 ? 9 : 10 }}px !important">
+					<span class="nv-keep" style="font-size: {{ $is_2x1 ? 9 : 10 }}px !important">
 						{{ $page_product->sub_sku }}
 					</span>
 				</div>
@@ -234,3 +234,50 @@
 	}
 	}
 </style>
+
+<script>
+/* Shrink-to-fit: no text is ever cut off a 2"x1" / 2"x2" label (Sarah 11/23).
+   Per label, shrink the text first, then the barcode height (to 55%, still
+   scans), then the text again, until nothing pokes outside the label and no
+   one-line field is ellipsised. The SKU under the barcode keeps its size. */
+(function () {
+  if (window.__nvFitDone) return;
+  window.__nvFitDone = true;
+  function overflows(label) {
+    var box = label.getBoundingClientRect();
+    var els = label.querySelectorAll('*');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el.offsetParent && el.tagName !== 'IMG') continue;
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      if (r.bottom > box.bottom + 0.5 || r.top < box.top - 0.5 || r.right > box.right + 0.5 || r.left < box.left - 0.5) return true;
+      if (el.tagName === 'SPAN' && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).whiteSpace === 'nowrap') return true;
+    }
+    return false;
+  }
+  function fit(label) {
+    var texts = Array.prototype.filter.call(label.querySelectorAll('span, b'), function (el) {
+      return !el.classList.contains('nv-keep');
+    }).map(function (el) { return { el: el, px: parseFloat(getComputedStyle(el).fontSize) || 10 }; });
+    var imgs = Array.prototype.map.call(label.querySelectorAll('img'), function (el) {
+      return { el: el, h: el.getBoundingClientRect().height };
+    });
+    var t = 1, b = 1;
+    function apply() {
+      texts.forEach(function (x) { x.el.style.setProperty('font-size', (x.px * t).toFixed(2) + 'px', 'important'); });
+      imgs.forEach(function (x) { if (x.h) x.el.style.setProperty('height', (x.h * b).toFixed(2) + 'px', 'important'); });
+    }
+    var guard = 0;
+    while (overflows(label) && guard++ < 60) {
+      if (t > 0.85) t -= 0.05;
+      else if (b > 0.55) b -= 0.05;
+      else if (t > 0.3) t -= 0.03;
+      else break;
+      apply();
+    }
+  }
+  function run() { Array.prototype.forEach.call(document.querySelectorAll('.nv-label'), fit); }
+  if (document.readyState === 'complete') run(); else window.addEventListener('load', run);
+})();
+</script>
