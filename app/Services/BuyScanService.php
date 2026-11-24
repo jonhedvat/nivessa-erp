@@ -574,7 +574,8 @@ class BuyScanService
             if ((int) $c->parent_id !== 0) continue;
             if (self::formatFromText($c->name) !== $format) continue;
             $cond = self::conditionFromText($c->name);
-            if ($cond === null && in_array($format, ['dvd', 'bluray', '4k', 'vhs'], true)) $cond = 'used';
+            // Movie categories don't split used/sealed: they hold both.
+            if ($cond === null && in_array($format, ['dvd', 'bluray', '4k', 'vhs'], true)) { $parents[] = (int) $c->id; continue; }
             if ($cond === $want) $parents[] = (int) $c->id;
             if ($cond === null) $anyCond[] = (int) $c->id;
         }
