@@ -1,0 +1,24 @@
+name: Diag POS submit guard
+
+# Read-only: is the POS one-cart-one-sale guard (pos_submit_tokens) claiming
+# tokens on real sales since deploy?
+
+on:
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run on prod
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          command_timeout: 5m
+          script: |
+            echo 'PD9waHAKLy8gUmVhZC1vbmx5OiBpcyB0aGUgUE9TIG9uZS1jYXJ0LW9uZS1zYWxlIGd1YXJkIGNsYWltaW5nIHRva2VucyBvbiByZWFsIHNhbGVzPwppZiAoIVxTY2hlbWE6Omhhc1RhYmxlKCdwb3Nfc3VibWl0X3Rva2VucycpKSB7IGVjaG8gInRhYmxlIG5vdCBjcmVhdGVkIHlldCAobm8gZmluYWwgUE9TIHNhbGUgc2luY2UgZGVwbG95KVxuRE9ORVxuIjsgZXhpdDsgfQplY2hvICJ0b2tlbnM6ICIgLiBcREI6OnRhYmxlKCdwb3Nfc3VibWl0X3Rva2VucycpLT5jb3VudCgpIC4gIiB8IHdpdGggc2FsZTogIiAuIFxEQjo6dGFibGUoJ3Bvc19zdWJtaXRfdG9rZW5zJyktPndoZXJlTm90TnVsbCgndHJhbnNhY3Rpb25faWQnKS0+Y291bnQoKSAuICIgfCBwZW5kaW5nOiAiIC4gXERCOjp0YWJsZSgncG9zX3N1Ym1pdF90b2tlbnMnKS0+d2hlcmVOdWxsKCd0cmFuc2FjdGlvbl9pZCcpLT5jb3VudCgpIC4gIlxuIjsKJHNpbmNlID0gXERCOjp0YWJsZSgncG9zX3N1Ym1pdF90b2tlbnMnKS0+bWluKCdjcmVhdGVkX2F0Jyk7CmVjaG8gImZpcnN0IHRva2VuOiB7JHNpbmNlfSB8IFBPUyBmaW5hbCBzZWxscyBzaW5jZSB0aGVuOiAiIC4gXERCOjp0YWJsZSgndHJhbnNhY3Rpb25zJyktPndoZXJlKCd0eXBlJywnc2VsbCcpLT53aGVyZSgnc3RhdHVzJywnZmluYWwnKS0+d2hlcmUoJ2NyZWF0ZWRfYXQnLCc+PScsJHNpbmNlID86IG5vdygpKS0+d2hlcmVOdWxsKCdpbXBvcnRfYmF0Y2gnKS0+Y291bnQoKSAuICJcbiI7CmZvcmVhY2ggKFxEQjo6dGFibGUoJ3Bvc19zdWJtaXRfdG9rZW5zJyktPm9yZGVyQnlEZXNjKCdpZCcpLT5saW1pdCgxMCktPmdldCgpIGFzICRyKSBlY2hvICJ7JHItPmNyZWF0ZWRfYXR9IHVzZXI9eyRyLT51c2VyX2lkfSB0eD17JHItPnRyYW5zYWN0aW9uX2lkfVxuIjsKZWNobyAiRE9ORVxuIjsK' | base64 -d > /tmp/pos_guard.php
+            cd /www/playlist.nivessa.com/app && php artisan tinker /tmp/pos_guard.php 2>&1
+            rm -f /tmp/pos_guard.php
