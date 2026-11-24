@@ -2552,7 +2552,10 @@ class SellPosController extends Controller
                 $image = null;
             }
             $items[] = [
-                'name' => !empty($line->product) ? $line->product->name : (trim((string) ($line->product_name ?? '')) !== '' ? $line->product_name : 'Item'),
+                'name' => TransactionUtil::receiptLineName(
+                    !empty($line->product) ? $line->product->name : (trim((string) ($line->product_name ?? '')) !== '' ? $line->product_name : 'Item'),
+                    !empty($line->product->artist) ? $line->product->artist : ($line->product_artist ?? '')
+                ),
                 'quantity' => $qty,
                 'price' => $unitPrice,
                 'image' => $image,

@@ -1995,6 +1995,21 @@ class TransactionUtil extends Util
     }
 
     /**
+     * Receipt line name with the artist in front ("Pink Floyd - The Wall").
+     * Product names are usually just the title; skip the artist when the name
+     * already has it (older imports are "Artist - Title").
+     */
+    public static function receiptLineName($name, $artist)
+    {
+        $name = trim((string) $name);
+        $artist = trim((string) $artist);
+        if ($artist === '' || $name === '' || mb_stripos($name, $artist) !== false) {
+            return $name;
+        }
+        return $artist . ' - ' . $name;
+    }
+
+    /**
      * Returns each line details for sell invoice display
      *
      * @return array
@@ -2013,6 +2028,7 @@ class TransactionUtil extends Util
         foreach ($lines as $line) {
             $product = $line->product;
             $productName = !empty($product) ? $product->name : $line->product_name;
+            $productName = self::receiptLineName($productName, !empty($product->artist) ? $product->artist : ($line->product_artist ?? ''));
             $variation = $line->variations;
             $variationName = (!empty($variation) ? ((empty($variation->name) || $variation->name == 'DUMMY') ? '' : $variation->name) : '');
             $product_variation = !empty($line->variations) ? $line->variations->product_variation : $line->product_variation;
