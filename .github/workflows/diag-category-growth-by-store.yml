@@ -1,0 +1,32 @@
+# One-off, read-only: monthly units + revenue by category and subcategory (genre)
+# for Hollywood and Pico, last 12 months. SELECTs only. Writes nothing.
+name: Diag category growth by store (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKaW5pX3NldCgnbWVtb3J5X2xpbWl0JywgJzEwMjRNJyk7IHNldF90aW1lX2xpbWl0KDApOwokc2luY2UgPSBkYXRlKCdZLW0tMDEnLCBzdHJ0b3RpbWUoJ2ZpcnN0IGRheSBvZiAtMTIgbW9udGgnKSk7CiRsb2NzID0gREI6OnRhYmxlKCdidXNpbmVzc19sb2NhdGlvbnMnKS0+d2hlcmVJbignbmFtZScsIFsnaG9sbHl3b29kJywncGljbyddKS0+cGx1Y2soJ2lkJywnbmFtZScpOwpmb3JlYWNoICgkbG9jcyBhcyAkbmFtZSA9PiAkaWQpIHsKICBlY2hvICJMT0MgJG5hbWU9JGlkXG4iOwogICRyb3dzID0gREI6OnNlbGVjdCgiU0VMRUNUIERBVEVfRk9STUFUKHQudHJhbnNhY3Rpb25fZGF0ZSwnJVktJW0nKSBtLCBDT0FMRVNDRShjLm5hbWUsJyhub25lKScpIGNhdCwgQ09BTEVTQ0Uoc2MubmFtZSwnKG5vbmUpJykgc3ViLAogICAgICBST1VORChTVU0obC5xdWFudGl0eSAtIENPQUxFU0NFKGwucXVhbnRpdHlfcmV0dXJuZWQsMCkpKSB1LAogICAgICBST1VORChTVU0oKGwucXVhbnRpdHkgLSBDT0FMRVNDRShsLnF1YW50aXR5X3JldHVybmVkLDApKSAqIGwudW5pdF9wcmljZSkpIHJldgogICAgRlJPTSB0cmFuc2FjdGlvbl9zZWxsX2xpbmVzIGwgSk9JTiB0cmFuc2FjdGlvbnMgdCBPTiB0LmlkPWwudHJhbnNhY3Rpb25faWQKICAgIEpPSU4gcHJvZHVjdHMgcCBPTiBwLmlkPWwucHJvZHVjdF9pZAogICAgTEVGVCBKT0lOIGNhdGVnb3JpZXMgYyBPTiBjLmlkPXAuY2F0ZWdvcnlfaWQgTEVGVCBKT0lOIGNhdGVnb3JpZXMgc2MgT04gc2MuaWQ9cC5zdWJfY2F0ZWdvcnlfaWQKICAgIFdIRVJFIHQudHlwZT0nc2VsbCcgQU5EIHQuc3RhdHVzPSdmaW5hbCcgQU5EIHQubG9jYXRpb25faWQ9PyBBTkQgdC50cmFuc2FjdGlvbl9kYXRlID49ID8gQU5EIGwucGFyZW50X3NlbGxfbGluZV9pZCBJUyBOVUxMCiAgICBHUk9VUCBCWSBtLCBjYXQsIHN1YiIsIFskaWQsICRzaW5jZV0pOwogIGZvcmVhY2ggKCRyb3dzIGFzICRyKSBlY2hvICJST1dcdCRuYW1lXHR7JHItPm19XHR7JHItPmNhdH1cdHskci0+c3VifVx0eyRyLT51fVx0eyRyLT5yZXZ9XG4iOwp9CmVjaG8gIlRPREFZICIuZGF0ZSgnWS1tLWQnKS4iXG4iOwo=' | base64 -d > /tmp/diag_cat_growth.php
+            php /tmp/diag_cat_growth.php
+            rm -f /tmp/diag_cat_growth.php
