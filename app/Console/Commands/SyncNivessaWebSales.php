@@ -143,6 +143,12 @@ class SyncNivessaWebSales extends Command
             foreach ($bookings as $b) {
                 $payStatus = strtolower((string) (data_get($b, 'payment.status') ?? ''));
                 if (!in_array($payStatus, ['paid', 'partial'], true)) { $totals['rental_skip']++; continue; }
+                // Cancelled bookings aren't sales. 11/15/26 a scanner posted 1,551 junk
+                // bookings with a forged "paid" status; the website cancelled them as spam
+                // but this sync had already imported them (removed via fix-spam-rental-sales).
+                if (strtolower((string) ($b['status'] ?? '')) === 'cancelled') { $totals['rental_skip']++; continue; }
+                $evDate = $this->parseDate(data_get($b, 'booking.date'));
+                if ($evDate && $evDate->year < 2000) { $totals['rental_skip']++; continue; }
 
                 $createdAt = $this->parseDate($b['createdAt'] ?? data_get($b, 'booking.date') ?? null);
                 if ($createdAt && $createdAt->lt($cutoff)) { $totals['rental_skip']++; continue; }
