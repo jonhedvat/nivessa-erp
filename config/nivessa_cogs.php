@@ -25,6 +25,15 @@ return [
     // First match wins — put specific patterns before general ones.
     'patterns' => [
         ['match' => 'damaged',           'price' => 0.00],   // Damaged Vinyl & CDs
+        // Real category names ("Vinyl - Used" etc.). The phrases below never
+        // matched them, so uncosted used vinyl fell to the bare 'vinyl' row at
+        // $17 (sealed cost). Jon 11/23: used vinyl = $0.10.
+        ['match' => 'vinyl - used',      'price' => 0.10],
+        ['match' => 'cd - used',         'price' => 0.10],
+        ['match' => 'cassettes - used',  'price' => 0.30],
+        ['match' => 'vinyl - sealed',    'price' => 17.00],
+        ['match' => 'cd - sealed',       'price' => 6.00],
+        ['match' => 'cassettes - sealed','price' => 6.00],
         ['match' => 'used cassette',     'price' => 0.30],
         ['match' => 'new cassette',      'price' => 6.00],
         ['match' => 'sealed cassette',   'price' => 6.00],
