@@ -211,6 +211,8 @@ $(document).ready(function() {
             form.setAttribute('method', 'post');
             form.setAttribute('target', '_blank');
             form.submit();
+            // Printed: don't bring this batch back on the next visit (crash autosave only).
+            clear_label_queue();
             form.setAttribute('action', prevAction || '#');
             if (prevTarget) {
                 form.setAttribute('target', prevTarget);
@@ -259,7 +261,16 @@ $(document).ready(function() {
 
 function get_label_product_row(product_id, variation_id) {
     if (product_id) {
-        var row_count = $('table#product_table tbody tr').length;
+        // Next unused products[N] index (row count reuses an index after a delete,
+        // and the duplicate row silently overwrote another one -> missing label).
+        var row_count = 0;
+        $('table#product_table tbody [name^="products["]').each(function() {
+            var m = /^products\[(\d+)\]/.exec($(this).attr('name'));
+            if (m && parseInt(m[1], 10) + 1 > row_count) {
+                row_count = parseInt(m[1], 10) + 1;
+            }
+        });
+        row_count = Math.max(row_count, $('table#product_table tbody tr').length);
         $.ajax({
             method: 'GET',
             url: '/labels/add-product-row',

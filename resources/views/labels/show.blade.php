@@ -80,7 +80,7 @@
 						<td>
 							<div class="checkbox">
 							    <label>
-							    	<input type="checkbox" name="print[variations]" value="0"> <b>@lang( 'barcode.print_variations' )</b>
+							    	<input type="checkbox" name="print[variations]" value="1"> <b>@lang( 'barcode.print_variations' )</b>
 							    </label>
 							</div>
 
@@ -129,7 +129,7 @@
 						<td>
 							<div class="checkbox">
 							    <label>
-							    	<input type="checkbox" name="print[business_name]" value="0"> <b>@lang( 'barcode.print_business_name' )</b>
+							    	<input type="checkbox" name="print[business_name]" value="1"> <b>@lang( 'barcode.print_business_name' )</b>
 							    </label>
 							</div>
 
@@ -144,7 +144,7 @@
 						<td>
 							<div class="checkbox">
 							    <label>
-							    	<input type="checkbox" name="print[packing_date]" value="0"> <b>@lang( 'lang_v1.print_packing_date' )</b>
+							    	<input type="checkbox" name="print[packing_date]" value="1"> <b>@lang( 'lang_v1.print_packing_date' )</b>
 							    </label>
 							</div>
 

@@ -422,6 +422,10 @@ class DiscogsReleaseImportMapper
             $name = mb_strtolower(trim((string) ($f->name ?? '')));
             if ($name !== '') {
                 $tokens[] = $name; // "vinyl", "cd", "cassette", "file"
+                // CD-R / SACD / Hybrid discs are CDs (were treated as vinyl).
+                if (in_array($name, ['cdr', 'sacd', 'hybrid', 'cd-r'], true)) {
+                    $tokens[] = 'cd';
+                }
             }
             if (!empty($f->descriptions) && is_array($f->descriptions)) {
                 foreach ($f->descriptions as $d) {
@@ -760,8 +764,28 @@ class DiscogsReleaseImportMapper
             // "no category" instead of selecting the lone sealed match.
             $best = null;
             $bestScore = null;
+            // The release's medium (vinyl / cd / cassette) when Discogs says it.
+            // A parent in a different medium only wins when nothing else matches
+            // (a 2024 Gospel LP was landing in "CD - Sealed > Gospel" because
+            // Vinyl - Sealed had no Gospel sub and the used parent is -100).
+            $mediumOf = function (array $toks) {
+                if (in_array('cd', $toks, true)) return 'cd';
+                if (in_array('cassette', $toks, true)) return 'cassette';
+                if (in_array('vinyl', $toks, true)) return 'vinyl';
+                return null;
+            };
+            $releaseMedium = $mediumOf($formatTokens);
             foreach ($matches as $m) {
                 $score = $m['sub_exact'] ? 2 : ($m['sub_has_term'] ? 1 : 0);
+                if ($releaseMedium !== null && $m['parent_name'] !== '') {
+                    $pnm = $m['parent_name'];
+                    $parentMedium = preg_match('/\bcds?\b/u', $pnm) ? 'cd'
+                        : (preg_match('/cassette/u', $pnm) ? 'cassette'
+                        : (preg_match('/vinyl|\b(7|10|12)"|\b45\b|\blps?\b/u', $pnm) ? 'vinyl' : null));
+                    if ($parentMedium !== null && $parentMedium !== $releaseMedium) {
+                        $score -= 500;
+                    }
+                }
                 $pn = $m['parent_name'];
 
                 // If the parent is keyed to a specific size (7"/10"/12"),
@@ -777,10 +801,9 @@ class DiscogsReleaseImportMapper
                 $sizeConflict = !empty($parentSizes)
                     && empty(array_intersect($releaseSizes, $parentSizes));
 
-                $isUsedParent = ($pn !== '') && (
-                    mb_strpos($pn, 'used vinyl') !== false
-                    || mb_strpos($pn, 'used cd') !== false
-                );
+                // Real names are "Vinyl - Used" / "CD - Used" / "Cassettes - Used"
+                // (the old 'used vinyl' / 'used cd' phrases never matched).
+                $isUsedParent = ($pn !== '') && preg_match('/\bused\b/u', $pn) === 1;
                 $isSealedParent = ($pn !== '') && (
                     mb_strpos($pn, 'sealed') !== false
                     || preg_match('/\bnew (vinyl|cd|cds|cassette|cassettes|lp|45s)\b/u', $pn) === 1

@@ -104,14 +104,15 @@
 						</span>
 					@endif
 					
-					{{-- Genre --}}
-					@if(!empty($print['price']))
+					{{-- Genre (printed with or without the price; no subcategory -> the category, never a bare "Genre:") --}}
+					@if(!empty($page_product->sub_category) || !empty($page_product->category))
 						<span style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
-							Genre:<b style="font-size: {{ round($print['name_size']*$txt) + 3 }}px;">{{$page_product->sub_category}}</b>
+							Genre:<b style="font-size: {{ round($print['name_size']*$txt) + 3 }}px;">{{ !empty($page_product->sub_category) ? $page_product->sub_category : $page_product->category }}</b>
 						</span>
-						@if(!empty($page_product->file_under))
+					@endif
+					@if(!empty($page_product->file_under))
 							<span style="display: block !important; font-size: {{ $is_2x1 ? 8 : 9 }}px; line-height: 1.1; white-space: nowrap;">File under: <b>{{ $page_product->file_under }}</b></span>
-						@endif
+					@endif
 
 					{{-- Artist --}}
 					@if(!empty($page_product->artist))
@@ -119,10 +120,6 @@
 							Artist:<b>{{ $is_2x1 ? \Illuminate\Support\Str::limit($page_product->artist, 30, '') : $page_product->artist }}</b>
 						</span>
 					@endif
-				@endif
-				@if(empty($print['price']) && !empty($page_product->file_under))
-					<span style="display: block !important; font-size: {{ $is_2x1 ? 8 : 9 }}px; line-height: 1.1; white-space: nowrap;">File under: <b>{{ $page_product->file_under }}</b></span>
-				@endif
 
 				{{-- Bin Position --}}
 				@if(!empty($page_product->bin_position))

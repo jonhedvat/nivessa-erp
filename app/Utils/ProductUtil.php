@@ -1902,9 +1902,20 @@ class ProductUtil extends Util
                         // Split search term into words
                         $searchTerms = explode(' ', $search_term);
                         
-                        $query->where(function($q) use ($searchTerms) {
+                        // Each word must be in the title or (when artist search is on) the
+                        // artist, so "pink floyd wall" finds The Wall by Pink Floyd.
+                        $alsoArtist = in_array('artist', $search_fields);
+                        $query->where(function($q) use ($searchTerms, $alsoArtist) {
                             foreach($searchTerms as $term) {
-                                $q->where('products.name', 'like', '%' . $term . '%');
+                                if ($term === '') {
+                                    continue;
+                                }
+                                $q->where(function ($w) use ($term, $alsoArtist) {
+                                    $w->where('products.name', 'like', '%' . $term . '%');
+                                    if ($alsoArtist) {
+                                        $w->orWhere('products.artist', 'like', '%' . $term . '%');
+                                    }
+                                });
                             }
                         });
                     }

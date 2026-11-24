@@ -244,12 +244,15 @@ class LabelsController extends Controller
                 }
 
                 if (!empty($value['price_group_id'])) {
-                    $tax_id = $print['price_type'] == 'inclusive' ? : $details->tax_id;
+                    $tax_id = $print['price_type'] == 'inclusive' ? null : $details->tax_id;
 
                     $group_prices = $this->productUtil->getVariationGroupPrice($value['variation_id'], $value['price_group_id'], $tax_id);
 
-                    $details->sell_price_inc_tax = $group_prices['price_inc_tax'];
-                    $details->default_sell_price = $group_prices['price_exc_tax'];
+                    // No price set for this group -> keep the normal price (was printing $0.00).
+                    if ($group_prices['price_inc_tax'] !== null && $group_prices['price_inc_tax'] !== '') {
+                        $details->sell_price_inc_tax = $group_prices['price_inc_tax'];
+                        $details->default_sell_price = $group_prices['price_exc_tax'];
+                    }
                     
                     
                 }
