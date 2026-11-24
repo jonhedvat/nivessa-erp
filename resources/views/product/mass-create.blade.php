@@ -4272,6 +4272,8 @@ a, b, c, d, e</textarea>
         $row.find('.bfc-lot-select').val(String(l.id));
         setRowCost($row, l);
         if (l.upc && !l.upc_taken) $row.find('input[name*="[sku]"]').first().val(l.upc);
+        var n = ($('#bfc_add_status').data('priced') || 0) + 1;
+        $('#bfc_add_status').data('priced', n).text(n + ' priced and added as rows (category, cost and lot filled in). Check each price, then Save.');
     };
     function openBulkEntry() {
         var $box = $('#bulk_product_text').closest('.box');
