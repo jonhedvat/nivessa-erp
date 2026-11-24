@@ -37,11 +37,11 @@
 							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 4, 15) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{$page_product->artist}}</span>
 						@endif
 						@if(!empty($page_product->category) || !empty($page_product->sub_category))
-							<span style="display: block !important; font-weight: bold; font-size: {{ max((int)($print['name_size'] ?? 10) + 5, 16) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ trim(($page_product->category ?? '') . (!empty($page_product->category) && !empty($page_product->sub_category) ? ' / ' : '') . ($page_product->sub_category ?? '')) }}</span>
+							<span class="nv-pri" style="display: block !important; font-weight: bold; font-size: {{ max((int)($print['name_size'] ?? 10) + 5, 16) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ trim(($page_product->category ?? '') . (!empty($page_product->category) && !empty($page_product->sub_category) ? ' / ' : '') . ($page_product->sub_category ?? '')) }}</span>
 					@endif
 
 					@if(!empty($page_product->file_under))
-						<span style="display: block !important; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">File under: <b>{{ $page_product->file_under }}</b></span>
+						<span class="nv-pri" style="display: block !important; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">File under: <b>{{ $page_product->file_under }}</b></span>
 					@endif
 					@if(!empty($print['variations']) && $page_product->is_dummy != 1)
 						<span style="display: block !important; font-size: {{$print['variations_size']}}px;">{{$page_product->product_variation_name}}:<b>{{$page_product->variation_name}}</b></span>
@@ -106,12 +106,12 @@
 					
 					{{-- Genre (printed with or without the price; no subcategory -> the category, never a bare "Genre:") --}}
 					@if(!empty($page_product->sub_category) || !empty($page_product->category))
-						<span style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
+						<span class="nv-pri" style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
 							Genre:<b style="font-size: {{ round($print['name_size']*$txt) + 3 }}px;">{{ !empty($page_product->sub_category) ? $page_product->sub_category : $page_product->category }}</b>
 						</span>
 					@endif
 					@if(!empty($page_product->file_under))
-							<span style="display: block !important; font-size: {{ $is_2x1 ? 8 : 9 }}px; line-height: 1.1; white-space: nowrap;">File under: <b>{{ $page_product->file_under }}</b></span>
+							<span class="nv-pri" style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px; line-height: 1.1; white-space: nowrap;">File under: <b>{{ $page_product->file_under }}</b></span>
 					@endif
 
 					{{-- Artist --}}
@@ -120,13 +120,6 @@
 							Artist:<b>{{ $page_product->artist }}</b>
 						</span>
 					@endif
-
-				{{-- Bin Position --}}
-				@if(!empty($page_product->bin_position))
-					<span style="display: block !important; font-size: {{ round(($print['name_size'] ?? 12)*$txt) }}px; font-weight: bold;">
-						Bin: {{ $page_product->bin_position }}
-					</span>
-				@endif
 
 				@if(!empty($page_product->condition_label))
 					<span style="display: block !important; font-size: {{ round(($print['name_size'] ?? 12)*$txt) }}px; font-weight: bold;">{{ $page_product->condition_label }}</span>
@@ -259,20 +252,25 @@
   function fit(label) {
     var texts = Array.prototype.filter.call(label.querySelectorAll('span, b'), function (el) {
       return !el.classList.contains('nv-keep');
-    }).map(function (el) { return { el: el, px: parseFloat(getComputedStyle(el).fontSize) || 10 }; });
+    }).map(function (el) {
+      return { el: el, px: parseFloat(getComputedStyle(el).fontSize) || 10, pri: !!el.closest('.nv-pri') };
+    });
     var imgs = Array.prototype.map.call(label.querySelectorAll('img'), function (el) {
       return { el: el, h: el.getBoundingClientRect().height };
     });
-    var t = 1, b = 1;
+    // t = other text, p = genre / file under (shrunk last), b = barcode height
+    var t = 1, p = 1, b = 1;
     function apply() {
-      texts.forEach(function (x) { x.el.style.setProperty('font-size', (x.px * t).toFixed(2) + 'px', 'important'); });
+      texts.forEach(function (x) { x.el.style.setProperty('font-size', (x.px * (x.pri ? p : t)).toFixed(2) + 'px', 'important'); });
       imgs.forEach(function (x) { if (x.h) x.el.style.setProperty('height', (x.h * b).toFixed(2) + 'px', 'important'); });
     }
     var guard = 0;
     while (overflows(label) && guard++ < 60) {
-      if (t > 0.85) t -= 0.05;
+      if (t > 0.6) t -= 0.05;
       else if (b > 0.55) b -= 0.05;
-      else if (t > 0.3) t -= 0.03;
+      else if (t > 0.4) t -= 0.03;
+      else if (p > 0.4) p -= 0.03;
+      else if (t > 0.25) t -= 0.03;
       else break;
       apply();
     }
