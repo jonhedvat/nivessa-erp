@@ -5227,6 +5227,7 @@ class SellPosController extends Controller
         if (!empty($request->input('is_direct_sale'))) {
             $is_direct_sale = true;
         }
+        $pos_submit_token_claimed = null;
 
         // Nivessa: only the Cashier duty runs a register. A non-cashier duty
         // (Warehouse / Discogs / Admin) — or a non-cashier role — doesn't block
@@ -5410,6 +5411,21 @@ class SellPosController extends Controller
                 } catch (\Throwable $e) {
                     // Guard must never block a sale — log and continue.
                     \Log::warning('POS duplicate-ring guard skipped: ' . $e->getMessage());
+                }
+
+                // One cart = one sale (Sarah 2026-11-24): claim this cart's
+                // submit token before saving. A second Cash/Card click or a
+                // retry of the same cart gets "already saved" instead of a
+                // second sale (extra stock off, extra points, credit spent
+                // twice). See App\Services\PosSubmitGuard.
+                if (!$is_direct_sale && ($input['status'] ?? '') === 'final') {
+                    $claim = \App\Services\PosSubmitGuard::claim($request->input('pos_submit_token'), $business_id, $user_id);
+                    if (is_object($claim)) {
+                        return \App\Services\PosSubmitGuard::duplicateResponse($claim);
+                    }
+                    if ($claim === true) {
+                        $pos_submit_token_claimed = $request->input('pos_submit_token');
+                    }
                 }
 
                 DB::beginTransaction();
@@ -5807,6 +5823,11 @@ class SellPosController extends Controller
 
                 DB::commit();
 
+                if ($pos_submit_token_claimed !== null) {
+                    \App\Services\PosSubmitGuard::markSaved($pos_submit_token_claimed, $transaction->id);
+                    $pos_submit_token_claimed = null;
+                }
+
                 // Time clock (Sarah 2026-10-13): the network a finalized sale
                 // is rung from is the store's; learn it for the clock's store
                 // check. Cache-throttled, never throws, never blocks the sale.
@@ -5904,6 +5925,9 @@ class SellPosController extends Controller
             }
         } catch (\Exception $e) {
             DB::rollBack();
+            if ($pos_submit_token_claimed !== null) {
+                \App\Services\PosSubmitGuard::release($pos_submit_token_claimed);
+            }
             \Log::emergency("File:" . $e->getFile(). "Line:" . $e->getLine(). "Message:" . $e->getMessage());
             $msg = trans("messages.something_went_wrong");
                 

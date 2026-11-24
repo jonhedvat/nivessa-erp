@@ -72,6 +72,37 @@ function posEnsureUniqueRowIndexes() {
     $(document).ajaxComplete(attach);
 })();
 
+// One cart = one sale (Sarah 2026-11-24). Each cart gets a random token the
+// server claims before saving; a second Cash/Card click or a retry of the same
+// cart is answered "already saved" instead of ringing it again. The token is
+// renewed only when the cart is cleared after a saved sale (reset_pos_form).
+window.pos_set_submit_token = function() {
+    if (typeof pos_form_obj === 'undefined' || !pos_form_obj || !pos_form_obj.length) { return; }
+    var t = '';
+    try {
+        var a = new Uint8Array(16);
+        (window.crypto || window.msCrypto).getRandomValues(a);
+        for (var i = 0; i < a.length; i++) { t += ('0' + a[i].toString(16)).slice(-2); }
+    } catch (e) {
+        t = Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    }
+    var $tok = pos_form_obj.find('input[name="pos_submit_token"]');
+    if (!$tok.length) {
+        $tok = $('<input type="hidden" name="pos_submit_token">').appendTo(pos_form_obj);
+    }
+    $tok.val(t);
+};
+// True while a sale is being saved. Self-heals after 45s so a lost response
+// can never lock the register (the server token still blocks a duplicate).
+window.pos_submit_busy = function() {
+    if (!window.pos_submit_in_progress) { return false; }
+    if (Date.now() - (window.pos_submit_started_at || 0) > 45000) {
+        window.pos_submit_in_progress = false;
+        return false;
+    }
+    return true;
+};
+
 $(document).ready(function() {
     customer_set = false;
     window.pos_submit_in_progress = false;
@@ -105,6 +136,7 @@ $(document).ready(function() {
         pos_form_obj = $('form#edit_pos_sell_form');
     } else {
         pos_form_obj = $('form#add_pos_sell_form');
+        window.pos_set_submit_token();
         // Recalculate totals on new POS form to ensure default tax is applied
         setTimeout(function() {
             pos_total_row();
@@ -1418,6 +1450,7 @@ $(document).ready(function() {
 
     //Finalize invoice, open payment modal
     $('button#pos-finalize').click(function() {
+        if (window.pos_submit_busy()) { return false; }
         // Block empty sale. Bag-fee row is auto-added and has the same
         // .product_row class, so exclude [data-plastic-bag="true"] from the
         // count — a cart that contains only a bag fee is still "empty" from
@@ -1488,6 +1521,8 @@ $(document).ready(function() {
 
     //Finalize without showing payment options
     $('button.pos-express-finalize').click(function() {
+        // Sale already saving — ignore extra Cash/Card clicks.
+        if (window.pos_submit_busy()) { return false; }
         // Block empty sale — see comment on #pos-finalize handler above; same
         // reason for excluding the bag-fee row from the cart count.
         if ($('table#pos_table tbody').find('.product_row:not([data-plastic-bag="true"])').length <= 0) {
@@ -1519,7 +1554,6 @@ $(document).ready(function() {
             if (sc_remaining < 0.05) {
                 // Store credit covers the whole sale — nothing left for the card.
                 // Row 0 already holds the advance line, so just finalize.
-                window.pos_submit_in_progress = false;
                 calculate_balance_due();
                 pos_form_obj.submit();
                 return false;
@@ -1584,7 +1618,6 @@ $(document).ready(function() {
                 }
             }
 
-            window.pos_submit_in_progress = false;
             calculate_balance_due();
             pos_form_obj.submit();
             return false;
@@ -1654,8 +1687,8 @@ $(document).ready(function() {
         } else if (pay_method == 'suspend') {
             $('div#confirmSuspendModal').modal('show');
         } else {
-            // Safety: ensure we don't get stuck in a "submit in progress" state.
-            window.pos_submit_in_progress = false;
+            // (No longer force-clears pos_submit_in_progress here — doing so let
+            // a 2nd click submit the same cart again. pos_submit_busy() self-heals.)
             // Keep explicit trace of store credit used in payment note for sell details.
             var store_credit_used_amount = parseFloat($('#store_credit_used_amount').val() || 0) || 0;
             if (store_credit_used_amount > 0) {
@@ -1782,6 +1815,7 @@ $(document).ready(function() {
                 return false;
             }
             window.pos_submit_in_progress = true;
+            window.pos_submit_started_at = Date.now();
             // var total_payble = __read_number($('input#final_total_input'));
             // var total_paying = __read_number($('input#total_paying_input'));
             var cnf = true;
@@ -1822,6 +1856,7 @@ $(document).ready(function() {
 
             if (total_advance_payments > 1) {
                 alert(LANG.advance_payment_cannot_be_more_than_once);
+                window.pos_submit_in_progress = false;
                 return false;
             }
 
@@ -1841,6 +1876,7 @@ $(document).ready(function() {
             });
 
             if (!is_msp_valid) {
+                window.pos_submit_in_progress = false;
                 return false;
             }
 
@@ -1871,6 +1907,21 @@ $(document).ready(function() {
                         // Duplicate-ring guard: server thinks this cashier just
                         // rang an identical sale. Ask once; if the cashier says
                         // yes, resubmit with dup_ok=1 so it goes through.
+                        // Same cart already saved (double click / retry): the
+                        // first request made the sale — just clear the cart.
+                        if (result && result.already_saved) {
+                            $('#modal_payment').modal('hide');
+                            toastr.info(result.msg);
+                            reset_pos_form();
+                            enable_pos_form_actions();
+                            return;
+                        }
+                        // Same cart still saving from the first click — its own
+                        // response will finish the sale; leave the register busy.
+                        if (result && result.already_saving) {
+                            toastr.info(result.msg);
+                            return;
+                        }
                         if (result && result.duplicate_confirm) {
                             enable_pos_form_actions();
                             window.pos_submit_in_progress = false;
@@ -4273,6 +4324,8 @@ function isValidPosForm() {
 
 function reset_pos_form(){
     window.pos_submit_in_progress = false;
+    // New cart → new submit token (see pos_set_submit_token).
+    if (typeof window.pos_set_submit_token === 'function') { window.pos_set_submit_token(); }
 
 	// Clear the cart lines FIRST — before the form.reset()/customer/location
 	// rebuilds below. If any of those throw, the just-completed sale is already
@@ -5034,12 +5087,16 @@ function disable_pos_form_actions(){
     $('div.pos-processing').show();
     $('#pos-save').attr('disabled', 'true');
     $('div.pos-form-actions').find('button').attr('disabled', 'true');
+    // The Cash/Card pay buttons live outside .pos-form-actions, so they stayed
+    // clickable mid-save — disable them too.
+    $('button.pos-express-finalize, button#pos-finalize, button#pos-save-card').attr('disabled', 'true');
 }
 
 function enable_pos_form_actions(){
     $('div.pos-processing').hide();
     $('#pos-save').removeAttr('disabled');
     $('div.pos-form-actions').find('button').removeAttr('disabled');
+    $('button.pos-express-finalize, button#pos-finalize, button#pos-save-card').removeAttr('disabled');
 }
 
 $(document).on('change', '#recur_interval_type', function() {
