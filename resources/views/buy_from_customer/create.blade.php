@@ -2115,9 +2115,17 @@ HTML;
         // Items as saved by the last Save and continue (set once lines are built).
         var BFC_SAVED_LINES = null;
         function bfcLinesSnapshot() {
-            return $('#offer_lines_table').find('input[name^="lines["], select[name^="lines["]').filter(function () {
-                return this.type !== 'checkbox' || this.checked;
-            }).map(function () { return this.name + '=' + $.trim($(this).val() || ''); }).get().join('&');
+            // Blank rows (a fresh "+ Add line") don't count until something is typed.
+            return $('#offer_lines_table tbody tr').map(function () {
+                var $r = $(this);
+                var inUse = $.trim($r.find('input[name$="[title]"]').val() || '') !== ''
+                    || $.trim($r.find('input[name$="[discogs_median_price]"]').val() || '') !== ''
+                    || $.trim($r.find('input[name$="[discogs_link]"]').val() || '') !== '';
+                if (!inUse) return null;
+                return $r.find('input[name^="lines["], select[name^="lines["]').filter(function () {
+                    return this.type !== 'checkbox' || this.checked;
+                }).map(function () { return this.name.replace(/^lines\[\d+\]/, '') + '=' + $.trim($(this).val() || ''); }).get().join('&');
+            }).get().join('|');
         }
         function bfcLinesChanged() {
             return typeof BFC_SAVED_LINES === 'string' && bfcLinesSnapshot() !== BFC_SAVED_LINES;
