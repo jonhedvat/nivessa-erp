@@ -37,11 +37,11 @@
 							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 4, 15) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{$page_product->artist}}</span>
 						@endif
 						@if(!empty($page_product->category) || !empty($page_product->sub_category))
-							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 3, 14) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ trim(($page_product->category ?? '') . (!empty($page_product->category) && !empty($page_product->sub_category) ? ' / ' : '') . ($page_product->sub_category ?? '')) }}</span>
+							<span style="display: block !important; font-weight: bold; font-size: {{ max((int)($print['name_size'] ?? 10) + 5, 16) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ trim(($page_product->category ?? '') . (!empty($page_product->category) && !empty($page_product->sub_category) ? ' / ' : '') . ($page_product->sub_category ?? '')) }}</span>
 					@endif
 
 					@if(!empty($page_product->file_under))
-						<span style="display: inline-block !important; margin: 1px 0; padding: 0 4px; border: 1.5px solid #000; font-weight: bold; text-transform: uppercase; font-size: {{ max((int)($print['name_size'] ?? 10) + 3, 14) }}px; white-space: nowrap; overflow: hidden; max-width: 96%;">File under: {{ $page_product->file_under }}</span>
+						<span style="display: block !important; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">File under: <b>{{ $page_product->file_under }}</b></span>
 					@endif
 					@if(!empty($print['variations']) && $page_product->is_dummy != 1)
 						<span style="display: block !important; font-size: {{$print['variations_size']}}px;">{{$page_product->product_variation_name}}:<b>{{$page_product->variation_name}}</b></span>
@@ -107,11 +107,11 @@
 					{{-- Genre --}}
 					@if(!empty($print['price']))
 						<span style="display: block !important; font-size: {{ round($print['name_size']*$txt) }}px">
-							Genre:<b>{{$page_product->sub_category}}</b>
-							@if(!empty($page_product->file_under))
-								<b style="display: inline-block; margin-left: 3px; padding: 0 3px; border: 1px solid #000; text-transform: uppercase; line-height: 1.1; white-space: nowrap;">File under: {{ $page_product->file_under }}</b>
-							@endif
+							Genre:<b style="font-size: {{ round($print['name_size']*$txt) + 3 }}px;">{{$page_product->sub_category}}</b>
 						</span>
+						@if(!empty($page_product->file_under))
+							<span style="display: block !important; font-size: {{ $is_2x1 ? 8 : 9 }}px; line-height: 1.1; white-space: nowrap;">File under: <b>{{ $page_product->file_under }}</b></span>
+						@endif
 
 					{{-- Artist --}}
 					@if(!empty($page_product->artist))
@@ -121,7 +121,7 @@
 					@endif
 				@endif
 				@if(empty($print['price']) && !empty($page_product->file_under))
-					<b style="display: inline-block; padding: 0 3px; border: 1px solid #000; text-transform: uppercase; line-height: 1.1; white-space: nowrap; font-size: {{ round(($print['name_size'] ?? 12)*$txt) }}px;">File under: {{ $page_product->file_under }}</b><br>
+					<span style="display: block !important; font-size: {{ $is_2x1 ? 8 : 9 }}px; line-height: 1.1; white-space: nowrap;">File under: <b>{{ $page_product->file_under }}</b></span>
 				@endif
 
 				{{-- Bin Position --}}
