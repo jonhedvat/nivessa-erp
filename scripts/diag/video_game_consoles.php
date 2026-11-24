@@ -14,7 +14,7 @@ echo "PARENT #{$parent->id} subs=" . count($subs) . "\n";
 
 // Most specific first.
 $rules = [
-  'Xbox Series X' => '/xbox series|\bseries x\b/', 'Xbox One' => '/xbox one|\bxb1\b/', 'Xbox 360' => '/xbox ?360|\bx360\b/',
+  'Xbox Series X' => '/xbox series|\bseries x\b/', 'Xbox One' => '/xbox\s*one|\bxb1\b/', 'Xbox 360' => '/xbox\s*360|\bx360\b/',
   'Xbox' => '/\bxbox\b/',
   'PS5' => '/\bps ?5\b|playstation ?5/', 'PS4' => '/\bps ?4\b|playstation ?4/', 'PS3' => '/\bps ?3\b|playstation ?3/',
   'PS2' => '/\bps ?2\b|playstation ?2/', 'PS Vita' => '/\bvita\b/', 'PSP' => '/\bpsp\b/',
@@ -35,7 +35,9 @@ $undo = []; $counts = []; $left = [];
 foreach ($rows as $r) {
   $hay = mb_strtolower($r->name . ' ' . strip_tags((string) $r->product_description));
   $hit = null;
-  foreach ($rules as $console => $re) { if (preg_match($re, $hay)) { $hit = $console; break; } }
+  // 11/23 batch of NES-only classics entered without the console.
+  if (in_array((int) $r->id, [170072, 170073, 170074, 170075, 170076, 170077, 170078, 170079, 170080], true)) $hit = 'NES';
+  if (!$hit) foreach ($rules as $console => $re) { if (preg_match($re, $hay)) { $hit = $console; break; } }
   if (!$hit || empty($subs[$hit])) { $left[] = $r; continue; }
   if ((int) $r->sub_category_id === (int) $subs[$hit]) continue;
   // Only move games that are unfiled or in "Other".
