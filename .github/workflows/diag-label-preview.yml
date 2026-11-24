@@ -59,3 +59,7 @@ jobs:
             echo "compiled\n";
             PHP
             php -l /tmp/nv_preview_2.php
+            echo "=== category / subcategory of products added in last 4 days ==="
+            php artisan tinker --no-ansi <<'PHP'
+            foreach (DB::select("select c.name cat, s.name sub, count(*) n from products p left join categories c on c.id=p.category_id left join categories s on s.id=p.sub_category_id where p.created_at >= now() - interval 4 day group by c.name, s.name order by n desc limit 40") as $r) { echo str_pad($r->n,6).' | '.$r->cat.' | '.($r->sub ?? '(none)')."\n"; }
+            PHP
