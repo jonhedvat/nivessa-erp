@@ -6,7 +6,12 @@
 name: Diag label preview
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      fill_commit:
+        description: 'Also write genres on invoice-imported products (products:fill-import-genres --commit)'
+        type: boolean
+        default: false
 
 concurrency:
   group: production-diag
@@ -71,3 +76,8 @@ jobs:
             php artisan tinker --no-ansi <<'PHP'
             foreach (DB::select("select t.id, t.type, t.ref_no, t.status, left(coalesce(t.additional_notes,''),80) notes, t.created_at, count(distinct p.id) n, sum(p.category_id is null) nocat, sum(p.sub_category_id is null) nosub from products p join variations v on v.product_id=p.id join purchase_lines pl on pl.variation_id=v.id join transactions t on t.id=pl.transaction_id where p.created_at >= now() - interval 4 day and p.sub_category_id is null group by t.id order by t.created_at") as $r) { echo "SRC | t{$r->id} | {$r->type} | {$r->ref_no} | {$r->created_at} | n={$r->n} nocat={$r->nocat} | {$r->notes}\n"; }
             PHP
+            echo "=== php lint ==="
+            php -l app/Services/DistributorInvoiceImport.php
+            php -l app/Console/Commands/FillImportGenres.php
+            echo "=== products:fill-import-genres ==="
+            if [ "${{ inputs.fill_commit }}" = "true" ]; then php artisan products:fill-import-genres --commit; else php artisan products:fill-import-genres; fi

@@ -490,6 +490,13 @@ class DistributorInvoiceImport
                 if ($subCat && !DB::table('categories')->where('business_id', $business_id)->where('id', $subCat)->where('parent_id', $catId)->exists()) {
                     $subCat = 0;
                 }
+                // No genre picked: look it up like Mass Add does (Genre Bible
+                // artist sheet, then how we file the artist's other records).
+                // Without this, every invoice-imported title had no genre and
+                // its label printed the category ("Vinyl - Sealed"). 11/23
+                if (!$subCat) {
+                    $subCat = (int) self::genreSubCategoryFor($business_id, $catId, !empty($np['artist']) ? $np['artist'] : self::artistFromName($name));
+                }
                 $product = Product::create([
                     'name' => $name,
                     'artist' => !empty($np['artist']) ? $np['artist'] : null,
@@ -773,6 +780,76 @@ class DistributorInvoiceImport
     private static function likeEscape($s)
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], (string) $s);
+    }
+
+    /** "Artist - Title" -> "Artist" (null when the name has no " - "). */
+    public static function artistFromName($name)
+    {
+        $parts = preg_split('/\s+[-\x{2013}\x{2014}]\s+/u', trim((string) $name), 2);
+        return count($parts) === 2 && trim($parts[0]) !== '' ? trim($parts[0]) : null;
+    }
+
+    /**
+     * Genre subcategory (child of $catId) for an artist, the way Mass Add
+     * picks it: the Genre Bible artist sheet first, then the genre we already
+     * file this artist's records under (any format, mapped onto $catId's own
+     * genre names). Null when nothing matches; never creates a category.
+     */
+    public static function genreSubCategoryFor($business_id, $catId, $artist)
+    {
+        $artist = trim((string) $artist);
+        if (!$catId || $artist === '') {
+            return null;
+        }
+        try {
+            $children = DB::table('categories')->where('business_id', $business_id)->whereNull('deleted_at')
+                ->where('parent_id', $catId)->pluck('name', 'id');
+            if ($children->isEmpty()) {
+                return null;
+            }
+            $catName = mb_strtolower((string) DB::table('categories')->where('id', $catId)->value('name'));
+            $tokens = strpos($catName, 'cd') !== false ? ['cd'] : (strpos($catName, 'cassette') !== false ? ['cassette'] : ['vinyl']);
+
+            $candidates = [];
+            $r = (new DiscogsReleaseImportMapper())->resolveCategoryForArtist((int) $business_id, $artist, $tokens);
+            if (!empty($r['sub_category_id'])) {
+                if ((int) $r['category_id'] === (int) $catId && isset($children[(int) $r['sub_category_id']])) {
+                    return (int) $r['sub_category_id'];
+                }
+                $candidates[] = (string) DB::table('categories')->where('id', $r['sub_category_id'])->value('name');
+            }
+            if (!empty($r['bin'])) {
+                $candidates[] = (string) $r['bin'];
+            }
+            foreach ((new ArtistGenreLookup())->termsForArtist($artist) as $t) {
+                $candidates[] = $t;
+            }
+
+            $norm = function ($x) { return trim(preg_replace('/[^a-z0-9]+/', ' ', mb_strtolower((string) $x))); };
+            $kids = [];
+            foreach ($children as $id => $nm) {
+                $kids[(int) $id] = $norm($nm);
+            }
+            // Exact name first, then a name containing the term ("indie" ->
+            // "Alt / Indie Rock"), then the term containing the name.
+            foreach ($candidates as $c) {
+                $c = $norm($c);
+                if ($c === '') { continue; }
+                foreach ($kids as $id => $k) { if ($k === $c) { return $id; } }
+            }
+            foreach ($candidates as $c) {
+                $c = $norm($c);
+                if (mb_strlen($c) < 3) { continue; }
+                foreach ($kids as $id => $k) { if (preg_match('/\b' . preg_quote($c, '/') . '\b/u', $k)) { return $id; } }
+            }
+            foreach ($candidates as $c) {
+                $c = $norm($c);
+                foreach ($kids as $id => $k) { if (mb_strlen($k) >= 3 && preg_match('/\b' . preg_quote($k, '/') . '\b/u', $c)) { return $id; } }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('genreSubCategoryFor failed: ' . $e->getMessage());
+        }
+        return null;
     }
 
     public static function subCategoryId($business_id, $parentId, $name)
