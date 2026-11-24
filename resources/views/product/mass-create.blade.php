@@ -2968,9 +2968,14 @@ a, b, c, d, e</textarea>
         // ending with the first-typed product at the very top.
         products.reverse();
 
+        // "I already priced the items": their prices go in exactly as typed.
+        const keepPrices = $(this).data('keepPrices');
+        $(this).data('keepPrices', false);
+
         // Raise AI-entered prices where our store consistently sells higher.
         // Best-effort: if the lookup fails, add rows with the pasted prices.
         function applyStorePrices() {
+            if (keepPrices) return Promise.resolve(0);
             return lookupBulkPastSales(products).then(function (results) {
                 let raised = 0;
                 if (!results) return 0;
@@ -3073,25 +3078,93 @@ a, b, c, d, e</textarea>
     // "I already priced the items": no AI. Lines like "Rumours LP VG+ $22" or
     // "Rumours - Fleetwood Mac - $22" become "name,artist,,,,22" so the $ price
     // doesn't end up in the name. CSV / pipe / tab lines go through unchanged.
+    // Sarah 2026-11-23: prices pasted from ChatGPT / Claude / a sheet weren't
+    // landing in the table. Markdown tables ("| Rumours | Fleetwood Mac | $22 |")
+    // lost every row, and "Rumours - 22" or "~$20-25" weren't read. Each line
+    // becomes "name|artist||||price|||grade" for the normal parser, and the
+    // typed prices are kept as-is (no "our store sells it for more" raise).
+    window.alreadyPricedToRows = function (raw) {
+        const GRADE = /^(sealed|new|mint|m|nm|m-|nm-|near mint.*|vg\+|vg|vg-|very good.*|g\+|g|good.*|f|fair|p|poor)$/i;
+        const MONEY_CELL = /^~?\s*\$?\s*(\d{1,5}(?:\.\d{1,2})?)(?:\s*[-–—]\s*\$?\s*\d{1,5}(?:\.\d{1,2})?)?\s*(?:usd|dollars)?$/i;
+        const DOLLAR = /~?\$\s*(\d{1,5}(?:\.\d{1,2})?)(?:\s*[-–—]\s*\$?\s*\d{1,5}(?:\.\d{1,2})?)?/g;
+        const TRAIL = /\s[-–—:=@]\s*~?\s*(\d{1,3}(?:\.\d{1,2})?)\s*(?:usd|dollars)?\s*$/i;
+        const HEADER = /^(price|prices|item|items|title|album|record|artist|name|product|condition|grade|format|notes?|qty|#|value|est\.?.*|estimated.*)$/i;
+        const strip = s => String(s || '').replace(/\|/g, '/').trim();
+        let noPrice = 0;
+        const rows = [];
+        raw.split('\n').forEach(function (line) {
+            line = line.replace(/\*\*|__|`/g, '').trim();
+            if (!line) return;
+            if (/^\|?[\s:\-|]+\|?$/.test(line)) return;               // markdown |---|---|
+            // Already in full CSV form (ChatGPT way): send unchanged.
+            if (line.indexOf('|') === -1 && line.indexOf('\t') === -1 && line.split(',').length >= 6) { rows.push(line); return; }
+            line = line.replace(/^(\d+[.)]|[-*•·])\s+/, '').trim();       // "1. " / "- " list markers
+            if (!line) return;
+
+            let price = '', name = '', artist = '', grade = '';
+            if (/[|\t]/.test(line)) {
+                let cells = line.split(/[|\t]/).map(c => c.trim()).filter(c => c !== '');
+                if (!cells.length) return;
+                if (cells.every(c => HEADER.test(c))) return;          // header row
+                let pi = -1;
+                for (let i = cells.length - 1; i >= 0; i--) {
+                    if (MONEY_CELL.test(cells[i]) && (/\$/.test(cells[i]) || i > 0)) { pi = i; break; }
+                }
+                if (pi === -1) {
+                    for (let i = cells.length - 1; i >= 0; i--) { DOLLAR.lastIndex = 0; if (DOLLAR.test(cells[i])) { pi = i; break; } }
+                }
+                if (pi !== -1) {
+                    DOLLAR.lastIndex = 0;
+                    const dm = DOLLAR.exec(cells[pi]);
+                    price = dm ? dm[1] : (cells[pi].match(MONEY_CELL) || [])[1] || '';
+                    const left = dm ? cells[pi].replace(dm[0], '').trim() : '';
+                    cells.splice(pi, 1);
+                    if (left) cells.push(left);
+                }
+                const texts = [];
+                cells.forEach(function (c) {
+                    if (!grade && GRADE.test(c)) grade = c; else texts.push(c);
+                });
+                name = texts[0] || '';
+                artist = texts[1] || '';
+                if (texts.length > 2) name += ' ' + texts.slice(2).join(' ');
+            } else {
+                let rest = line, m = null, dm;
+                DOLLAR.lastIndex = 0;
+                while ((dm = DOLLAR.exec(line)) !== null) m = dm;     // last $ amount on the line
+                if (!m) m = line.match(TRAIL);
+                if (m) {
+                    price = m[1];
+                    rest = line.slice(0, m.index) + ' ' + line.slice(m.index + m[0].length);
+                }
+                rest = rest.replace(/\(\s*\)/g, ' ')
+                    .replace(/\b(price|priced at|asking|est\.?|estimated|value)\s*[:=]?\s*$/i, '')
+                    .replace(/[\s\-–—:=@,(]+$/, '').replace(/^[\s\-–—:=@,]+/, '')
+                    .replace(/\s+[-–—]\s*[-–—]\s+/g, ' - ').trim();
+                if (!rest) return;
+                if (!price && /:$/.test(line)) return;                 // "Here are your prices:"
+                let d = rest.search(/\s[-–—]\s/), dl = 3;
+                if (d === -1) { d = rest.indexOf(', '); dl = 2; }
+                name = d === -1 ? rest : rest.slice(0, d).trim();
+                artist = d === -1 ? '' : rest.slice(d + dl).replace(/\s[-–—]\s*$/, '').trim();
+            }
+            if (!name) return;
+            if (!price) noPrice++;
+            rows.push([strip(name), strip(artist), '', '', '', price, '', '', strip(grade)].join('|'));
+        });
+        return { text: rows.join('\n'), noPrice: noPrice };
+    };
     $('#already_priced').on('click', function () {
         const raw = ($('#bulk_product_text').val() || '').trim();
         if (!raw) { toastr.warning('Type your items with their prices first, like: Rumours LP VG+ $22'); return; }
-        let noPrice = 0;
-        const lines = raw.split('\n').map(function (line) {
-            line = line.trim();
-            if (!line || /[,|\t]/.test(line)) return line;
-            const m = line.match(/\$\s*(\d+(?:\.\d{1,2})?)/);
-            if (!m) { noPrice++; return line; }
-            const rest = line.replace(m[0], ' ').replace(/[\s\-–:@]+$/, '').replace(/^[\s\-–:@]+/, '').replace(/\s+-\s*-\s+/g, ' - ').trim();
-            const d = rest.search(/\s[-–]\s/);
-            const name = d === -1 ? rest : rest.slice(0, d).trim();
-            const artist = d === -1 ? '' : rest.slice(d + 3).replace(/\s[-–]\s*$/, '').trim();
-            return name + ',' + artist + ',,,,' + m[1] + ',';
-        });
-        $('#bulk_product_text').val(lines.join('\n'));
-        $('#parse_bulk_text').data('skipConfirm', true).trigger('click');
+        const res = window.alreadyPricedToRows(raw);
+        if (!res.text) { toastr.warning('Couldn\'t find any items. Put one item per line with its price, like: Rumours LP VG+ $22'); return; }
+        const noPrice = res.noPrice;
+        $('#bulk_product_text').val(res.text);
+        $('#bulk_preview_container').hide();
+        $('#parse_bulk_text').data('skipConfirm', true).data('keepPrices', true).trigger('click');
         if (noPrice) {
-            toastr.info(noPrice + ' line' + (noPrice === 1 ? ' has' : 's have') + ' no $ price. Fill those in the table.', '', { timeOut: 8000 });
+            toastr.info(noPrice + ' line' + (noPrice === 1 ? ' has' : 's have') + ' no price. Fill those in the table.', '', { timeOut: 8000 });
         }
     });
     // ChatGPT way step 3: send the pasted answer through the normal parser.
