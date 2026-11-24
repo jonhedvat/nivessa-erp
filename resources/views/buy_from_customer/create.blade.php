@@ -895,6 +895,11 @@ HTML;
                     <div class="bfc-max-warning">
                         Do not pay more than <span id="bfc_max_warn_cash">${{ number_format((float) ($offerFinalCash ?? 0), 2) }}</span> cash or <span id="bfc_max_warn_credit">${{ number_format((float) ($offerFinalCredit ?? 0), 2) }}</span> in store credit. Paying more needs your store manager's approval.
                     </div>
+                    @if(!empty($calc))
+                        <div id="bfc_lines_changed_note" class="alert alert-warning" style="display:none; margin:8px 0;">
+                            You changed the items, so the offers above were updated. Click <strong>Save and continue</strong> before you accept.
+                        </div>
+                    @endif
                     <p class="bfc-step-help">Store credit is always {{ rtrim(rtrim(number_format($bfcCreditBonus, 2), '0'), '.') }}x the cash offer.</p>
                     </div>
                     <div class="form-group">
@@ -2092,7 +2097,30 @@ HTML;
             $('#bfc_max_warn_cash').text(bfcMoney(bfcRoundOffer(cashTotal * 0.95)));
             $('#bfc_max_warn_credit').text(bfcMoney(Math.round(bfcRoundOffer(cashTotal * 0.95) * {{ (float) app(\App\Services\BuyOfferCalculatorService::class)->getRules()['credit_bonus_multiplier'] }} * 100) / 100));
             $('#bfc_running_credit').text(bfcMoney(Math.round(bfcRoundOffer(cashTotal * 0.95) * {{ (float) app(\App\Services\BuyOfferCalculatorService::class)->getRules()['credit_bonus_multiplier'] }} * 100) / 100));
-            if (!BFC_HAS_CALC) { bfcPopulateLadder(cashTotal); }
+            if (!BFC_HAS_CALC) {
+                bfcPopulateLadder(cashTotal);
+            } else if (bfcLinesChanged()) {
+                // Sarah 11/24: after Save and continue, adding a line updated the
+                // Max line but left the 3 offer rows on the old total. Follow the
+                // live total once the items change (a typed offer stays put) and
+                // ask for another Save and continue before Accept / Save draft,
+                // since those still carry the saved items.
+                bfcPopulateLadder(cashTotal);
+                $('#buy_offer_form [name="final_offer_cash"], #buy_offer_form [name="final_offer_credit"]').trigger('bfc:auto-changed');
+                $('#bfc_lines_changed_note').show();
+            } else {
+                $('#bfc_lines_changed_note').hide();
+            }
+        }
+        // Items as saved by the last Save and continue (set once lines are built).
+        var BFC_SAVED_LINES = null;
+        function bfcLinesSnapshot() {
+            return $('#offer_lines_table').find('input[name^="lines["], select[name^="lines["]').filter(function () {
+                return this.type !== 'checkbox' || this.checked;
+            }).map(function () { return this.name + '=' + $.trim($(this).val() || ''); }).get().join('&');
+        }
+        function bfcLinesChanged() {
+            return typeof BFC_SAVED_LINES === 'string' && bfcLinesSnapshot() !== BFC_SAVED_LINES;
         }
 
         // Beta: a row's demand bonus belongs to the type + title it was priced
@@ -2168,12 +2196,10 @@ HTML;
         // Pre-save: a ladder field the cashier edits is marked manual so the
         // auto-fill leaves it alone; blanking it clears the flag so it snaps back
         // to the suggestion on the next recalc.
-        if (!BFC_HAS_CALC) {
-            $(document).on('input', '#buy_offer_form input[name$="_offer_cash"], #buy_offer_form input[name$="_offer_credit"]', function () {
-                $(this).data('manual', $(this).val() !== '');
-                bfcRecalcAll();
-            });
-        }
+        $(document).on('input', '#buy_offer_form input[name$="_offer_cash"], #buy_offer_form input[name$="_offer_credit"]', function () {
+            $(this).data('manual', $(this).val() !== '');
+            if (!BFC_HAS_CALC) bfcRecalcAll();
+        });
 
         // Credit is read-only and always mirrors its paired Cash figure at
         // credit_bonus_multiplier × cash (BuyOfferCalculatorService derives it
@@ -2206,6 +2232,7 @@ HTML;
         });
 
         $('#offer_lines_table tbody tr').each(function () { bfcApplyRowState($(this)); });
+        if (BFC_HAS_CALC) BFC_SAVED_LINES = bfcLinesSnapshot();
         bfcRecalcAll();
 
         // Sarah 2026-07-05: background autosave. Persists seller name / phone /
@@ -2371,8 +2398,13 @@ HTML;
             var $credit = $('#bfc_final_credit');
             if (!$cash.length && !$credit.length) return;
 
-            var autoCash = parseFloat($cash.data('auto'));
-            var autoCredit = parseFloat($credit.data('auto'));
+            var autoCash = parseFloat($cash.attr('data-auto'));
+            var autoCredit = parseFloat($credit.attr('data-auto'));
+            $cash.add($credit).on('bfc:auto-changed', function () {
+                autoCash = parseFloat($cash.attr('data-auto'));
+                autoCredit = parseFloat($credit.attr('data-auto'));
+                refresh();
+            });
 
             function diverged($input, auto) {
                 var v = parseFloat($input.val());
@@ -2617,8 +2649,19 @@ HTML;
                 }).always(function () { $btn.prop('disabled', false); });
             });
 
+            $('#save_draft_buy_offer_form').on('submit', function (e) {
+                if (typeof bfcLinesChanged === 'function' && bfcLinesChanged()) {
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    alert('You changed the items. Click "Save and continue" first so the offer includes them.');
+                    $('html, body').animate({ scrollTop: $('#bfc_lines_changed_note').offset().top - 120 }, 300);
+                    return false;
+                }
+            });
             $('#accept_buy_offer_form').on('submit', function (e) {
                 var problems = [];
+                if (typeof bfcLinesChanged === 'function' && bfcLinesChanged()) {
+                    problems.push('You changed the items. Click "Save and continue" first so the offer includes them.');
+                }
                 var overpayMsg = bfcOverpayMessage();
                 if (overpayMsg && String($('#bfc_overpay_alert').data('can-overpay')) !== '1'
                     && !$('#bfc_overpay_request_id').val()
