@@ -27,6 +27,7 @@
   .ao-pill { display:inline-block; margin-top:4px; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; color:#000; white-space:nowrap; }
   .ao-pill.shipped { background:#86efac; }
   .ao-pill.paid { background:#f5e6c8; }
+  .ao-pill.cancelled { background:#fecaca; color:#991b1b; }
 </style>
 <div class="ao-wrap">
   <a href="{{ route('website-orders.index') }}" style="color:#000;font-weight:600;">&larr; Back to Orders</a>
@@ -81,14 +82,17 @@
               @if($source === 'website')
                 <td class="{{ in_array($r['payment'] ?? '', ['failed', 'pending'], true) ? 'ao-red' : '' }}">{{ ucfirst($r['payment'] ?? '') }}@if(!empty($r['method']))<div style="font-size:12px;">{{ ucfirst($r['method']) }}</div>@endif</td>
               @endif
-              <td>{{ ucwords(str_replace('_', ' ', $r['status'] ?? '')) }}</td>
               @php
                 $aoStatus = strtolower($r['status'] ?? '');
+                $aoItems = $r['items'] ?? [];
+                $aoCancelled = \Illuminate\Support\Str::contains($aoStatus, 'cancel') || (count($aoItems) > 0 && collect($aoItems)->every(function ($i) { return !empty($i['cancelled']); }));
                 $aoShipped = !empty($r['shipped_at']) || in_array($aoStatus, ['shipped', 'delivered'], true);
                 $aoDead = \Illuminate\Support\Str::contains($aoStatus, ['cancel', 'refund']) || in_array($aoStatus, ['new order', 'payment pending', 'invoice sent'], true) || in_array($r['payment'] ?? '', ['failed', 'pending'], true);
               @endphp
+              <td>@if($aoCancelled)<span class="ao-pill cancelled" style="margin-top:0;">{{ \Illuminate\Support\Str::contains($aoStatus, 'cancel') ? ucwords(str_replace('_', ' ', $r['status'])) : 'Cancelled' }}</span>@else{{ ucwords(str_replace('_', ' ', $r['status'] ?? '')) }}@endif</td>
               <td>{{ ucfirst($r['fulfillment'] ?? '') }}
-                @if(strtolower($r['fulfillment'] ?? '') === 'shipping')
+                @if($aoCancelled)<div><span class="ao-pill cancelled">Cancelled</span></div>
+                @elseif(strtolower($r['fulfillment'] ?? '') === 'shipping')
                   @if($aoShipped)<div><span class="ao-pill shipped">Shipped</span></div>
                   @elseif(!$aoDead)<div><span class="ao-pill paid">Payment Received</span></div>
                   @endif
