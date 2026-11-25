@@ -34,7 +34,8 @@
     </div>
 </div>
 
-@if(!empty($lc['pairs']))
+{{-- Not on the labels page (Jon 11/25): after "Print labels" they're printing, not re-pricing. --}}
+@if(!empty($lc['pairs']) && !request()->is('labels*'))
 <div class="lc-overlay" role="dialog" aria-modal="true" style="display:none">
     <div class="lc-card">
         <button type="button" class="lc-x" aria-label="Close" onclick="lcClose(this)">&times;</button>
