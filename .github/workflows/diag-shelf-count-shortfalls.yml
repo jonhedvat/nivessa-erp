@@ -1,0 +1,119 @@
+# READ-ONLY diagnostic: every shelf count (bin count) since the 10/16 fix
+# that LOWERED the ERP quantity, and where the "missing" copies came from:
+#   multi_buy   - title was bought in 2+ separate times (like Kool & The Gang "Always")
+#   multi_qty   - one buy-in line of 2+ copies
+#   drifted     - the ERP number before the count didn't match its own
+#                 purchases minus sales (system/edit error, not real copies)
+# plus how many of those titles were rung up AFTER the count (proof a copy
+# was still in the store). No writes.
+name: Diag shelf count shortfalls
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Counts on/after (Y-m-d H:i:s)"
+        required: false
+        default: "2026-10-16 12:14:00"
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Shortfalls (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 300s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            printf '%s' "${{ github.event.inputs.since }}" > /tmp/scs_since.txt
+            cat > /tmp/scs.php <<'PHP'
+            <?php
+            $since = trim(file_get_contents('/tmp/scs_since.txt'));
+            $locIds = []; foreach (\DB::table('business_locations')->get(['id', 'name']) as $l) $locIds[mb_strtolower(trim($l->name))] = (int) $l->id;
+            $acts = \DB::table('activity_log')->where('subject_type', 'App\\Product')->where('description', 'stock_changed')
+                ->where('properties', 'like', '%bin count%')->where('created_at', '>=', $since)->orderBy('created_at')
+                ->get(['subject_id', 'properties', 'created_at', 'causer_id']);
+            $ev = []; $countedEvents = 0;
+            foreach ($acts as $a) {
+                $note = (string) (json_decode($a->properties, true)['update_note'] ?? '');
+                if (!preg_match('/bin count: (.*): ([\d.]+) -> (\d+)\s*$/', $note, $m)) continue;
+                $countedEvents++;
+                if ((float) $m[3] >= (float) $m[2]) continue;
+                $loc = $locIds[mb_strtolower(trim($m[1]))] ?? null; if (!$loc) continue;
+                $ev[] = ['pid' => (int) $a->subject_id, 'loc' => $loc, 'store' => trim($m[1]), 'from' => (float) $m[2], 'to' => (int) $m[3], 'at' => (string) $a->created_at, 'by' => (int) $a->causer_id];
+            }
+            echo "bin-count saves since $since: $countedEvents; lowered the ERP: " . count($ev) . "\n";
+            $pids = array_values(array_unique(array_column($ev, 'pid')));
+            $ins = []; $outs = []; $adjs = []; $manual = []; $price = []; $names = [];
+            foreach (array_chunk($pids, 1000) as $ch) {
+                foreach (\DB::table('purchase_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->whereIn('l.product_id', $ch)
+                    ->whereIn('t.type', ['opening_stock', 'purchase', 'purchase_transfer'])->where('t.status', 'received')
+                    ->get(['l.product_id', 't.location_id', 't.type', 't.transaction_date', 'l.quantity']) as $r)
+                    $ins[(int) $r->product_id][(int) $r->location_id][] = ['at' => (string) $r->transaction_date, 'q' => (float) $r->quantity, 'type' => $r->type];
+                foreach (\DB::table('transaction_sell_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->whereIn('l.product_id', $ch)
+                    ->where(function ($q) { $q->where(function ($q) { $q->where('t.type', 'sell')->where('t.status', 'final'); })->orWhere('t.type', 'sell_transfer'); })
+                    ->get(['l.product_id', 't.location_id', 't.type', 't.transaction_date', 'l.quantity', 'l.quantity_returned']) as $r)
+                    $outs[(int) $r->product_id][(int) $r->location_id][] = ['at' => (string) $r->transaction_date, 'q' => (float) $r->quantity - (float) $r->quantity_returned, 'type' => $r->type];
+                foreach (\DB::table('stock_adjustment_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->whereIn('l.product_id', $ch)
+                    ->get(['l.product_id', 't.location_id', 't.transaction_date', 'l.quantity']) as $r)
+                    $adjs[(int) $r->product_id][(int) $r->location_id][] = ['at' => (string) $r->transaction_date, 'q' => (float) $r->quantity];
+                // Direct stock edits (bin counts, manual qty edits) that leave no transaction.
+                foreach (\DB::table('activity_log')->where('subject_type', 'App\\Product')->whereIn('subject_id', $ch)->where('description', 'stock_changed')
+                    ->get(['subject_id', 'properties', 'created_at']) as $r) {
+                    $note = (string) (json_decode($r->properties, true)['update_note'] ?? '');
+                    if (preg_match('/: ([^:]+): ([\d.]+) -> ([\d.]+)\s*$/', $note, $m) && isset($locIds[mb_strtolower(trim($m[1]))]))
+                        $manual[(int) $r->subject_id][$locIds[mb_strtolower(trim($m[1]))]][] = ['at' => (string) $r->created_at, 'q' => (float) $m[3] - (float) $m[2]];
+                }
+                foreach (\DB::table('variations')->whereIn('product_id', $ch)->whereNull('deleted_at')->get(['product_id', 'sell_price_inc_tax']) as $v) $price[(int) $v->product_id] = $price[(int) $v->product_id] ?? (float) $v->sell_price_inc_tax;
+                foreach (\DB::table('products as p')->leftJoin('categories as c', 'c.id', '=', 'p.category_id')->whereIn('p.id', $ch)->get(['p.id', 'p.name', 'c.name as cat']) as $p) $names[(int) $p->id] = [$p->name, (string) $p->cat];
+            }
+            $sum = function ($list, $before, $after = null) { $s = 0; foreach ($list ?? [] as $x) { if ($x['at'] < $before && ($after === null || $x['at'] >= $after)) $s += $x['q']; } return $s; };
+            $cls = []; $soldAfter = 0; $soldAfterUnits = 0; $byStore = []; $byCat = []; $examples = [];
+            foreach ($ev as $e) {
+                [$p, $l, $at] = [$e['pid'], $e['loc'], $e['at']];
+                $inL = array_values(array_filter($ins[$p][$l] ?? [], function ($x) use ($at) { return $x['at'] < $at; }));
+                $inQ = array_sum(array_column($inL, 'q'));
+                $outQ = $sum($outs[$p][$l] ?? [], $at); $adjQ = $sum($adjs[$p][$l] ?? [], $at);
+                $manQ = $sum($manual[$p][$l] ?? [], $at);
+                $ledger = $inQ - $outQ - $adjQ + $manQ;
+                $missing = $e['from'] - $e['to'];
+                if (abs($ledger - $e['from']) > 0.01) $c = 'drifted';
+                elseif (count($inL) >= 2) $c = 'multi_buy';
+                elseif ($inL && max(array_column($inL, 'q')) >= 2) $c = 'multi_qty';
+                else $c = 'other';
+                $cls[$c]['events'] = ($cls[$c]['events'] ?? 0) + 1;
+                $cls[$c]['units'] = ($cls[$c]['units'] ?? 0) + $missing;
+                $cls[$c]['value'] = ($cls[$c]['value'] ?? 0) + $missing * ($price[$p] ?? 0);
+                $byStore[$e['store']][$c] = ($byStore[$e['store']][$c] ?? 0) + $missing;
+                $cat = $names[$p][1] ?? '?'; $byCat[$cat] = ($byCat[$cat] ?? 0) + $missing;
+                $later = array_sum(array_map(function ($x) { return $x['q']; }, array_filter($outs[$p][$l] ?? [], function ($x) use ($at) { return $x['at'] >= $at && $x['type'] === 'sell'; })));
+                if ($later > $e['to']) { $soldAfter++; $soldAfterUnits += min($later - $e['to'], $missing); }
+                if (count($examples[$c] ?? []) < 15) $examples[$c][] = sprintf('%s | %s | %s %s->%d | ins: %s', substr($at, 0, 10), $e['store'], mb_substr($names[$p][0] ?? $p, 0, 50), $e['from'], $e['to'],
+                    implode(', ', array_map(function ($x) { return substr($x['at'], 0, 10) . ' ' . $x['type'] . ' +' . $x['q']; }, $inL)));
+            }
+            echo "\nBY CAUSE (events / units missing / \$ at sticker):\n";
+            foreach ($cls as $c => $v) printf("  %-10s %5d events  %5d units  \$%s\n", $c, $v['events'], $v['units'], number_format($v['value'], 0));
+            echo "\nSold through the register AFTER the count said fewer: $soldAfter titles, $soldAfterUnits units (count was wrong for those)\n";
+            echo "\nBY STORE (units):\n"; foreach ($byStore as $s => $v) echo "  $s: " . json_encode($v) . "\n";
+            arsort($byCat); echo "\nBY CATEGORY (units, top 15):\n"; foreach (array_slice($byCat, 0, 15, true) as $k => $v) echo "  $k: $v\n";
+            foreach ($examples as $c => $list) { echo "\nEXAMPLES $c:\n"; foreach ($list as $x) echo "  $x\n"; }
+            echo "\n=== done ===\n";
+            PHP
+            echo "require '/tmp/scs.php';" | php artisan tinker --no-ansi 2>&1
