@@ -63,6 +63,9 @@ class TimeClockService
     const TOGGLE_GUARD_SEC = 60;
     // Store computer asks before undoing a punch this fresh (Sarah 10/19).
     const CONFIRM_FLIP_MIN = 30;
+    // No clocking back in this soon after clocking out (Sarah 11/25: Manolo
+    // 11/14 out 8:02 in 8:04, 11/21 out 7:57 in 7:59, extra shifts on payroll).
+    const REIN_BLOCK_MIN = 15;
     // A work day runs 5 AM to 5 AM, so a night shift's hours don't restart
     // at midnight on the clock screen (Sarah 10/19, Quenton 8 PM - 1 AM).
     const DAY_START_HOUR = 5;
