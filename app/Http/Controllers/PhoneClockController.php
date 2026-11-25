@@ -289,28 +289,6 @@ class PhoneClockController extends Controller
             }
         }
 
-        // Clocked out, then kept working and clocked back in a few minutes
-        // later (Sarah 11/25: Manolo out 8:02, in 8:04, out 8:16 showed as two
-        // shifts). Within 15 minutes, undo that clock-out so it stays one shift.
-        if ($doing === 'in') {
-            $reCut = TC::now()->subMinutes(TC::REIN_BLOCK_MIN)->format('Y-m-d H:i:s');
-            $justOut = \DB::table('time_clock_punches')->where('user_id', $userId)->whereNull('voided_at')
-                ->whereNotNull('clock_out_at')->where('clock_out_at', '>=', $reCut)
-                ->orderBy('clock_out_at', 'desc')->first(['id', 'clock_in_at', 'location_id']);
-            if ($justOut) {
-                \DB::table('time_clock_punches')->where('id', $justOut->id)->update([
-                    'clock_out_at' => null, 'out_verify' => null, 'clock_out_ip' => null, 'out_lat' => null,
-                    'out_lng' => null, 'out_accuracy_m' => null, 'out_distance_m' => null, 'out_geo_error' => null,
-                    'out_user_agent' => null, 'clock_out_source' => null, 'updated_at' => TC::nowString(),
-                ]);
-                $st = TC::status($businessId, $userId);
-                $since = \Carbon::parse($justOut->clock_in_at, TC::TZ)->format('g:i A');
-                return ['ok' => true, 'name' => $first, 'action' => 'in', 'time' => $time,
-                    'headline' => $first . ", you're clocked back in.", 'detail' => 'Same shift, since ' . $since,
-                    'msg' => 'Clocked back in, same shift since ' . $since . '.', 'status' => $st];
-            }
-        }
-
         // Buddy-punch guard (Sarah 10/13): clock-in only from 5 minutes (setting)
         // before your Sling shift at this store until it ends (late is
         // allowed and flagged on Timecards). Clock-out is never limited by
