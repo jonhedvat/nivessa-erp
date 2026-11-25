@@ -49,7 +49,7 @@ jobs:
             $price = trim(file_get_contents('/tmp/pst_price.txt'));
             $loc = \DB::table('business_locations')->pluck('name', 'id');
             $users = function ($id) { $u = \DB::table('users')->where('id', $id)->first(['first_name', 'last_name']); return $u ? trim($u->first_name . ' ' . $u->last_name) : (string) $id; };
-            $q = \DB::table('products as p')->whereNull('p.deleted_at');
+            $q = \DB::table('products as p');
             foreach ($words as $w) { if ($w === '') continue; $q->whereRaw("LOWER(CONCAT(COALESCE(p.artist,''),' ',p.name)) LIKE ?", ['%' . mb_strtolower($w) . '%']); }
             $prods = $q->get(['p.id', 'p.name', 'p.artist', 'p.sku', 'p.is_inactive', 'p.created_at', 'p.created_by', 'p.listed_at', 'p.category_id', 'p.sub_category_id']);
             foreach ($prods as $p) {
