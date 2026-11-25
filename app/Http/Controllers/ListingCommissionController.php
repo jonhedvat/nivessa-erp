@@ -1381,11 +1381,11 @@ class ListingCommissionController extends Controller
                     // Time-clock parties only; older ones keep the even split.
                     $mins = $this->partyPunchMinutes($businessId, $locId, $sC, $eC);
                     // Sarah 2026-11-25: a few minutes at the start or end
-                    // doesn't count (Hudson left 3 min into GTA VI). Under 30
-                    // minutes in the window = not part of the party.
+                    // doesn't count (Hudson left 3 min into GTA VI). Under 15
+                    // minutes in the window = not part of the party (Sarah: 15).
                     if ($mins !== null) {
                         foreach ($ringers as $uid => $name) {
-                            if (($mins[$uid] ?? 0) < 30) { unset($ringers[$uid]); }
+                            if (($mins[$uid] ?? 0) < 15) { unset($ringers[$uid]); }
                         }
                         $solo = count($ringers) <= 1;
                         $n = max(1, count($ringers));
