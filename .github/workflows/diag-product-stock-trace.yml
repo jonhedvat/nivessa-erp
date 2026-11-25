@@ -1,0 +1,80 @@
+# READ-ONLY diagnostic: why does the ERP think we have N copies of a title?
+# Give it words in the product name/artist (e.g. "kool gang") and optionally
+# a price; for every matching product it prints stock per store and the full
+# ledger of what added/removed copies (purchases, opening stock, sales,
+# returns, adjustments, transfers) plus activity-log edits. No writes.
+name: Diag product stock trace
+
+on:
+  workflow_dispatch:
+    inputs:
+      words:
+        description: "Words that must all appear in artist+name (e.g. kool gang)"
+        required: true
+      price:
+        description: "Optional selling price to narrow to (e.g. 8)"
+        required: false
+        default: ""
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Trace (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 120s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            printf '%s' "${{ github.event.inputs.words }}" > /tmp/pst_words.txt
+            printf '%s' "${{ github.event.inputs.price }}" > /tmp/pst_price.txt
+            php artisan tinker --no-ansi <<'PHP'
+            $words = preg_split('/\s+/', trim(file_get_contents('/tmp/pst_words.txt')));
+            $price = trim(file_get_contents('/tmp/pst_price.txt'));
+            $loc = \DB::table('business_locations')->pluck('name', 'id');
+            $users = function ($id) { $u = \DB::table('users')->where('id', $id)->first(['first_name', 'last_name']); return $u ? trim($u->first_name . ' ' . $u->last_name) : (string) $id; };
+            $q = \DB::table('products as p')->whereNull('p.deleted_at');
+            foreach ($words as $w) { if ($w === '') continue; $q->whereRaw("LOWER(CONCAT(COALESCE(p.artist,''),' ',p.name)) LIKE ?", ['%' . mb_strtolower($w) . '%']); }
+            $prods = $q->get(['p.id', 'p.name', 'p.artist', 'p.sku', 'p.is_inactive', 'p.created_at', 'p.created_by', 'p.listed_at', 'p.category_id', 'p.sub_category_id']);
+            foreach ($prods as $p) {
+                $vars = \DB::table('variations')->where('product_id', $p->id)->get(['id', 'sub_sku', 'sell_price_inc_tax', 'deleted_at']);
+                if ($price !== '' && !$vars->contains(function ($v) use ($price) { return abs((float) $v->sell_price_inc_tax - (float) $price) < 0.01; })) continue;
+                echo "\n================ product {$p->id} | {$p->artist} | {$p->name} | sku {$p->sku} | inactive {$p->is_inactive}\n";
+                echo "created {$p->created_at} by " . $users($p->created_by) . " | listed {$p->listed_at} | cat {$p->category_id}/{$p->sub_category_id}\n";
+                foreach ($vars as $v) echo "  variation {$v->id} sub_sku {$v->sub_sku} price {$v->sell_price_inc_tax}" . ($v->deleted_at ? " DELETED {$v->deleted_at}" : '') . "\n";
+                foreach (\DB::table('variation_location_details')->where('product_id', $p->id)->get() as $d) echo "  STOCK @ " . ($loc[$d->location_id] ?? $d->location_id) . " var {$d->variation_id}: {$d->qty_available}\n";
+                $rows = [];
+                foreach (\DB::table('purchase_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->where('l.product_id', $p->id)
+                    ->get(['t.id', 't.type', 't.status', 't.location_id', 't.transaction_date', 't.ref_no', 't.created_by', 't.created_at', 'l.quantity', 'l.quantity_sold', 'l.quantity_adjusted', 'l.quantity_returned']) as $r)
+                    $rows[] = [$r->transaction_date, sprintf("IN  +%s  %s/%s #%d ref %s @ %s by %s (sold %s adj %s ret %s) entered %s", (float) $r->quantity, $r->type, $r->status, $r->id, $r->ref_no, $loc[$r->location_id] ?? $r->location_id, $users($r->created_by), (float) $r->quantity_sold, (float) $r->quantity_adjusted, (float) $r->quantity_returned, $r->created_at)];
+                foreach (\DB::table('transaction_sell_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->where('l.product_id', $p->id)
+                    ->get(['t.id', 't.type', 't.status', 't.location_id', 't.transaction_date', 't.invoice_no', 't.created_by', 'l.quantity', 'l.quantity_returned', 'l.unit_price_inc_tax']) as $r)
+                    $rows[] = [$r->transaction_date, sprintf("OUT -%s  %s/%s #%d inv %s @ %s by %s \$%s (returned %s)", (float) $r->quantity, $r->type, $r->status, $r->id, $r->invoice_no, $loc[$r->location_id] ?? $r->location_id, $users($r->created_by), (float) $r->unit_price_inc_tax, (float) $r->quantity_returned)];
+                foreach (\DB::table('stock_adjustment_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->where('l.product_id', $p->id)
+                    ->get(['t.id', 't.type', 't.location_id', 't.transaction_date', 't.ref_no', 't.created_by', 't.additional_notes', 'l.quantity']) as $r)
+                    $rows[] = [$r->transaction_date, sprintf("ADJ -%s  #%d ref %s @ %s by %s note %s", (float) $r->quantity, $r->id, $r->ref_no, $loc[$r->location_id] ?? $r->location_id, $users($r->created_by), $r->additional_notes)];
+                foreach (\DB::table('activity_log')->where('subject_id', $p->id)->where('subject_type', 'like', '%Product%')->get(['created_at', 'description', 'causer_id', 'properties']) as $r)
+                    $rows[] = [$r->created_at, "LOG {$r->description} by " . $users($r->causer_id) . " " . mb_substr((string) $r->properties, 0, 400)];
+                foreach (\DB::table('activity_log')->where('description', 'like', '%' . $p->id . '%')->orWhere('properties', 'like', '%"product_id":' . $p->id . '%')->orWhere('properties', 'like', '%"product_id":"' . $p->id . '"%')->limit(40)->get(['created_at', 'description', 'causer_id', 'properties']) as $r)
+                    $rows[] = [$r->created_at, "LOG* {$r->description} by " . $users($r->causer_id) . " " . mb_substr((string) $r->properties, 0, 400)];
+                usort($rows, function ($a, $b) { return strcmp((string) $a[0], (string) $b[0]); });
+                foreach ($rows as $r) echo "  {$r[0]}  {$r[1]}\n";
+            }
+            echo "\n=== done ===\n";
+            PHP
