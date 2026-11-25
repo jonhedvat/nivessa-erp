@@ -289,21 +289,25 @@ class PhoneClockController extends Controller
             }
         }
 
-        // Clocked out a minute ago and the PIN / button again starts a second
-        // shift (Sarah 11/25: Manolo out 8:02, back in 8:04, payroll showed a
-        // 0.21h extra shift). Refuse a clock-in within 15 minutes of their
-        // own clock-out; a manager fixes a real return on Timecards.
+        // Clocked out, then kept working and clocked back in a few minutes
+        // later (Sarah 11/25: Manolo out 8:02, in 8:04, out 8:16 showed as two
+        // shifts). Within 15 minutes, undo that clock-out so it stays one shift.
         if ($doing === 'in') {
             $reCut = TC::now()->subMinutes(TC::REIN_BLOCK_MIN)->format('Y-m-d H:i:s');
             $justOut = \DB::table('time_clock_punches')->where('user_id', $userId)->whereNull('voided_at')
                 ->whereNotNull('clock_out_at')->where('clock_out_at', '>=', $reCut)
-                ->orderBy('clock_out_at', 'desc')->value('clock_out_at');
+                ->orderBy('clock_out_at', 'desc')->first(['id', 'clock_in_at', 'location_id']);
             if ($justOut) {
-                $outAt = \Carbon::parse($justOut, TC::TZ);
-                $msg = "You're already clocked out (at " . $outAt->format('g:i A') . '). You can clock back in after '
-                    . $outAt->copy()->addMinutes(TC::REIN_BLOCK_MIN)->format('g:i A') . ', or ask a manager.';
-                TC::logBlocked($userId, 'in', 'Clocked back in right after clocking out', $where['location_id'] ?? null);
-                return ['ok' => false, 'blocked' => true, 'geo_denied' => false, 'name' => $first, 'msg' => $msg];
+                \DB::table('time_clock_punches')->where('id', $justOut->id)->update([
+                    'clock_out_at' => null, 'out_verify' => null, 'clock_out_ip' => null, 'out_lat' => null,
+                    'out_lng' => null, 'out_accuracy_m' => null, 'out_distance_m' => null, 'out_geo_error' => null,
+                    'out_user_agent' => null, 'clock_out_source' => null, 'updated_at' => TC::nowString(),
+                ]);
+                $st = TC::status($businessId, $userId);
+                $since = \Carbon::parse($justOut->clock_in_at, TC::TZ)->format('g:i A');
+                return ['ok' => true, 'name' => $first, 'action' => 'in', 'time' => $time,
+                    'headline' => $first . ", you're clocked back in.", 'detail' => 'Same shift, since ' . $since,
+                    'msg' => 'Clocked back in, same shift since ' . $since . '.', 'status' => $st];
             }
         }
 
