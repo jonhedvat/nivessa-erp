@@ -1084,6 +1084,35 @@ class ListingCommissionController extends Controller
         return $out;
     }
 
+    // Minutes each person was clocked in at this store inside the party
+    // window (overlap only; an open punch counts to the end of the window).
+    // uid => minutes, or null before the ERP time clock existed.
+    private function partyPunchMinutes($businessId, $locationId, \Carbon\Carbon $startC, \Carbon\Carbon $endC)
+    {
+        if ($startC->toDateString() < self::TIME_CLOCK_FROM) { return null; }
+        $rows = DB::table('time_clock_punches')
+            ->where('business_id', $businessId)
+            ->where('location_id', $locationId)
+            ->whereNull('voided_at')
+            ->where('clock_in_at', '<', $endC->format('Y-m-d H:i:s'))
+            ->where('clock_in_at', '>', $startC->copy()->subHours(12)->format('Y-m-d H:i:s'))
+            ->where(function ($q) use ($startC) {
+                $q->whereNull('clock_out_at')->orWhere('clock_out_at', '>', $startC->format('Y-m-d H:i:s'));
+            })
+            ->get(['user_id', 'clock_in_at', 'clock_out_at']);
+        $out = [];
+        foreach ($rows as $r) {
+            $in = \Carbon\Carbon::parse($r->clock_in_at);
+            $outT = $r->clock_out_at ? \Carbon\Carbon::parse($r->clock_out_at) : $endC->copy();
+            $a = $in->gt($startC) ? $in : $startC;
+            $b = $outT->lt($endC) ? $outT : $endC;
+            if ($b->gt($a)) {
+                $out[(int) $r->user_id] = ($out[(int) $r->user_id] ?? 0) + $a->diffInSeconds($b) / 60;
+            }
+        }
+        return $out;
+    }
+
     private function livePartyFloorStaff($locationKey, $date, \Carbon\Carbon $startC, \Carbon\Carbon $endC)
     {
         $client = app(\App\Services\SlingClient::class);
@@ -1345,12 +1374,25 @@ class ListingCommissionController extends Controller
                     // (Miley 9/15: $725.71 x 4% / 2 = $14.514 -> $14.51 each,
                     // same as payroll). Rounding the pool first gave $14.52.
                     $n = max(1, count($ringers));
-                    $each = $solo ? 0.0 : round($sales * (self::PARTY_DEFAULT_PERCENT / 100) / $n, 2);
-                    $pool = round($each * $n, 2);
+                    $rawPool = $solo ? 0.0 : $sales * (self::PARTY_DEFAULT_PERCENT / 100);
+                    // Sarah 2026-11-25: split by how long each person was
+                    // actually clocked in during the party window, not evenly
+                    // (Luis left at 7:02 of a 6:00-7:30 party, Manolo stayed).
+                    // Time-clock parties only; older ones keep the even split.
+                    $mins = $this->partyPunchMinutes($businessId, $locId, $sC, $eC);
+                    $totMin = 0;
+                    foreach ($ringers as $uid => $name) { $totMin += $mins[$uid] ?? 0; }
+                    $weighted = $mins !== null && $totMin > 0;
                     $estStaff = [];
+                    $pool = 0.0;
                     foreach ($ringers as $uid => $name) {
-                        $estStaff[] = ['uid' => $uid, 'name' => $name, 'amount' => $each];
+                        $m = $mins[$uid] ?? 0;
+                        $amt = $weighted ? round($rawPool * $m / $totMin, 2) : round($rawPool / $n, 2);
+                        $estStaff[] = ['uid' => $uid, 'name' => $name, 'amount' => $amt, 'minutes' => $weighted ? (int) round($m) : null];
+                        $pool += $amt;
                     }
+                    $pool = round($pool, 2);
+                    $each = $n > 0 ? round($pool / $n, 2) : 0.0;
                     $estimate = [
                         'window' => $sC->format('g:i A') . ' - ' . $eC->format('g:i A'),
                         'percent' => self::PARTY_DEFAULT_PERCENT,
