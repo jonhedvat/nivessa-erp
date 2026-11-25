@@ -4333,6 +4333,7 @@ a, b, c, d, e</textarea>
             + (o.accepted_at ? ' · bought ' + esc(o.accepted_at) : '')
             + (o.store ? ' at ' + esc(o.store) : '')
             + '. New rows are tagged with this buy; pick the lot on each row (it remembers the last one).'
+            + (o.paid_in_credit ? ' <strong>Paid in store credit, so every row costs $0.</strong>' : '')
             + '<table class="table table-condensed" style="margin:8px 0 0; background:transparent;"><thead><tr>'
             + '<th>Lot</th><th class="text-right">Paid / unit</th><th class="text-right">Listed so far</th><th></th></tr></thead><tbody>';
         var individual = 0;

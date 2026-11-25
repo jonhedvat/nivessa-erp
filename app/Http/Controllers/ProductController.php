@@ -4523,6 +4523,10 @@ class ProductController extends Controller
                 ->find($buyOfferId);
             if ($buyOffer) {
                 $buyLotCosts = $buyOffer->lineUnitCosts();
+                // Sarah 11/25: paid in store credit = no cash out, so $0 cost.
+                if ($buyOffer->payout_type === 'store_credit') {
+                    $buyLotCosts = array_map(function () { return 0.0; }, $buyLotCosts);
+                }
             }
         }
 
@@ -5181,6 +5185,11 @@ class ProductController extends Controller
             $labels[$key] = $cfg['label'];
         }
         $costs = $offer->lineUnitCosts();
+        // Sarah 11/25: paid in store credit = no cash out, so rows cost $0.
+        $paidInCredit = $offer->payout_type === 'store_credit';
+        if ($paidInCredit) {
+            $costs = array_map(function () { return 0.0; }, $costs);
+        }
 
         // Lines that went straight onto a product we already carry (scanned
         // barcode matched at accept) are done — nothing to list.
@@ -5244,6 +5253,7 @@ class ProductController extends Controller
                 'seller' => optional($offer->contact)->name ?: $offer->seller_name,
                 'accepted_at' => optional($offer->accepted_at)->format('M j, Y'),
                 'store' => optional($offer->location)->name,
+                'paid_in_credit' => $paidInCredit,
             ],
             'lots' => $lots,
             'carried' => $carriedCount,
