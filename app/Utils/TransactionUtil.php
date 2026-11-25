@@ -4728,6 +4728,12 @@ class TransactionUtil extends Util
                     }
                 }
             }
+
+            // Promo days (config/bucks_promos.php), e.g. 2X Nivessa Bucks on Black Friday 11/27/26.
+            $promo_multiplier = config('bucks_promos.multiplier_days.' . \Carbon\Carbon::now('America/Los_Angeles')->format('Y-m-d'));
+            if (!empty($promo_multiplier) && $promo_multiplier > 1) {
+                $total_points = floor($total_points * $promo_multiplier);
+            }
         }
 
         return $total_points;
