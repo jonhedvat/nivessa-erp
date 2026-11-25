@@ -4154,6 +4154,7 @@ a, b, c, d, e</textarea>
 (function () {
     var lookupUrl = "{{ route('product.massCreate.buyLookup') }}";
     var fetchUrl = "{{ url('product/mass-create/fetch-discogs-release') }}/";
+    var estimateUrl = "{{ route('product.massCreate.buyPriceEstimate') }}";
     var buy = null;
     var lastLot = '';
 
@@ -4269,6 +4270,7 @@ a, b, c, d, e</textarea>
         var $row = $('#product_rows_container .product-row[data-row-index="' + idx + '"]');
         if (!$row.length) return;
         applyLotCategory($row, l);
+        if (l.condition && !$row.find('.massadd_condition').val()) $row.find('.massadd_condition').val(l.condition);
         $row.find('.bfc-lot-select').val(String(l.id));
         setRowCost($row, l);
         if (l.upc && !l.upc_taken) $row.find('input[name*="[sku]"]').first().val(l.upc);
@@ -4451,7 +4453,7 @@ a, b, c, d, e</textarea>
         function next() {
             if (!queue.length) {
                 if (toPrice.length) return priceOnWeb();
-                $('#bfc_add_status').text('Added ' + done + ' row' + (done === 1 ? '' : 's') + '. Check each one and set the selling price.');
+                $('#bfc_add_status').text('Added ' + done + ' row' + (done === 1 ? '' : 's') + ' with a starting price from Discogs for each grade. Check each one, then Save.');
                 return;
             }
             var l = queue.shift();
@@ -4479,8 +4481,14 @@ a, b, c, d, e</textarea>
                     }
                     data = $.extend({}, data, { category_id: parent, sub_category_id: sub || 0 });
                 }
-                return addRowFromDiscogsData(data, idx, '').then(function () {
+                // Sarah 11/24: starting price = Discogs for this copy's grade.
+                var est = data._bfcEstimate || null;
+                return addRowFromDiscogsData(data, idx, est ? est.price.toFixed(2) : '', l.condition || '').then(function () {
                     var $row = $('#product_rows_container .product-row[data-row-index="' + idx + '"]');
+                    if (est) {
+                        $row.find('input[name*="[single_dsp_inc_tax]"]').first().closest('td')
+                            .append($('<div class="bfc-est-note text-muted small" style="margin-top:2px;"></div>').text('Est. from ' + est.note));
+                    }
                     $row.find('.bfc-lot-select').val(String(l.id));
                     setRowCost($row, l);
                     // Scanned barcode = the SKU, so the next scan finds it.
@@ -4490,9 +4498,16 @@ a, b, c, d, e</textarea>
                 });
             };
             if (l.discogs_release_id) {
+                // Release fetch first (caches lowest/for-sale/wants), then the
+                // grade price, which then needs only one more Discogs call.
+                var withEstimate = function (data) {
+                    $.getJSON(estimateUrl, { release_id: l.discogs_release_id, condition: l.condition || '' }).done(function (e) {
+                        if (e && e.success && e.price > 0) data = $.extend({}, data, { _bfcEstimate: e });
+                    }).always(function () { addRow(data); });
+                };
                 $.getJSON(fetchUrl + encodeURIComponent(l.discogs_release_id)).done(function (resp) {
-                    addRow(resp && resp.success ? resp.data : { title: l.title });
-                }).fail(function () { addRow({ title: l.title }); });
+                    withEstimate(resp && resp.success ? resp.data : { title: l.title });
+                }).fail(function () { withEstimate({ title: l.title }); });
             } else {
                 addRow({ title: l.title });
             }

@@ -5229,6 +5229,7 @@ class ProductController extends Controller
                 'category' => $upc !== null ? $scan->categoryForLine($business_id, $upc, $line->item_type, $line->condition_grade)
                     : ($releaseId ? null : $scan->categoryForItemType($business_id, $line->item_type, $line->condition_grade)),
                 'grade' => $line->condition_grade,
+                'condition' => self::buyGradeToMassAdd($line->condition_grade, $line->item_type),
                 'qty' => (float) $line->quantity,
                 'unit_cost' => $costs[$line->id] ?? 0,
                 'listed' => (int) ($listed[$line->id] ?? 0),
@@ -5502,14 +5503,124 @@ class ProductController extends Controller
         return round($floor, 2);
     }
 
+    /**
+     * Discogs numbers for one release (cached 3 days, shared with the price guard):
+     * cheapest copy, copies for sale, wants and the per-grade price suggestions.
+     * Null when Discogs fails (rate limit etc).
+     */
+    private function guardDiscogsData($business_id, $releaseId)
+    {
+        $key = 'massadd-guard-dg3:' . $releaseId;
+        $dg = \Cache::get($key);
+        if ($dg !== null) {
+            return $dg;
+        }
+        try {
+            $discogs = new \App\Services\DiscogsService($business_id);
+            $d = (new \App\Utils\BusinessUtil())->getApiSettings($business_id)['discogs'] ?? [];
+            $t = urlencode(trim((string) ($d['token'] ?? '')) ?: trim((string) ($d['user_token'] ?? '')));
+            // Lowest/for-sale/wants usually came with the release fetch when the
+            // row was added (fetchDiscogsReleaseForMassCreate), so only the
+            // price-suggestions call is needed then.
+            $low = \Cache::get('massadd-guard-low2:' . $releaseId);
+            $st = $low ? ['data' => (object) [
+                'lowest_price' => $low['lowest'],
+                'num_for_sale' => $low['for_sale'],
+                'community' => (object) ['want' => $low['want']],
+            ]] : $discogs->callApi('https://api.discogs.com/releases/' . $releaseId . '?curr_abbr=USD&token=' . $t);
+            $sg = $discogs->callApi('https://api.discogs.com/marketplace/price_suggestions/' . $releaseId . '?token=' . $t);
+            if (!empty($st['error']) || !empty($sg['error'])) {
+                return null;
+            }
+            $grades = [];
+            foreach ((array) ($sg['data'] ?? []) as $label => $v) {
+                if (is_object($v) && isset($v->value) && $v->value > 0) {
+                    $grades[$label] = round((float) $v->value, 2);
+                }
+            }
+            $stData = $st['data'] ?? null;
+            $dg = [
+                'lowest' => isset($stData->lowest_price) && is_numeric($stData->lowest_price) ? round((float) $stData->lowest_price, 2) : null,
+                'for_sale' => isset($stData->num_for_sale) ? (int) $stData->num_for_sale : null,
+                'want' => isset($stData->community->want) ? (int) $stData->community->want : null,
+                'grades' => $grades,
+            ];
+            \Cache::put($key, $dg, now()->addDays(3));
+            return $dg;
+        } catch (\Throwable $e) {
+            \Log::warning('mass-add Discogs data ' . $releaseId . ': ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Buy-from-customer grade ("VG+", "Near Mint"…) -> the Mass Add media grade
+     * (Discogs wording). Sealed item types / Mint-sealed lines -> 'Sealed'.
+     */
+    public static function buyGradeToMassAdd($grade, $itemType = null)
+    {
+        $g = mb_strtolower(trim((string) $grade));
+        if (strpos((string) $itemType, 'sealed') !== false || $g === 'sealed') {
+            return 'Sealed';
+        }
+        $map = [
+            'poor' => 'Poor (P)', 'fair' => 'Fair (F)', 'good' => 'Good (G)', 'good+' => 'Good Plus (G+)',
+            'vg' => 'Very Good (VG)', 'vg+' => 'Very Good Plus (VG+)', 'near mint' => 'Near Mint (NM or M-)',
+            'nm' => 'Near Mint (NM or M-)', 'mint' => 'Mint (M)',
+        ];
+        return $map[$g] ?? null;
+    }
+
+    /**
+     * Sarah 2026-11-24: rows sent from a buy into Mass Add get a starting selling
+     * price from Discogs for THAT copy's grade - Discogs' sales-based suggestion
+     * for the grade (what copies in that condition go for), capped at 3x the
+     * cheapest copy listed like the price guard. Nobody / 1-2 selling with lots
+     * of wants: the scarcity floor. Rows without a release are priced on eBay +
+     * the web by the Bulk Entry pricer instead.
+     */
+    public function massCreateBuyPriceEstimate(Request $request)
+    {
+        $business_id = $request->session()->get('user.business_id');
+        $releaseId = (int) $request->input('release_id');
+        if ($releaseId <= 0) {
+            return response()->json(['success' => false]);
+        }
+        $cond = trim((string) $request->input('condition'));
+        $dg = $this->guardDiscogsData($business_id, $releaseId);
+        if (!$dg) {
+            return response()->json(['success' => false, 'msg' => 'Discogs did not answer']);
+        }
+        $label = $cond === 'Sealed' ? 'Mint (M)' : ($cond !== '' ? $cond : 'Very Good Plus (VG+)');
+        $val = $dg['grades'][$label] ?? null;
+        if ($val !== null && !empty($dg['lowest'])) {
+            $val = min($val, round($dg['lowest'] * 3, 2));
+        }
+        $note = $val !== null ? 'Discogs ' . ($cond === 'Sealed' ? 'sealed (Mint)' : $label) . ' ~$' . number_format($val, 2) : null;
+        $scarce = self::scarcePrice($dg['for_sale'], $dg['want'] ?? null, $label, $dg['lowest'] ?? null);
+        if ($scarce && $scarce > (float) $val) {
+            $val = $scarce;
+            $note = (int) $dg['for_sale'] . ' for sale on Discogs, ' . number_format((int) $dg['want']) . ' wants';
+        }
+        if (!($val > 0)) {
+            return response()->json(['success' => false, 'msg' => 'No Discogs price for this grade']);
+        }
+        if ($dg['for_sale'] !== null) {
+            $note .= ' · ' . (int) $dg['for_sale'] . ' for sale' . (!empty($dg['lowest']) ? ' from $' . number_format($dg['lowest'], 2) : '');
+        }
+        return response()->json([
+            'success' => true,
+            'price' => max(0.99, ceil($val) - 0.01),
+            'note' => $note,
+        ]);
+    }
+
     public function massCreatePriceGuard(Request $request)
     {
         $business_id = $request->session()->get('user.business_id');
         $items = (array) $request->input('items', []);
         $out = [];
         $ebayBudget = 30; // uncached eBay calls per request
-        $discogs = null;
-        $token = null;
         $ebay = null;
         $discogsFails = 0; // after 2 failed lookups (rate limit), stop calling Discogs this request
         $isAdmin = auth()->check() && $this->productUtil->is_admin(auth()->user());
@@ -5530,55 +5641,13 @@ class ProductController extends Controller
             $dg = null;
             $unchecked = false;
             if ($releaseId > 0) {
-                $key = 'massadd-guard-dg3:' . $releaseId;
-                $dg = \Cache::get($key);
-                if ($dg === null && $discogsFails >= 2) {
+                if ($discogsFails >= 2 && \Cache::get('massadd-guard-dg3:' . $releaseId) === null) {
                     $unchecked = true;
-                } elseif ($dg === null) {
-                    try {
-                        $discogs = $discogs ?: new \App\Services\DiscogsService($business_id);
-                        if ($token === null) {
-                            $d = (new \App\Utils\BusinessUtil())->getApiSettings($business_id)['discogs'] ?? [];
-                            $token = trim((string) ($d['token'] ?? '')) ?: trim((string) ($d['user_token'] ?? ''));
-                        }
-                        $t = urlencode($token);
-                        // Lowest/for-sale usually came with the release fetch when
-                        // the row was added (see fetchDiscogsReleaseForMassCreate),
-                        // so only the price-suggestions call is needed then.
-                        // The release fetch also carries the want count (for the
-                        // nothing-for-sale rule).
-                        $low = \Cache::get('massadd-guard-low2:' . $releaseId);
-                        $st = $low ? ['data' => (object) [
-                            'lowest_price' => $low['lowest'],
-                            'num_for_sale' => $low['for_sale'],
-                            'community' => (object) ['want' => $low['want']],
-                        ]] : $discogs->callApi('https://api.discogs.com/releases/' . $releaseId . '?curr_abbr=USD&token=' . $t);
-                        $sg = $discogs->callApi('https://api.discogs.com/marketplace/price_suggestions/' . $releaseId . '?token=' . $t);
-                        $grades = [];
-                        foreach ((array) ($sg['data'] ?? []) as $label => $v) {
-                            if (is_object($v) && isset($v->value) && $v->value > 0) {
-                                $grades[$label] = round((float) $v->value, 2);
-                            }
-                        }
-                        $stData = $st['data'] ?? null;
-                        $dg = [
-                            'lowest' => isset($stData->lowest_price) && is_numeric($stData->lowest_price) ? round((float) $stData->lowest_price, 2) : null,
-                            'for_sale' => isset($stData->num_for_sale) ? (int) $stData->num_for_sale : null,
-                            'want' => isset($stData->community->want) ? (int) $stData->community->want : null,
-                            'grades' => $grades,
-                        ];
-                        if (empty($st['error']) && empty($sg['error'])) {
-                            \Cache::put($key, $dg, now()->addDays(3));
-                        } else {
-                            $discogsFails++;
-                            $unchecked = true;
-                            $dg = null;
-                        }
-                    } catch (\Throwable $e) {
-                        \Log::warning('mass-add price guard Discogs ' . $releaseId . ': ' . $e->getMessage());
+                } else {
+                    $dg = $this->guardDiscogsData($business_id, $releaseId);
+                    if ($dg === null) {
                         $discogsFails++;
                         $unchecked = true;
-                        $dg = null;
                     }
                 }
             }
