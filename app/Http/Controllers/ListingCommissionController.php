@@ -1380,6 +1380,17 @@ class ListingCommissionController extends Controller
                     // (Luis left at 7:02 of a 6:00-7:30 party, Manolo stayed).
                     // Time-clock parties only; older ones keep the even split.
                     $mins = $this->partyPunchMinutes($businessId, $locId, $sC, $eC);
+                    // Sarah 2026-11-25: a few minutes at the start or end
+                    // doesn't count (Hudson left 3 min into GTA VI). Under 30
+                    // minutes in the window = not part of the party.
+                    if ($mins !== null) {
+                        foreach ($ringers as $uid => $name) {
+                            if (($mins[$uid] ?? 0) < 30) { unset($ringers[$uid]); }
+                        }
+                        $solo = count($ringers) <= 1;
+                        $n = max(1, count($ringers));
+                        $rawPool = $solo ? 0.0 : $sales * (self::PARTY_DEFAULT_PERCENT / 100);
+                    }
                     $totMin = 0;
                     foreach ($ringers as $uid => $name) { $totMin += $mins[$uid] ?? 0; }
                     $weighted = $mins !== null && $totMin > 0;
