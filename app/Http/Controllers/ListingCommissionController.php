@@ -56,6 +56,7 @@ class ListingCommissionController extends Controller
         'mica'  => '2026-08-12', // last day
         'zella' => '2026-08-06', // time off 8/8-8/21, only worked 8/6 this period
         'willy' => '2026-10-18', // on leave from 10/19, no commission while out (Sarah 11/25)
+        'davis' => '2026-11-15', // last day 11/15/26 (Sarah 11/25)
     ];
 
     // Owners / back-office + departed non-floor accounts that don't get paid
