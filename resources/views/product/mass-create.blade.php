@@ -4423,6 +4423,29 @@ a, b, c, d, e</textarea>
     // One row per not-yet-listed copy of each individually entered record,
     // through the same row builder the bulk Discogs add uses. Sequential to
     // stay under Discogs' rate limit.
+    // Big pinned banner while buy rows are added, so it's obvious the page
+    // is working (the small grey status next to the button was easy to miss).
+    function bfcProgress(done, total, label, finished) {
+        var $b = $('#bfc_progress');
+        if (!$b.length) {
+            $b = $('<div id="bfc_progress" style="position:fixed; top:60px; left:50%; transform:translateX(-50%); z-index:2000;'
+                + ' width:min(560px, calc(100% - 32px)); padding:14px 18px; border-radius:8px; color:#fff;'
+                + ' font-size:18px; font-weight:600; box-shadow:0 6px 24px rgba(0,0,0,.25);">'
+                + '<div class="bfc-progress-text"></div>'
+                + '<div class="bfc-progress-sub" style="font-size:13px; font-weight:400; opacity:.9; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></div>'
+                + '<div style="height:8px; background:rgba(255,255,255,.3); border-radius:4px; margin-top:10px; overflow:hidden;">'
+                + '<div class="bfc-progress-bar" style="height:100%; width:0; background:#fff; transition:width .3s;"></div></div></div>').appendTo('body');
+        }
+        clearTimeout($b.data('hideTimer'));
+        $b.css('background', finished ? '#00a65a' : '#3c8dbc').show();
+        $b.find('.bfc-progress-text').html(finished
+            ? '<i class="fa fa-check"></i> ' + label
+            : '<i class="fa fa-spinner fa-spin"></i> Adding ' + Math.min(done + 1, total) + ' of ' + total + '…');
+        $b.find('.bfc-progress-sub').text(finished ? '' : (label || '')).toggle(!finished && !!label);
+        $b.find('.bfc-progress-bar').css('width', (total ? Math.round(100 * (finished ? total : done) / total) : 0) + '%');
+        if (finished) $b.data('hideTimer', setTimeout(function () { $b.fadeOut(400); }, 6000));
+    }
+
     $(document).on('click', '#bfc_add_individual', function () {
         var $btn = $(this).prop('disabled', true);
         var queue = [];
@@ -4435,6 +4458,8 @@ a, b, c, d, e</textarea>
         var toPrice = queue.filter(function (l) { return !l.discogs_release_id; });
         queue = queue.filter(function (l) { return !!l.discogs_release_id; });
         var done = 0;
+        var total = queue.length;
+        if (!total) bfcProgress(0, 0, 'Sending ' + toPrice.length + ' to web pricing…', true);
         function priceOnWeb() {
             var lines = toPrice.map(function (l) {
                 return String(l.title || l.upc).replace(/\s+/g, ' ').trim() + ' (' + hint(l) + ')';
@@ -4447,6 +4472,7 @@ a, b, c, d, e</textarea>
             $('#bulk_product_text').val(lines.join('\n'));
             $('#bfc_add_status').html((done ? 'Added ' + done + ' from Discogs. ' : '') + 'Pricing ' + toPrice.length + ' item' + (toPrice.length === 1 ? '' : 's')
                 + ' on eBay and the web (see Bulk Product Entry)…');
+            if (total) bfcProgress(total, total, 'Added ' + done + ' from Discogs — now pricing ' + toPrice.length + ' on the web', true);
             $('html, body').animate({ scrollTop: $box.offset().top - 60 }, 200);
             $('#ai_price_bulk_text').trigger('click');
         }
@@ -4454,11 +4480,15 @@ a, b, c, d, e</textarea>
             if (!queue.length) {
                 if (toPrice.length) return priceOnWeb();
                 $('#bfc_add_status').text('Added ' + done + ' row' + (done === 1 ? '' : 's') + ' with a starting price from Discogs for each grade. Check each one, then Save.');
+                $btn.html('<i class="fa fa-check"></i> Added ' + done + ' row' + (done === 1 ? '' : 's'));
+                bfcProgress(done, total, 'Added ' + done + ' row' + (done === 1 ? '' : 's') + ' — check each price, then Save', true);
                 return;
             }
             var l = queue.shift();
             var idx = nextMassRowIndex();
-            $('#bfc_add_status').text('Adding ' + (done + 1) + '…');
+            $('#bfc_add_status').text('Adding ' + (done + 1) + ' of ' + total + '…');
+            $btn.html('<i class="fa fa-spinner fa-spin"></i> Adding ' + (done + 1) + ' of ' + total + '…');
+            bfcProgress(done, total, lotName(l));
             var addRow = function (data) {
                 // Category from the scanned barcode wins (it knows used vs sealed).
                 // When it only knows the format ("CD - Used"), keep the genre the
