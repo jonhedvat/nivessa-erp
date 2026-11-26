@@ -633,6 +633,7 @@ class RsdOrderController extends Controller
         $since = now()->subMonths((int) $request->input('months', 12))->toDateString();
         $locs = \App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id')->toArray();
         if ($request->input('mode') === 'top') return $this->topSpenders($request, $biz);
+        if ($request->input('mode') === 'everyone') return $this->everyoneEmails($request, $biz);
         if ($request->input('mode') === 'clover') {
             // In-store customers who gave an email at the Clover register, newest first.
             $staff = array_flip(array_filter(array_map(function ($e) { return strtolower(trim((string) $e)); },
@@ -789,5 +790,67 @@ class RsdOrderController extends Controller
         }
         return response()->json(['drop' => $drop, 'since' => $since, 'eligible' => $total, 'returned' => count($out),
             'spent_cutoff' => $out ? end($out)['spent'] : null, 'top_spent' => $out ? $out[0]['spent'] : null]);
+    }
+
+    /**
+     * ?mode=everyone (Sarah 11/26): every email a real person gave us, for the
+     * "everyone" eblast. ERP customers/sellers (incl. Clover), in-store order
+     * and sell-quote forms, plus every website source via the bridge
+     * (/erp/all-emails). Not the old scraped Instagram lists. CSV download:
+     * EMAIL, FIRSTNAME, LASTNAME, SOURCES. Staff, test and nivessa emails dropped.
+     */
+    protected function everyoneEmails(Request $request, int $biz)
+    {
+        $staff = array_flip(array_filter(array_map(function ($e) { return strtolower(trim((string) $e)); },
+            \DB::table('users')->where('business_id', $biz)->pluck('email')->toArray())));
+        $out = [];
+        $unsub = [];
+        $add = function ($email, $first, $last, $source) use (&$out, $staff) {
+            $e = strtolower(trim((string) $email));
+            if (!filter_var($e, FILTER_VALIDATE_EMAIL) || isset($staff[$e])) return;
+            if (preg_match('/nivessa|hedvat|^test@|example\.|noreply|no-reply/', $e)) return;
+            if (!isset($out[$e])) $out[$e] = ['first' => '', 'last' => '', 'sources' => []];
+            if ($out[$e]['first'] === '' && trim((string) $first) !== '') { $out[$e]['first'] = trim((string) $first); $out[$e]['last'] = trim((string) $last); }
+            $out[$e]['sources'][$source] = true;
+        };
+        $split = function ($name) { $p = preg_split('/\s+/', trim((string) $name), 2); return [$p[0] ?? '', $p[1] ?? '']; };
+        foreach (\DB::table('contacts')->where('business_id', $biz)->where('is_default', 0)->whereNotNull('email')->where('email', 'like', '%@%')
+            ->select('email', 'first_name', 'last_name', 'name', 'type', 'clover_customer_id')->cursor() as $c) {
+            if (stripos((string) $c->name, 'website') !== false || stripos((string) $c->name, 'walk') !== false) continue;
+            $first = $c->first_name; $last = $c->last_name;
+            if (trim((string) $first) === '') { list($first, $last) = $split($c->name); }
+            $add($c->email, $first, $last, $c->clover_customer_id ? 'clover_customer' : ($c->type === 'supplier' ? 'seller' : 'erp_customer'));
+        }
+        if (\Schema::hasTable('in_store_orders')) {
+            foreach (\DB::table('in_store_orders')->whereNotNull('customer_email')->select('customer_email')->cursor() as $r) $add($r->customer_email, '', '', 'in_store_order');
+        }
+        if (\Schema::hasTable('sell_quotes')) {
+            foreach (\DB::table('sell_quotes')->whereNotNull('email')->select('email')->cursor() as $r) $add($r->email, '', '', 'sell_quote');
+        }
+        $webCount = null;
+        try {
+            $web = app(\App\Http\Controllers\WebsiteOrdersController::class)->bridgeGet('/erp/all-emails');
+            $webRows = (array) ($web['data'] ?? []);
+            $webCount = !empty($web['success']) ? count($webRows) : ('error: ' . ($web['message'] ?? 'unknown'));
+            foreach ($webRows as $w) {
+                list($first, $last) = $split($w['name'] ?? '');
+                foreach ((array) ($w['sources'] ?? ['website']) as $src) $add($w['email'] ?? '', $first, $last, 'web_' . $src);
+                if (!empty($w['unsubscribed'])) $unsub[strtolower(trim((string) $w['email']))] = true;
+            }
+        } catch (\Throwable $e) {
+            $webCount = 'error: ' . $e->getMessage();
+        }
+        foreach ($unsub as $e => $_) unset($out[$e]);
+        if ($request->input('format') === 'csv') {
+            return response()->streamDownload(function () use ($out) {
+                $f = fopen('php://output', 'w');
+                fputcsv($f, ['EMAIL', 'FIRSTNAME', 'LASTNAME', 'SOURCES']);
+                foreach ($out as $e => $o) fputcsv($f, [$e, ucfirst(strtolower($o['first'])), $o['last'], implode(';', array_keys($o['sources']))]);
+                fclose($f);
+            }, 'everyone-emails-' . now()->format('Y-m-d') . '.csv');
+        }
+        $by = [];
+        foreach ($out as $o) foreach ($o['sources'] as $s => $_) $by[$s] = ($by[$s] ?? 0) + 1;
+        return response()->json(['count' => count($out), 'website' => $webCount, 'unsubscribed_dropped' => count($unsub), 'by_source' => $by]);
     }
 }
