@@ -69,7 +69,7 @@ class BulkTransferController extends Controller
         if ($error) {
             return response()->json(['success' => false, 'msg' => $error]);
         }
-        $rows = $this->resolve($business_id, (string) $request->input('list', ''), $from, $to);
+        $rows = $this->resolve($business_id, (string) $request->input('list', ''), $from, $to, false, $this->addMissing($request));
         $ok = array_values(array_filter($rows, function ($r) { return $r['status'] === 'ok'; }));
         return response()->json([
             'success' => true,
@@ -95,11 +95,19 @@ class BulkTransferController extends Controller
         try {
             DB::beginTransaction();
             // Lock From stock rows so two people moving the same record can't both take it.
-            $rows = $this->resolve($business_id, $list, $from, $to, true);
+            $rows = $this->resolve($business_id, $list, $from, $to, true, $this->addMissing($request));
             $ok = array_values(array_filter($rows, function ($r) { return $r['status'] === 'ok'; }));
             if (!$ok) {
                 DB::rollBack();
                 return response()->json(['success' => false, 'msg' => 'Nothing to move. Every line was skipped.', 'rows' => $rows]);
+            }
+            // "Add missing copies to From": book the shortfall in at From as a
+            // purchase first (like it was just bought there), so the transfer
+            // below has stock to move and Stock History stays right.
+            foreach ($ok as $r) {
+                if (!empty($r['topup'])) {
+                    $this->addStockAtFrom($business_id, $from, $r, (int) $user->id, self::NOTE_PREFIX . ' by ' . $name);
+                }
             }
             $lines = array_map(function ($r) {
                 return ['product_id' => $r['product_id'], 'variation_id' => $r['variation_id'], 'qty' => (float) $r['qty'], 'price' => (float) $r['price']];
@@ -194,6 +202,46 @@ class BulkTransferController extends Controller
         return response()->json(['success' => true, 'results' => $results]);
     }
 
+    protected function addMissing(Request $request): bool
+    {
+        return (string) $request->input('add_missing', '') === '1';
+    }
+
+    /**
+     * Book copies in at From as a received purchase (transaction + purchase
+     * line + stock), same trail POS quick-receive uses, so it shows in Stock
+     * History like it was just bought there. Cost = last purchase / default cost.
+     */
+    protected function addStockAtFrom(int $business_id, int $from, array $r, int $user_id, string $note): void
+    {
+        $qty = (float) $r['topup'];
+        $cost = (float) $r['price'];
+        $t = \App\Transaction::create([
+            'type' => 'purchase',
+            'status' => 'received',
+            'business_id' => $business_id,
+            'location_id' => $from,
+            'transaction_date' => now(),
+            'total_before_tax' => $cost * $qty,
+            'final_total' => $cost * $qty,
+            'payment_status' => 'paid',
+            'created_by' => $user_id,
+            'additional_notes' => 'Added at From for transfer (' . $note . ')',
+        ]);
+        $pl = new \App\PurchaseLine();
+        $pl->transaction_id = $t->id;
+        $pl->product_id = $r['product_id'];
+        $pl->variation_id = $r['variation_id'];
+        $pl->quantity = $qty;
+        $pl->purchase_price = $cost;
+        $pl->purchase_price_inc_tax = $cost;
+        $pl->pp_without_discount = $cost;
+        $pl->item_tax = 0;
+        $pl->tax_id = null;
+        $pl->save();
+        app(\App\Utils\ProductUtil::class)->updateProductQuantity($from, $r['product_id'], $r['variation_id'], $qty, 0, null, false);
+    }
+
     protected function locationsFromRequest(Request $request, int $business_id): array
     {
         $from = (int) $request->input('from_location_id');
@@ -233,14 +281,14 @@ class BulkTransferController extends Controller
      * then the same code with a leading 0/00 added or removed, then numeric product id. Duplicate lines for the same variation are
      * merged into the first one.
      */
-    protected function resolve(int $business_id, string $list, int $from, int $to, bool $lock = false): array
+    protected function resolve(int $business_id, string $list, int $from, int $to, bool $lock = false, bool $addMissing = false): array
     {
         $rows = [];
         $first_by_variation = [];
         foreach ($this->parseLines($list) as $p) {
             $row = ['line' => $p['line'], 'code' => $p['code'], 'qty' => $p['qty'], 'status' => 'not_found',
                 'status_text' => 'Not found', 'name' => '', 'sku' => '', 'product_id' => null, 'variation_id' => null,
-                'qty_from' => 0, 'qty_to' => 0, 'price' => 0];
+                'qty_from' => 0, 'qty_to' => 0, 'price' => 0, 'topup' => 0];
 
             $match = $this->findVariation($business_id, $p['code'], $from);
             if (is_string($match)) {
@@ -262,7 +310,7 @@ class BulkTransferController extends Controller
             if (isset($first_by_variation[$vid])) {
                 // Fold the qty into the first line for this record, then re-check stock there.
                 $rows[$first_by_variation[$vid]]['qty'] += $p['qty'];
-                $this->checkStock($rows[$first_by_variation[$vid]], (int) $match->enable_stock);
+                $this->checkStock($rows[$first_by_variation[$vid]], (int) $match->enable_stock, $addMissing);
                 $row['qty'] = 0;
                 $row['status'] = 'duplicate';
                 $row['status_text'] = 'Duplicate line merged into line ' . $rows[$first_by_variation[$vid]]['line'];
@@ -276,21 +324,32 @@ class BulkTransferController extends Controller
             $row['qty_to'] = (float) DB::table('variation_location_details')->where('variation_id', $vid)->where('location_id', $to)->sum('qty_available');
             $row['price'] = (float) ($match->last_purchased_price ?? $match->default_purchase_price ?? 0);
 
-            $this->checkStock($row, (int) $match->enable_stock);
+            $this->checkStock($row, (int) $match->enable_stock, $addMissing);
             $first_by_variation[$vid] = count($rows);
             $rows[] = $row;
         }
         return $rows;
     }
 
-    protected function checkStock(array &$row, int $enable_stock)
+    protected function checkStock(array &$row, int $enable_stock, bool $addMissing = false)
     {
+        $row['topup'] = 0;
         if ($enable_stock !== 1) {
             $row['status'] = 'no_stock_tracking';
             $row['status_text'] = 'Stock not tracked for this product';
         } elseif ($row['qty_from'] <= 0 && $row['qty_to'] > 0) {
             $row['status'] = 'at_to_only';
             $row['status_text'] = 'Already at To only';
+        } elseif ($row['qty_from'] < $row['qty'] && $addMissing) {
+            $short = $row['qty'] - max(0, $row['qty_from']);
+            if ($row['price'] <= 0) {
+                $row['status'] = 'not_enough';
+                $row['status_text'] = 'Not enough stock at From, and no cost on file to add it. Set the cost on the product first.';
+            } else {
+                $row['topup'] = $short;
+                $row['status'] = 'ok';
+                $row['status_text'] = 'OK, adds ' . $this->fmt($short) . ' to From first';
+            }
         } elseif ($row['qty_from'] < $row['qty']) {
             $row['status'] = 'not_enough';
             $row['status_text'] = 'Not enough stock at From (has ' . $this->fmt($row['qty_from']) . ')';

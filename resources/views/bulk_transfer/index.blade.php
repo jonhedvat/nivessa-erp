@@ -58,6 +58,11 @@
       </div>
     </div>
 
+    <label id="tr-add-missing-wrap" style="display:flex; gap:8px; align-items:flex-start; font-weight:500; font-size:14px; margin:0 0 12px; cursor:pointer;">
+      <input type="checkbox" id="tr-add-missing" value="1" style="margin-top:3px;">
+      <span>If From doesn't have enough, add the missing copies to From first (booked like they were just bought there), then move them.</span>
+    </label>
+
     <div class="tr-actions">
       <button type="button" class="tr-btn" id="tr-check">Check list</button>
       <button type="button" class="tr-btn tr-btn-primary" id="tr-move" disabled>Move items</button>
@@ -103,9 +108,9 @@
   function num(n) { n = parseFloat(n || 0); return (Math.round(n * 100) / 100).toString(); }
   function payload() {
     return { from_location_id: $('#tr-from').val(), to_location_id: $('#tr-to').val(), list: $('#tr-list').val(),
-      _token: $('meta[name="csrf-token"]').attr('content') };
+      add_missing: $('#tr-add-missing').is(':checked') ? 1 : 0, _token: $('meta[name="csrf-token"]').attr('content') };
   }
-  function key() { var p = payload(); return p.from_location_id + '|' + p.to_location_id + '|' + p.list; }
+  function key() { var p = payload(); return p.from_location_id + '|' + p.to_location_id + '|' + p.add_missing + '|' + p.list; }
   function pillClass(status) { return status === 'ok' ? 'ok' : (status === 'duplicate' ? 'dup' : 'bad'); }
   function msg(kind, html) { $('#tr-result').html('<div class="tr-msg ' + kind + '">' + html + '</div>'); }
 
@@ -118,6 +123,7 @@
     }
   }
   $('#tr-from, #tr-to').on('change', invalidate);
+  $('#tr-add-missing').on('change', function () { invalidate(); if ($.trim($('#tr-list').val()) !== '') $('#tr-check').trigger('click'); });
   $('#tr-list').on('input', invalidate);
   // Copy down: set every line to the same quantity, replacing any it already had.
   $('#tr-copy-down').on('click', function () {
