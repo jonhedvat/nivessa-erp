@@ -87,6 +87,17 @@ class GiftCard extends Model
 
         return true;
     }
+
+    /**
+     * Promo bonus for a gift card loaded with $amount today (store time),
+     * from config('bucks_promos.gift_card_bonus_days'). 0 on normal days.
+     */
+    public static function promoBonusFor($amount)
+    {
+        $rule = config('bucks_promos.gift_card_bonus_days.' . \Carbon\Carbon::now('America/Los_Angeles')->format('Y-m-d'));
+        if (empty($rule) || empty($rule['per']) || empty($rule['bonus']) || $amount <= 0) {
+            return 0;
+        }
+        return floor(round($amount, 2) / $rule['per']) * $rule['bonus'];
+    }
 }
-
-

@@ -3503,14 +3503,20 @@ function pos_product_row(variation_id = null, purchase_line_id = null, weighing_
                                 // Code from the code sheet: the card activates
                                 // automatically when the sale is finalized.
                                 var gcCode = '';
-                                $.ajax({ url: '/gift-cards/next-code', async: false, dataType: 'json', success: function (r) { gcCode = String((r && r.code) || '').toUpperCase(); } });
+                                var gcBonus = 0;
+                                $.ajax({ url: '/gift-cards/next-code', data: { amount: gcAmount }, async: false, dataType: 'json', success: function (r) { gcCode = String((r && r.code) || '').toUpperCase(); gcBonus = parseFloat((r && r.bonus) || 0) || 0; } });
+                                var gcCardValue = '$' + (gcAmount + gcBonus).toFixed(2).replace(/\.00$/, '');
                                 var gcIdx = this_row.attr('data-row_index');
                                 this_row.find('input.pos_gift_card_code').remove();
                                 this_row.find('td').first().append('<input type="hidden" class="pos_gift_card_code" name="products[' + gcIdx + '][gift_card_code]" value="">');
                                 this_row.find('input.pos_gift_card_code').val(gcCode);
                                 if (gcCode) {
-                                    this_row.find('td').first().append('<div style="margin-top:4px;font-size:15px;font-weight:700;">Write on card: ' + $('<div>').text(gcCode).html() + '</div>');
-                                    window.alert('Gift card code: ' + gcCode + '\n\nWrite it on the card. It will be active once the sale is done.');
+                                    this_row.find('td').first().append('<div style="margin-top:4px;font-size:15px;font-weight:700;">Write on card: ' + $('<div>').text(gcCode).html() + (gcBonus > 0 ? ', amount ' + gcCardValue + ' (includes $' + gcBonus + ' free)' : '') + '</div>');
+                                    if (gcBonus > 0) {
+                                        window.alert('Gift card code: ' + gcCode + '\n\nWrite on the card: ' + gcCode + ' and ' + gcCardValue + '\n\n(The free $' + gcBonus + ' is added automatically.)');
+                                    } else {
+                                        window.alert('Gift card code: ' + gcCode + '\n\nWrite it on the card. It will be active once the sale is done.');
+                                    }
                                 } else {
                                     toastr.warning('Could not get a gift card code. After the sale, add the card at Gift Cards > Add.');
                                 }

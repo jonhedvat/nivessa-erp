@@ -17,7 +17,11 @@ class GiftCardController extends Controller
     public function nextCode(Request $request)
     {
         $business_id = $request->session()->get('user.business_id');
-        return response()->json(['code' => GiftCard::generateCardNumber($business_id)]);
+        $amount = (float) $request->input('amount', 0);
+        return response()->json([
+            'code' => GiftCard::generateCardNumber($business_id),
+            'bonus' => GiftCard::promoBonusFor($amount),
+        ]);
     }
 
     /**

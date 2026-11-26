@@ -9945,15 +9945,22 @@ class SellPosController extends Controller
             }
             $contactId = $transaction->contact_id;
             $isWalkIn = \App\Contact::where('id', $contactId)->value('is_default');
+            // Promo days (config bucks_promos.gift_card_bonus_days): the
+            // free bonus is loaded on top of what the customer paid.
+            $bonus = GiftCard::promoBonusFor($amount);
+            $notes = 'Sold at the register, invoice ' . $transaction->invoice_no;
+            if ($bonus > 0) {
+                $notes .= '. Paid $' . number_format($amount, 2) . ' + $' . number_format($bonus, 2) . ' free promo bonus';
+            }
             GiftCard::create([
                 'business_id' => $transaction->business_id,
                 'card_number' => $code,
                 'contact_id' => $isWalkIn ? null : $contactId,
-                'initial_value' => $amount,
-                'balance' => $amount,
+                'initial_value' => $amount + $bonus,
+                'balance' => $amount + $bonus,
                 'expiry_date' => null,
                 'status' => 'active',
-                'notes' => 'Sold at the register, invoice ' . $transaction->invoice_no,
+                'notes' => $notes,
                 'created_by' => auth()->user()->id ?? $transaction->created_by,
             ]);
         }
