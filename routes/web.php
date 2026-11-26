@@ -1739,6 +1739,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     // Bulk Transfer: paste/scan a list of ids or SKUs and move them to another store.
     Route::get('/transfers/bulk', 'BulkTransferController@index');
     Route::post('/transfers/bulk/preview', 'BulkTransferController@preview');
+    Route::get('/transfers/bulk/search', 'BulkTransferController@search');
     Route::post('/transfers/bulk', 'BulkTransferController@store');
     Route::get('/transfers/slip/{id}', 'TransferReceiptController@slip');
     Route::get('/transfers/labels/{id}', 'TransferReceiptController@labels');

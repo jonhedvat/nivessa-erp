@@ -16,12 +16,12 @@ body.transfer-v2 .tr-card h2 { font-size: 16px; font-weight: 700; margin: 0 0 12
 body.transfer-v2 .tr-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 14px; }
 body.transfer-v2 .tr-field { display: flex; flex-direction: column; gap: 6px; min-width: 220px; flex: 1; }
 body.transfer-v2 .tr-field label { font-size: 12px; font-weight: 700; color: var(--tr-ink-2); margin: 0; }
-body.transfer-v2 select, body.transfer-v2 textarea {
+body.transfer-v2 select, body.transfer-v2 textarea, body.transfer-v2 #tr-find {
   border: 1px solid var(--tr-line-2); border-radius: 9px; padding: 9px 11px; font-size: 14px; font-family: inherit;
   background: #fff; color: var(--tr-ink); box-shadow: none; width: 100%; }
-body.transfer-v2 select { height: 40px; }
+body.transfer-v2 select, body.transfer-v2 #tr-find { height: 40px; }
 body.transfer-v2 textarea { min-height: 220px; font-family: ui-monospace, Menlo, monospace; font-size: 14px; line-height: 1.5; resize: vertical; }
-body.transfer-v2 select:focus, body.transfer-v2 textarea:focus { outline: none; border-color: var(--tr-sel-ink); box-shadow: 0 0 0 3px var(--tr-sel); }
+body.transfer-v2 select:focus, body.transfer-v2 textarea:focus, body.transfer-v2 #tr-find:focus { outline: none; border-color: var(--tr-sel-ink); box-shadow: 0 0 0 3px var(--tr-sel); }
 body.transfer-v2 .tr-hint { font-size: 13px; color: var(--tr-ink-2); margin-top: 6px; }
 body.transfer-v2 .tr-btn { border-radius: 10px; padding: 10px 18px; font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit;
   display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--tr-line-2); background: var(--tr-surface); color: var(--tr-ink); text-decoration: none; }

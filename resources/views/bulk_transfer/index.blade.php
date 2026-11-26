@@ -36,6 +36,18 @@
     </div>
 
     <div class="tr-field" style="margin-bottom: 14px;">
+      <label for="tr-find">Or find by artist / title (when the UPC is missing or wrong)</label>
+      <input id="tr-find" type="search" autocomplete="off" placeholder="Type artist and/or title, e.g. beatles abbey">
+      <div class="tr-hint">Press <strong>Add</strong> on the right record. It goes on the list below (as "VID" + its number) and the list is checked.</div>
+      <div id="tr-find-results" class="tr-table-wrap" style="display:none; max-height:340px; overflow-y:auto; margin-top:6px;">
+        <table class="tr-table">
+          <thead><tr><th>Artist - Title</th><th>Category</th><th>SKU</th><th class="num">At From</th><th class="num">At To</th><th></th></tr></thead>
+          <tbody id="tr-find-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tr-field" style="margin-bottom: 14px;">
       <label for="tr-list">Paste or scan product IDs / SKUs, one per line (a number like 158831 can be either)</label>
       <textarea id="tr-list" placeholder="158831&#10;0602455912345 x2&#10;AXM-004,3" autofocus>{{ $prefill ?? '' }}</textarea>
       <div class="tr-hint">One per line. Add a quantity with "SKU x2" or "SKU,2". Without one, it moves 1.</div>
@@ -82,6 +94,7 @@
   var URL_PREVIEW = @json(url('/transfers/bulk/preview'));
   var URL_STORE = @json(url('/transfers/bulk'));
   var URL_RECEIVE = @json(url('/transfers/receive?code='));
+  var URL_SEARCH = @json(url('/transfers/bulk/search'));
   var history = @json($history);
   var checkedKey = null;
 
@@ -202,6 +215,33 @@
       $b.text('Move items');
       checkedKey = null;
     });
+  });
+
+  // Find by artist / title
+  var findTimer = null, findReq = null;
+  function runFind() {
+    var q = $.trim($('#tr-find').val());
+    if (findReq) { findReq.abort(); findReq = null; }
+    if (q.length < 2) { $('#tr-find-results').hide(); return; }
+    findReq = $.get(URL_SEARCH, { q: q, from_location_id: $('#tr-from').val(), to_location_id: $('#tr-to').val() }).done(function (res) {
+      var html = '';
+      (res.results || []).forEach(function (r) {
+        html += '<tr class="' + (r.qty_from > 0 ? '' : 'skip') + '"><td>' + esc(r.name) + '</td><td>' + esc(r.category) + '</td><td>' + esc(r.sku) + '</td>' +
+          '<td class="num">' + num(r.qty_from) + '</td><td class="num">' + num(r.qty_to) + '</td>' +
+          '<td><button type="button" class="tr-btn tr-find-add" style="padding:5px 12px; font-size:13px;" data-vid="' + r.variation_id + '">Add</button></td></tr>';
+      });
+      $('#tr-find-body').html(html || '<tr><td colspan="6" class="tr-empty">Nothing found. Try fewer words.</td></tr>');
+      $('#tr-find-results').show();
+    }).always(function () { findReq = null; });
+  }
+  $('#tr-find').on('input', function () { clearTimeout(findTimer); findTimer = setTimeout(runFind, 300); })
+    .on('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(findTimer); runFind(); } });
+  $('#tr-from, #tr-to').on('change', function () { if ($('#tr-find-results').is(':visible')) runFind(); });
+  $(document).on('click', '.tr-find-add', function () {
+    var cur = $('#tr-list').val().replace(/\s+$/, '');
+    $('#tr-list').val((cur ? cur + '\n' : '') + 'VID ' + $(this).data('vid')).trigger('input');
+    $(this).prop('disabled', true).text('Added');
+    $('#tr-check').trigger('click');
   });
 
   renderHistory();

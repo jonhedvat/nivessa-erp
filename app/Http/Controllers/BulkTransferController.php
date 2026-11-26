@@ -135,6 +135,64 @@ class BulkTransferController extends Controller
         ]);
     }
 
+    /**
+     * Find by artist / title, for records whose UPC is missing or out of date.
+     * Every word typed must appear in the artist or title. Records with stock
+     * at From come first. The page adds the picked one as a "VID 123" line.
+     */
+    public function search(Request $request)
+    {
+        $this->guard();
+        $business_id = (int) $request->session()->get('user.business_id');
+        $from = (int) $request->input('from_location_id');
+        $to = (int) $request->input('to_location_id');
+        $words = array_slice(array_filter(preg_split('/\s+/', trim((string) $request->input('q', '')))), 0, 6);
+        $words = array_values(array_filter($words, function ($w) { return mb_strlen($w) >= 2 || ctype_digit($w); }));
+        if (!$words) {
+            return response()->json(['success' => true, 'results' => []]);
+        }
+
+        $q = DB::table('variations as v')
+            ->join('products as p', 'p.id', '=', 'v.product_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'p.category_id')
+            ->where('p.business_id', $business_id)
+            ->where('p.is_inactive', 0)
+            ->whereNull('v.deleted_at');
+        foreach ($words as $w) {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $w) . '%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('p.name', 'like', $like)->orWhere('p.artist', 'like', $like);
+            });
+        }
+        $stockAt = function (int $loc) {
+            return '(SELECT COALESCE(SUM(qty_available), 0) FROM variation_location_details WHERE variation_id = v.id AND location_id = ' . $loc . ')';
+        };
+        $rows = $q->select('v.id as variation_id', 'v.product_id', 'v.name as version', 'v.sub_sku', 'p.name', 'p.artist', 'p.type',
+                'c.name as category', DB::raw($stockAt($from) . ' as qty_from'), DB::raw($stockAt($to) . ' as qty_to'))
+            ->orderByRaw($stockAt($from) . ' > 0 DESC')
+            ->orderBy('p.artist')->orderBy('p.name')
+            ->limit(40)
+            ->get();
+
+        $results = $rows->map(function ($r) {
+            $name = trim((string) $r->artist) !== '' ? trim($r->artist) . ' - ' . $r->name : $r->name;
+            if ($r->type === 'variable' && trim((string) $r->version) !== '' && strtoupper($r->version) !== 'DUMMY') {
+                $name .= ' (' . $r->version . ')';
+            }
+            return [
+                'variation_id' => (int) $r->variation_id,
+                'product_id' => (int) $r->product_id,
+                'name' => $name,
+                'category' => (string) $r->category,
+                'sku' => (string) $r->sub_sku,
+                'qty_from' => (float) $r->qty_from,
+                'qty_to' => (float) $r->qty_to,
+            ];
+        })->values();
+
+        return response()->json(['success' => true, 'results' => $results]);
+    }
+
     protected function locationsFromRequest(Request $request, int $business_id): array
     {
         $from = (int) $request->input('from_location_id');
@@ -252,6 +310,11 @@ class BulkTransferController extends Controller
                 ->select('v.id as variation_id', 'v.product_id', 'v.sub_sku', 'v.default_purchase_price', 'p.sku', 'p.name', 'p.artist', 'p.enable_stock',
                     DB::raw('(SELECT purchase_price_inc_tax FROM purchase_lines WHERE variation_id = v.id ORDER BY id DESC LIMIT 1) as last_purchased_price'));
         };
+
+        // "VID 123" (what Find by artist / title fills in) is that exact version.
+        if (preg_match('/^vid\s*[:#]?\s*(\d+)$/i', $code, $m)) {
+            return $base()->where('v.id', (int) $m[1])->first();
+        }
 
         // "ID 123" (what Transfer Selected fills in) is that exact product.
         if (preg_match('/^id\s*[:#]?\s*(\d+)$/i', $code, $m)) {
