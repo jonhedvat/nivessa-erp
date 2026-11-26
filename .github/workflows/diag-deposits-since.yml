@@ -1,0 +1,53 @@
+name: Diag safe deposits since #N
+on:
+  workflow_dispatch:
+    inputs:
+      store:
+        description: "Store name contains (e.g. Hollywood, Pico)"
+        required: true
+        default: "Hollywood"
+      after_seq:
+        description: "Deposit number to count AFTER (exclusive)"
+        required: true
+        default: "0"
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Deposits since (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          STORE: ${{ inputs.store }}
+          AFTER: ${{ inputs.after_seq }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          envs: STORE,AFTER
+          script_stop: false
+          command_timeout: 120s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export STORE AFTER
+            php artisan tinker --no-ansi <<'PHP'
+            $store = (string) getenv('STORE'); $after = (int) getenv('AFTER');
+            foreach (\DB::table('business_locations')->where('name', 'like', '%' . $store . '%')->get(['id', 'name']) as $loc) {
+              echo "\n===== {$loc->name} (loc {$loc->id}) deposits after #$after =====\n";
+              $base = \DB::table('cash_deposits')->where('location_id', $loc->id)->where('deposit_seq', $after)->first();
+              echo $base ? "BASE #{$after} amt={$base->amount} at={$base->deposited_at} cashier=[{$base->cashier_name}]\n" : "BASE #{$after} not found\n";
+              $rows = \DB::table('cash_deposits')->where('location_id', $loc->id)->where('deposit_seq', '>', $after)->orderBy('deposit_seq')->get();
+              foreach ($rows as $x) echo "DEP #{$x->deposit_seq} amt={$x->amount} phase={$x->phase} at={$x->deposited_at} cashier=[{$x->cashier_name}] reg={$x->cash_register_id}\n";
+              echo "COUNT=" . $rows->count() . " TOTAL=" . number_format($rows->sum('amount'), 2, '.', '') . "\n";
+            }
+            PHP
+            echo "=== done ==="
