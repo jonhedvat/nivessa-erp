@@ -62,6 +62,10 @@
 .sc-genre { height: 44px; border-radius: 10px; border: 1px solid #E1D7C4; background: #fff; color: #1F1B16; font-size: 14px; padding: 0 10px; cursor: pointer; margin-right: 6px; }
 .sc-gsel { display: block; margin-top: 6px; height: 40px; font-size: 15px; border: 2px solid #1F1B16; border-radius: 8px; padding: 0 8px; max-width: 100%; }
 .sc-moved { color: #2E6B2E; font-weight: 700; }
+.sc-nform { margin-top: 6px; }
+.sc-nform label { display: block; font-size: 13px; color: #6B6257; margin-top: 4px; }
+.sc-nform input { display: block; width: 100%; max-width: 420px; height: 40px; font-size: 16px; border: 2px solid #1F1B16; border-radius: 8px; padding: 0 8px; }
+.sc-nsave { margin-top: 6px; height: 40px; border-radius: 8px; border: 0; background: #1F1B16; color: #fff; font-size: 15px; font-weight: 700; padding: 0 14px; cursor: pointer; }
 .sc-prev { color: #8A4B00; font-weight: 700; }
 .sc-all { height: 44px; border-radius: 10px; border: 1px solid #2E6B2E; background: #fff; color: #2E6B2E; font-size: 14px; font-weight: 700; padding: 0 10px; cursor: pointer; margin-right: 6px; }
 .sc-fixnote { background: #fff; border: 2px solid #1F1B16; border-left: 8px solid #1F1B16; border-radius: 10px; padding: 12px 16px; margin: 0 0 12px; font-size: 16px; line-height: 1.45; color: #1F1B16; }
@@ -78,6 +82,7 @@
             <li><b>If a title shows in a bin in the ERP but it is not physically there, please tap None to mark it 0.</b></li>
             <li>Record not on the list? Scan it.</li>
             <li>If a record was already counted in another bin this week, or you have more than the ERP says, it asks you first so nothing gets counted twice.</li>
+            @can('product.update')<li>Title or artist spelled wrong? Tap <b>Edit</b> on that record, fix it and tap Save. It saves right away and updates the website.</li>@endcan
             @if(count((array) $genres))<li>Wrong genre? Tap <b>Genre</b> on that record and pick the right one. It saves right away.</li>@endif
             <li>Tap the green <b>Done</b> button at the bottom. It saves and takes you back to the bins for the next one. Anything short goes on the Missing list.</li>
         </ol>
@@ -113,11 +118,11 @@
 <script>
 (function () {
     var csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    var LOC = {{ (int) $loc }}, KIND = @json($kind), CAN_ADD = {{ auth()->user()->can('product.create') ? 'true' : 'false' }};
+    var LOC = {{ (int) $loc }}, KIND = @json($kind), CAN_ADD = {{ auth()->user()->can('product.create') ? 'true' : 'false' }}, CAN_EDIT = {{ auth()->user()->can('product.update') ? 'true' : 'false' }};
     var items = @json($items);
     var GENRES = @json($genres), SUB = {{ (int) $sub }};
     var BIN_KEY = @json($binKey), BIN_LABEL = @json($binLabel);
-    var byId = {}, count = {}, touched = {}, extra = [], moved = {}, editing = null;
+    var byId = {}, count = {}, touched = {}, extra = [], moved = {}, editing = null, naming = null, renamed = {};
     // another: said "another copy" for a title counted in a different bin; overOk: highest count okayed above the ERP.
     var another = {}, overOk = {}, lastDialog = 0;
     items.forEach(function (i) { byId[i.id] = i; count[i.id] = 0; });
@@ -138,7 +143,9 @@
             + (i.days != null ? '<div class="sc-small">' + i.days + ' day' + (i.days === 1 ? '' : 's') + ' in store' + (i.days > 365 ? ' <span class="sc-old">⚠ Over 1 year: consider markdown or marketplaces</span>' : '') + '</div>' : '')
             + prevLine(i)
             + (moved[i.id] ? '<div class="sc-small sc-moved">Genre changed to ' + esc(moved[i.id]) + '</div>' : '')
-            + (editing === i.id ? genreSelect(i) : '') + '</div>'
+            + (renamed[i.id] ? '<div class="sc-small sc-moved">Name fixed</div>' : '')
+            + (editing === i.id ? genreSelect(i) : '') + (naming === i.id ? nameForm(i) : '') + '</div>'
+            + (CAN_EDIT ? '<button class="sc-genre sc-edit" type="button">Edit</button>' : '')
             + (GENRES[i.cat] ? '<button class="sc-genre" type="button">Genre</button>' : '')
             + (i.erp > 0 && i.erp <= 2 && !(touched[i.id] && n === Math.round(i.erp)) ? '<button class="sc-all" type="button">All here</button>' : '')
             + (!none ? '<button class="sc-all sc-zero" type="button">None</button>' : '')
@@ -158,6 +165,26 @@
         return '<select class="sc-gsel"><option value="">Move to genre...</option>' + GENRES[i.cat].map(function (g) {
             return '<option value="' + g.id + '"' + (g.id === (i.sub || SUB) ? ' disabled' : '') + '>' + esc(g.name) + (g.id === (i.sub || SUB) ? ' (now)' : '') + '</option>';
         }).join('') + '</select>';
+    }
+    // Misspelled title/artist (Clarissa 11/12, "AVRIL LAGIGNE"): fix it here. Saves at once.
+    function nameForm(i) {
+        return '<div class="sc-nform"><label>Artist</label><input class="sc-nart" type="text" autocomplete="off" autocapitalize="words" value="' + esc(i.artist || '') + '">'
+            + '<label>Title</label><input class="sc-nname" type="text" autocomplete="off" autocapitalize="words" value="' + esc(i.name || '') + '">'
+            + '<button class="sc-nsave" type="button">Save</button></div>';
+    }
+    function saveName(box) {
+        var it = byId[box.closest('.sc-item').getAttribute('data-id')], f = document.getElementById('scFlash'), btn = box.querySelector('.sc-nsave');
+        if (!it) { extra.forEach(function (x) { if (String(x.id) === box.closest('.sc-item').getAttribute('data-id')) it = x; }); }
+        var nm = box.querySelector('.sc-nname').value.trim(), ar = box.querySelector('.sc-nart').value.trim();
+        if (!nm) { f.className = 'sc-flash bad'; f.textContent = 'The title can\'t be blank.'; return; }
+        btn.disabled = true; btn.textContent = 'Saving...';
+        fetch('/reports/shelf-count/name', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' },
+            body: JSON.stringify({ product_id: it.id, name: nm, artist: ar }) })
+            .then(function (r) { return r.json(); }).then(function (j) {
+                if (!j.ok) { btn.disabled = false; btn.textContent = 'Save'; f.className = 'sc-flash bad'; f.textContent = j.msg || 'Could not save the name.'; return; }
+                it.name = j.name; it.artist = j.artist; renamed[it.id] = true; naming = null; render();
+                f.className = 'sc-flash ok'; f.textContent = 'Saved: ' + label(it);
+            }, function () { btn.disabled = false; btn.textContent = 'Save'; f.className = 'sc-flash bad'; f.textContent = 'Could not save the name. Check the connection.'; });
     }
     // Sort the list the way the shelf is laid out (Sarah 10/20): artist,
     // title or bin spot. Choice remembered on this device.
@@ -343,6 +370,7 @@
         if (el) { el.focus(); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
     }
     document.querySelector('.sc-wrap').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && e.target.closest('.sc-nform')) { e.preventDefault(); saveName(e.target.closest('.sc-nform')); return; }
         if (e.key === 'Enter' && e.target.closest('.sc-qin')) { e.preventDefault(); setQty(e.target); document.getElementById('scQ').focus(); return; }
         if (e.key !== 'Enter' || !e.target.closest('.sc-n')) return;
         e.preventDefault();
@@ -361,6 +389,8 @@
             qin.addEventListener('blur', function () { setQty(qin); });
             return;
         }
+        var ns = e.target.closest('.sc-nsave'); if (ns) { saveName(ns.closest('.sc-nform')); return; }
+        var eb = e.target.closest('.sc-edit'); if (eb) { var nid = +eb.closest('.sc-item').getAttribute('data-id'); naming = naming === nid ? null : nid; render(); var ni = document.querySelector('.sc-item[data-id="' + nid + '"] .sc-nart'); if (ni) ni.focus(); return; }
         var gb = e.target.closest('.sc-genre'); if (gb) { var gid = +gb.closest('.sc-item').getAttribute('data-id'); editing = editing === gid ? null : gid; render(); return; }
         var z = e.target.closest('.sc-zero'); if (z) { var zi = byId[z.closest('.sc-item').getAttribute('data-id')]; count[zi.id] = 0; bump(zi, 0); return; }
         var all = e.target.closest('.sc-all'); if (all) { var ai = byId[all.closest('.sc-item').getAttribute('data-id')]; bump(ai, Math.round(ai.erp) - (count[ai.id] || 0)); return; }

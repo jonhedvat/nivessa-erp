@@ -1279,6 +1279,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/reports/shelf-count/bin', 'ShelfCountController@bin');
     Route::get('/reports/shelf-count/lookup', 'ShelfCountController@lookup');
     Route::post('/reports/shelf-count/genre', 'ShelfCountController@setGenre');
+    Route::post('/reports/shelf-count/name', 'ShelfCountController@setName');
     Route::get('/reports/shelf-count/barcode-info', 'ShelfCountController@barcodeInfo');
     Route::post('/reports/shelf-count/quick-add', 'ShelfCountController@quickAdd');
     Route::get('/reports/shelf-count/missing', 'ShelfCountController@missing');

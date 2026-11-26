@@ -395,6 +395,47 @@ class ShelfCountController extends Controller
         return response()->json(['ok' => true, 'genre' => $g->name]);
     }
 
+    /**
+     * Misspelled title or artist spotted while counting (Clarissa 11/12,
+     * "AVRIL LAGIGNE"): fix it right from the bin. Saved as a
+     * product-quote-cleanup snapshot so Admin action history can undo it,
+     * and pushed to nivessa.com (artist included).
+     */
+    public function setName(Request $request)
+    {
+        if (!auth()->user()->can('product.update')) abort(403);
+        $business_id = (int) $request->session()->get('user.business_id');
+        $id = (int) $request->input('product_id');
+        $name = trim(preg_replace('/\s+/u', ' ', (string) $request->input('name')));
+        $artist = trim(preg_replace('/\s+/u', ' ', (string) $request->input('artist')));
+        if ($name === '') return response()->json(['ok' => false, 'msg' => 'The title can\'t be blank.'], 422);
+        if (mb_strlen($name) > 255 || mb_strlen($artist) > 255) return response()->json(['ok' => false, 'msg' => 'That is too long.'], 422);
+        $p = \DB::table('products')->where('business_id', $business_id)->where('id', $id)->first(['id', 'name', 'artist']);
+        if (!$p) return response()->json(['ok' => false, 'msg' => 'Product not found.'], 404);
+        $newArtist = $artist === '' ? null : $artist;
+        if ($p->name === $name && (string) $p->artist === (string) $newArtist) return response()->json(['ok' => true, 'name' => $name, 'artist' => $newArtist]);
+        $row = ['id' => (int) $p->id, 'old_name' => $p->name, 'new_name' => $name, 'old_artist' => $p->artist, 'new_artist' => $newArtist];
+        $ts = now()->format('Y-m-d_His_u');
+        $file = "admin-snapshots/product-quote-cleanup-shelfcount-{$ts}.json";
+        try {
+            \DB::table('products')->where('id', $p->id)->update(['name' => $name, 'artist' => $newArtist, 'updated_at' => now()]);
+            \Storage::disk('local')->put($file, json_encode([
+                'timestamp' => $ts, 'action' => 'product-quote-cleanup', 'user_id' => auth()->id(), 'business_id' => $business_id,
+                'source_name' => 'Shelf count name fix: ' . ($p->artist ? $p->artist . ' - ' : '') . $p->name,
+                'target_name' => ($newArtist ? $newArtist . ' - ' : '') . $name,
+                'rows' => [$row + ['old' => $p->name, 'new' => $name]],
+            ], JSON_PRETTY_PRINT));
+        } catch (\Throwable $e) {
+            \Log::error('Shelf count name fix failed: ' . $e->getMessage());
+            return response()->json(['ok' => false, 'msg' => 'Could not save. Try again.'], 500);
+        }
+        $pid = (int) $p->id;
+        app()->terminating(function () use ($pid) {
+            try { (new \App\Services\NivessaStockNotifier())->pushProductChanged([$pid], ['artist']); } catch (\Throwable $e) { \Log::warning('Shelf count name fix website push failed: ' . $e->getMessage()); }
+        });
+        return response()->json(['ok' => true, 'name' => $name, 'artist' => $newArtist]);
+    }
+
     /** Barcode (or words) -> product, for the scan box. */
     /**
      * Not in the ERP? Add it from the count (Jon 11/6: "add it to our system and
