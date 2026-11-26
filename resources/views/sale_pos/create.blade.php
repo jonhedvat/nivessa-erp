@@ -394,8 +394,16 @@
 		// add the Gift Card item, which then asks the cashier for the amount.
 		window.posAddGiftCard = function () {
 			try {
+				// One gift card line per sale: a second tap would only bump the
+				// quantity on the same code.
+				if ($('table#pos_table tbody tr[data-gift-card="true"]').length) {
+					toastr.warning('There is already a gift card in this sale. Finish this sale, then tap Sell a Gift Card again for the next card.');
+					return;
+				}
 				var locationId = $('#location_id').val();
-				var cartWasEmpty = $('table#pos_table tbody tr.product_row').length === 0;
+				var cartWasEmpty = $('table#pos_table tbody tr.product_row').filter(function () {
+					return $(this).text().indexOf('Bag Fee') === -1;
+				}).length === 0;
 				$.getJSON('/products/list', { term: 'GIFTCARD', location_id: locationId }, function (rows) {
 					var gc = (rows || []).find(function (r) { return r.sub_sku === 'GIFTCARD'; });
 					if (gc && gc.variation_id) {
