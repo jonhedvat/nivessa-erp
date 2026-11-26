@@ -393,6 +393,7 @@ class BulkTransferController extends Controller
                 'by' => trim(($r->first_name ?? '') . ' ' . ($r->last_name ?? '')),
                 'print_url' => url('stock-transfers/print/' . $r->id),
                 'code' => $r->code ?? null,
+                'receipt_id' => !empty($r->receipt_id) ? (int) $r->receipt_id : null,
                 'receipt_status' => $r->receipt_status ?? null,
                 'slip_url' => !empty($r->receipt_id) ? url('transfers/slip/' . $r->receipt_id) : null,
                 'labels_url' => !empty($r->receipt_id) ? url('transfers/labels/' . $r->receipt_id) : null,

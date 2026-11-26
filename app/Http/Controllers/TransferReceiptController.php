@@ -202,14 +202,19 @@ class TransferReceiptController extends Controller
         $business_id = (int) $request->session()->get('user.business_id');
         $receipt = $this->findReceipt($business_id, $id);
         abort_if(!$receipt, 404);
+        // "Mark received" on the Transfer Items page: one click, every item counted as here.
+        $quick = $request->boolean('all');
         if ($receipt->status !== 'in_transit') {
+            if ($quick) {
+                return response()->json(['success' => false, 'msg' => 'Already received by ' . $receipt->received_by_name . '.', 'status' => $receipt->status]);
+            }
             return redirect('/transfers/receive?code=' . $receipt->code)
                 ->with('status', ['success' => 0, 'msg' => 'This transfer was already received by ' . $receipt->received_by_name . '.']);
         }
         $scanned = (array) $request->input('got', []);
         $missing = [];
         foreach ($this->items($receipt) as $it) {
-            $got = (float) ($scanned[$it['variation_id']] ?? 0);
+            $got = $quick ? $it['qty'] : (float) ($scanned[$it['variation_id']] ?? 0);
             if ($got + 0.0001 < $it['qty']) {
                 $missing[] = ['product_id' => $it['product_id'], 'name' => $it['name'], 'sku' => $it['sku'], 'qty' => $it['qty'] - $got];
             }
@@ -219,9 +224,12 @@ class TransferReceiptController extends Controller
             'received_by' => auth()->id(),
             'received_at' => now(),
             'missing_json' => $missing ? json_encode($missing) : null,
-            'receive_note' => mb_substr(trim((string) $request->input('note', '')), 0, 250) ?: null,
+            'receive_note' => mb_substr(trim((string) $request->input('note', '')), 0, 250) ?: ($quick ? 'Marked received on Transfer Items (not scanned)' : null),
             'updated_at' => now(),
         ]);
+        if ($quick) {
+            return response()->json(['success' => true, 'msg' => 'Transfer ' . $receipt->code . ' marked received.', 'status' => 'received']);
+        }
         $msg = $missing
             ? sprintf('Transfer %s received, but %d item%s missing. A manager can see it on the Transfer Log.', $receipt->code, count($missing), count($missing) === 1 ? ' is' : 's are')
             : sprintf('Transfer %s received. Every item is here.', $receipt->code);

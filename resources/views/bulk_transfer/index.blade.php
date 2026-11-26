@@ -95,6 +95,7 @@
   var URL_STORE = @json(url('/transfers/bulk'));
   var URL_RECEIVE = @json(url('/transfers/receive?code='));
   var URL_SEARCH = @json(url('/transfers/bulk/search'));
+  var URL_RECEIVE_POST = @json(url('/transfers/receive')) + '/';
   var history = @json($history);
   var checkedKey = null;
 
@@ -152,7 +153,8 @@
     history.forEach(function (h) {
       var st = h.receipt_status === 'received' ? '<span class="tr-pill ok">Received</span>'
         : (h.receipt_status === 'received_missing' ? '<a href="' + URL_RECEIVE + encodeURIComponent(h.code) + '" title="Found them? Scan them here"><span class="tr-pill bad">Received, items missing</span></a>'
-        : (h.receipt_status === 'in_transit' ? '<span class="tr-pill dup">On the way</span>' : ''));
+        : (h.receipt_status === 'in_transit' ? '<span class="tr-pill dup">On the way</span>' +
+            (h.receipt_id ? ' <button type="button" class="tr-btn tr-mark-recv" style="padding:4px 10px; font-size:12px; margin-left:4px;" data-id="' + h.receipt_id + '" data-code="' + esc(h.code) + '" data-items="' + esc(h.items) + '" data-to="' + esc(h.to) + '">Mark received</button>' : '') : ''));
       html += '<tr><td>' + esc(h.date) + '</td><td>' + esc(h.code || h.ref_no) + '</td><td>' + esc(h.from) + ' to ' + esc(h.to) + '</td>' +
         '<td class="num">' + esc(h.items) + '</td><td>' + esc(h.by) + '</td><td>' + st + '</td>' +
         '<td style="white-space:nowrap;">' + (h.slip_url ? '<a class="tr-link" target="_blank" href="' + esc(h.slip_url) + '">Slip</a> &middot; <a class="tr-link" target="_blank" href="' + esc(h.labels_url) + '">Labels</a>'
@@ -242,6 +244,18 @@
     $('#tr-list').val((cur ? cur + '\n' : '') + 'VID ' + $(this).data('vid')).trigger('input');
     $(this).prop('disabled', true).text('Added');
     $('#tr-check').trigger('click');
+  });
+
+  // Mark received right here, without the Receive tab (every item counted as arrived).
+  $(document).on('click', '.tr-mark-recv', function () {
+    var $b = $(this), d = $b.data();
+    if (!confirm('Mark ' + d.code + ' as received at ' + d.to + '? All ' + d.items + ' item(s) will count as arrived.')) return;
+    $b.prop('disabled', true).text('Saving...');
+    $.post(URL_RECEIVE_POST + d.id, { all: 1, _token: $('meta[name="csrf-token"]').attr('content') }, null, 'json').done(function (res) {
+      history.forEach(function (h) { if (h.receipt_id == d.id) h.receipt_status = res.status || 'received'; });
+      renderHistory();
+      msg(res.success ? 'ok' : 'bad', esc(res.msg));
+    }).fail(function () { $b.prop('disabled', false).text('Mark received'); msg('bad', 'Could not mark it received. Try again.'); });
   });
 
   renderHistory();
