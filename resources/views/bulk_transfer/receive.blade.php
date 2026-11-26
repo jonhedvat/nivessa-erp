@@ -151,16 +151,22 @@
     }
   }
   $(document).on('input change', '.tr-got', count);
+  // Our own UPCs are sometimes saved with a leading 0/00 the scan lacks (or the reverse).
+  function skuMatches(sku, code) {
+    if (sku === code) return true;
+    if (!/^\d+$/.test(code) || !/^\d+$/.test(sku)) return false;
+    return sku === '0' + code || sku === '00' + code || code === '0' + sku || code === '00' + sku;
+  }
   $scan.on('keydown', function (e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     var code = $.trim($scan.val()).toLowerCase().replace(/^id\s*/, '');
     $scan.val('');
     if (!code) return;
-    var $row = $('tr[data-vid]').filter(function () { return $(this).data('sku') == code || String($(this).data('pid')) === code; })
+    var $row = $('tr[data-vid]').filter(function () { return skuMatches(String($(this).attr('data-sku')), code) || String($(this).data('pid')) === code; })
       .filter(function () { return (parseFloat($(this).find('.tr-got').val()) || 0) < (parseFloat($(this).data('qty')) || 0); }).first();
     if (!$row.length) {
-      var any = $('tr[data-vid]').filter(function () { return $(this).data('sku') == code || String($(this).data('pid')) === code; }).length;
+      var any = $('tr[data-vid]').filter(function () { return skuMatches(String($(this).attr('data-sku')), code) || String($(this).data('pid')) === code; }).length;
       $('#tr-scan-msg').html('<div class="tr-msg bad">' + (any ? 'Already scanned all of that one.' : (foundMode ? 'That item is not one of the missing ones.' : 'That item is not on this transfer.')) + '</div>');
       return;
     }

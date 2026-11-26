@@ -29,7 +29,9 @@ class BulkTransferController extends Controller
     {
         $this->guard();
         $business_id = (int) $request->session()->get('user.business_id');
-        $locations = array_map('ucfirst', BusinessLocation::forDropdown($business_id)->toArray());
+        // Every store, not just the ones the user is assigned to: staff move
+        // stock between Pico, Hollywood and the warehouse whichever store they work at.
+        $locations = array_map('ucfirst', BusinessLocation::forDropdown($business_id, false, false, false, false)->toArray());
 
         // Default From = the store the user is on duty at, then their home location.
         $default_from = (int) $request->session()->get('pos_duty_location_id', 0);
@@ -137,7 +139,7 @@ class BulkTransferController extends Controller
     {
         $from = (int) $request->input('from_location_id');
         $to = (int) $request->input('to_location_id');
-        $allowed = BusinessLocation::forDropdown($business_id)->toArray();
+        $allowed = BusinessLocation::forDropdown($business_id, false, false, false, false)->toArray();
         if (!isset($allowed[$from]) || !isset($allowed[$to])) {
             return [$from, $to, 'Pick a From store and a To store.'];
         }
@@ -169,7 +171,7 @@ class BulkTransferController extends Controller
 
     /**
      * Resolve each line to a variation: product.sku, then variation sub_sku,
-     * then numeric product id. Duplicate lines for the same variation are
+     * then the same code with a leading 0/00 added or removed, then numeric product id. Duplicate lines for the same variation are
      * merged into the first one.
      */
     protected function resolve(int $business_id, string $list, int $from, int $to, bool $lock = false): array
@@ -263,7 +265,19 @@ class BulkTransferController extends Controller
         if ($cands->isEmpty()) {
             $cands = $base()->where('v.sub_sku', $code)->get();
         }
-        // 3) numeric product id
+        // 3) our own improvised UPCs are sometimes saved with a leading 0 or 00
+        //    the scan doesn't have (or the scan has zeros the saved code lacks).
+        if ($cands->isEmpty() && ctype_digit($code)) {
+            $alts = array_values(array_unique(array_filter([
+                '0' . $code, '00' . $code, ltrim($code, '0'),
+            ], function ($c) use ($code) { return $c !== '' && $c !== $code; })));
+            if ($alts) {
+                $cands = $base()->where(function ($q) use ($alts) {
+                    $q->whereIn('p.sku', $alts)->orWhereIn('v.sub_sku', $alts);
+                })->get();
+            }
+        }
+        // 4) numeric product id
         if ($cands->isEmpty() && ctype_digit($code)) {
             $cands = $base()->where('p.id', (int) $code)->get();
         }
