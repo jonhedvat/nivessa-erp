@@ -306,6 +306,28 @@ class PurchaseController extends Controller
      * transaction_payments.method column has been VARCHAR since the
      * 2020-07-09 migration so 'zelle' / 'venmo' save as-is.
      */
+    /**
+     * Lines whose product came from a buy paid in store credit may be $0
+     * (no cash went out). Overrides the wildcard "> $0" rule per line.
+     */
+    private function creditBuyPriceRules(Request $request)
+    {
+        $lines = $request->input('purchases', []);
+        if (!is_array($lines) || !$lines) {
+            return [];
+        }
+        $credit = \App\BuyCustomerOffer::creditBuyProductIds(array_column($lines, 'product_id'));
+        $rules = [];
+        foreach ($lines as $idx => $line) {
+            if (in_array((int) ($line['product_id'] ?? 0), $credit, true)) {
+                foreach (['purchase_price', 'pp_without_discount', 'purchase_price_inc_tax'] as $f) {
+                    $rules['purchases.' . $idx . '.' . $f] = 'nullable|numeric|min:0';
+                }
+            }
+        }
+        return $rules;
+    }
+
     private function purchasePaymentTypes()
     {
         return [
@@ -382,7 +404,7 @@ class PurchaseController extends Controller
                 'purchases.*.purchase_price' => $price_rule,
                 'purchases.*.pp_without_discount' => $price_rule,
                 'purchases.*.purchase_price_inc_tax' => $price_rule,
-            ], [
+            ] + $this->creditBuyPriceRules($request), [
                 'purchases.*.purchase_price.required' => 'Purchase price is required on every line. Check "These items were donated" if this is free stock.',
                 'purchases.*.pp_without_discount.required' => 'Purchase price is required on every line. Check "These items were donated" if this is free stock.',
                 'purchases.*.purchase_price_inc_tax.required' => 'Purchase price (incl. tax) is required on every line. Check "These items were donated" if this is free stock.',
@@ -820,7 +842,7 @@ class PurchaseController extends Controller
                 'purchases.*.purchase_price' => $price_rule,
                 'purchases.*.pp_without_discount' => $price_rule,
                 'purchases.*.purchase_price_inc_tax' => $price_rule,
-            ], [
+            ] + $this->creditBuyPriceRules($request), [
                 'purchases.*.purchase_price.required' => 'Purchase price is required on every line. Check "These items were donated" if this is free stock.',
                 'purchases.*.pp_without_discount.required' => 'Purchase price is required on every line. Check "These items were donated" if this is free stock.',
                 'purchases.*.purchase_price_inc_tax.required' => 'Purchase price (incl. tax) is required on every line. Check "These items were donated" if this is free stock.',

@@ -653,7 +653,8 @@
 					var $price = $row.find('.purchase_unit_cost').first();
 					if ($price.length === 0) return;
 					var amount = parseMoney($price);
-					var rowBad = !donated && amount <= 0;
+					// Store-credit buy rows: no cash out, $0 is right (Sarah 11/26).
+					var rowBad = !donated && amount <= 0 && $row.attr('data-credit-buy') !== '1';
 					$row.find('.purchase_unit_cost, .purchase_unit_cost_after_tax, .purchase_unit_cost_without_discount')
 						.css('border-color', rowBad ? '#DC2626' : '')
 						.css('background', rowBad ? '#FEE2E2' : '');

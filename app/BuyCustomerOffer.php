@@ -68,6 +68,23 @@ class BuyCustomerOffer extends Model
      *
      * @return array<int, float>
      */
+    /**
+     * Of these product ids, the ones that came from a buy paid in store
+     * credit (Sarah 11/26): no cash went out, so a $0 purchase price is right.
+     */
+    public static function creditBuyProductIds(array $productIds)
+    {
+        $productIds = array_values(array_filter(array_map('intval', $productIds)));
+        if (!$productIds || !\Schema::hasColumn('products', 'buy_offer_id')) {
+            return [];
+        }
+        return \DB::table('products as p')
+            ->join('buy_customer_offers as o', 'o.id', '=', 'p.buy_offer_id')
+            ->whereIn('p.id', $productIds)
+            ->where('o.payout_type', 'store_credit')
+            ->pluck('p.id')->map(function ($x) { return (int) $x; })->all();
+    }
+
     public function lineUnitCosts()
     {
         $isCredit = $this->payout_type === 'store_credit';

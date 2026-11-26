@@ -1,8 +1,14 @@
+@php
+    $credit_buy_row = in_array((int) $product->id, \App\BuyCustomerOffer::creditBuyProductIds([$product->id]), true);
+@endphp
 @foreach( $variations as $variation)
-    <tr @if(!empty($purchase_order_line)) data-purchase_order_id="{{$purchase_order_line->transaction_id}}" @endif>
+    <tr @if(!empty($purchase_order_line)) data-purchase_order_id="{{$purchase_order_line->transaction_id}}" @endif @if($credit_buy_row) data-credit-buy="1" @endif>
         <td><span class="sr_number"></span></td>
         <td style="white-space: nowrap;">
             <span>{{ $product->name }} ({{$variation->sub_sku}})</span>
+            @if($credit_buy_row)
+                <span class="label label-success" title="Bought from a customer for store credit, so no cash cost">Store credit buy · $0 OK</span>
+            @endif
             @if( $product->type == 'variable' )
                 <span class="text-muted"> | <b>{{ $variation->product_variation->name }}</b>: {{ $variation->name }}</span>
             @endif
