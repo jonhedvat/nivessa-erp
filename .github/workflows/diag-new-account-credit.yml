@@ -1,0 +1,32 @@
+# One-off, read-only: which new customer accounts got store credit right at creation, and why.
+
+name: Diag new-account store credit (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHNpbmNlID0gbm93KCktPnN1YkRheXMoMTIwKTsKJHVzZXJzID0gREI6OnRhYmxlKCd1c2VycycpLT53aGVyZSgnZmlyc3RfbmFtZScsJ2xpa2UnLCclZGF5bmElJyktPm9yV2hlcmUoJ2xhc3RfbmFtZScsJ2xpa2UnLCclYnJvd24lJyktPmdldChbJ2lkJywnZmlyc3RfbmFtZScsJ2xhc3RfbmFtZScsJ3VzZXJuYW1lJ10pOwplY2hvICJkYXluYSB1c2VyczogIiAuIGpzb25fZW5jb2RlKCR1c2VycykgLiAiXG4iOwokZElkcyA9ICR1c2Vycy0+ZmlsdGVyKGZuKCR1KT0+c3RyaXBvcygkdS0+Zmlyc3RfbmFtZS4kdS0+dXNlcm5hbWUsJ2RheW5hJykhPT1mYWxzZSktPnBsdWNrKCdpZCcpLT5hbGwoKTsKJGNvbnRhY3RzID0gREI6OnRhYmxlKCdjb250YWN0cycpLT53aGVyZSgnaXNfZGVmYXVsdCcsMCktPndoZXJlSW4oJ3R5cGUnLFsnY3VzdG9tZXInLCdib3RoJ10pLT53aGVyZSgnY3JlYXRlZF9hdCcsJz49Jywkc2luY2UpLT5nZXQoWydpZCcsJ25hbWUnLCdjcmVhdGVkX2J5JywnY3JlYXRlZF9hdCcsJ2JhbGFuY2UnXSk7CmVjaG8gIm5ldyBjb250YWN0cyAoMTIwZCk6ICIgLiAkY29udGFjdHMtPmNvdW50KCkgLiAiXG4iOwokYnlTb3VyY2UgPSBbXTsgJHJvd3MgPSBbXTsKZm9yZWFjaCAoJGNvbnRhY3RzIGFzICRjKSB7CiAgJGxvZ3MgPSBEQjo6dGFibGUoJ3N0b3JlX2NyZWRpdF9sb2dzJyktPndoZXJlKCdjb250YWN0X2lkJywkYy0+aWQpLT53aGVyZSgnYW1vdW50JywnPicsMCktPm9yZGVyQnkoJ2NyZWF0ZWRfYXQnKS0+Z2V0KFsnc291cmNlJywnYW1vdW50JywnY3JlYXRlZF9hdCcsJ3JlYXNvbicsJ3RyYW5zYWN0aW9uX2lkJ10pOwogICRmaXJzdCA9ICRsb2dzLT5maXJzdCgpOwogIGlmICghJGZpcnN0KSBjb250aW51ZTsKICAkbWlucyA9IChzdHJ0b3RpbWUoJGZpcnN0LT5jcmVhdGVkX2F0KSAtIHN0cnRvdGltZSgkYy0+Y3JlYXRlZF9hdCkpIC8gNjA7CiAgaWYgKCRtaW5zID4gNjApIGNvbnRpbnVlOyAvLyBjcmVkaXQgbGFuZGVkIHdpdGhpbiBhbiBob3VyIG9mIHRoZSBhY2NvdW50IGJlaW5nIGNyZWF0ZWQKICAkc2FsZSA9ICRmaXJzdC0+dHJhbnNhY3Rpb25faWQgPyBEQjo6dGFibGUoJ3RyYW5zYWN0aW9ucycpLT53aGVyZSgnaWQnLCRmaXJzdC0+dHJhbnNhY3Rpb25faWQpLT5maXJzdChbJ2ludm9pY2Vfbm8nLCd0b3RhbF9iZWZvcmVfdGF4JywnZmluYWxfdG90YWwnLCd0cmFuc2FjdGlvbl9kYXRlJywndHlwZSddKSA6IG51bGw7CiAgJGJ5U291cmNlWyRmaXJzdC0+c291cmNlXSA9ICgkYnlTb3VyY2VbJGZpcnN0LT5zb3VyY2VdID8/IDApICsgMTsKICAkcm93c1tdID0gWyRjLCAkZmlyc3QsICRtaW5zLCAkc2FsZSwgaW5fYXJyYXkoJGMtPmNyZWF0ZWRfYnksICRkSWRzKV07Cn0KZWNobyAiXG5uZXcgYWNjb3VudHMgdGhhdCBnb3QgY3JlZGl0IHdpdGhpbiAxIGhvdXIgb2YgY3JlYXRpb24sIGJ5IHNvdXJjZTogIiAuIGpzb25fZW5jb2RlKCRieVNvdXJjZSkgLiAiXG4iOwplY2hvICJcbnNhbXBsZXMgKEQgPSBjcmVhdGVkIGJ5IERheW5hKTpcbiI7CnVzb3J0KCRyb3dzLCBmbigkYSwkYik9PiRiWzRdIDw9PiAkYVs0XSk7CmZvcmVhY2ggKGFycmF5X3NsaWNlKCRyb3dzLDAsNDApIGFzIFskYywkZiwkbSwkcywkaXNEXSkgcHJpbnRmKCIlcyAjJWQgJXMgfCBjcmVhdGVkICVzIHwgKyQlLjJmICVzIGFmdGVyICUuMGYgbWluIHwgc2FsZSAlcyBwcmUtdGF4ICQlcyB8ICVzXG4iLCAkaXNEPydEJzonICcsICRjLT5pZCwgbWJfc3Vic3RyKCRjLT5uYW1lLDAsMjIpLCAkYy0+Y3JlYXRlZF9hdCwgJGYtPmFtb3VudCwgJGYtPnNvdXJjZSwgJG0sICRzLT5pbnZvaWNlX25vID8/ICctJywgJHMtPnRvdGFsX2JlZm9yZV90YXggPz8gJy0nLCBtYl9zdWJzdHIoKHN0cmluZykkZi0+cmVhc29uLDAsOTApKTsKLy8gRGF5bmEncyBuZXcgYWNjb3VudHMgb3ZlcmFsbAokZGMgPSAkY29udGFjdHMtPndoZXJlSW4oJ2NyZWF0ZWRfYnknLCRkSWRzKTsKZWNobyAiXG5EYXluYS1jcmVhdGVkIGFjY291bnRzICgxMjBkKTogIiAuICRkYy0+Y291bnQoKSAuICIgfCB3aXRoIGNyZWRpdCB3aXRoaW4gMWg6ICIgLiBjb3VudChhcnJheV9maWx0ZXIoJHJvd3MsIGZuKCRyKT0+JHJbNF0pKSAuICJcbiI7Ci8vIHNwZW5kX3Jld2FyZCBvbiBhIGNvbnRhY3QncyB2ZXJ5IGZpcnN0IHNhbGUKJHNyID0gY29sbGVjdCgkcm93cyktPmZpbHRlcihmbigkcik9PiRyWzFdLT5zb3VyY2U9PT0nc3BlbmRfcmV3YXJkJyk7CmVjaG8gInNwZW5kX3Jld2FyZC1hdC1jcmVhdGlvbiBjYXNlczogIiAuICRzci0+Y291bnQoKSAuICIgfCBmaXJzdCBzYWxlIHByZS10YXggPj0gMTAwOiAiIC4gJHNyLT5maWx0ZXIoZm4oJHIpPT4kclszXSAmJiAkclszXS0+dG90YWxfYmVmb3JlX3RheCA+PSAxMDApLT5jb3VudCgpIC4gIlxuIjsK' | base64 -d > /tmp/diag_newcred.php
+            php /tmp/diag_newcred.php
+            rm -f /tmp/diag_newcred.php
