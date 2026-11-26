@@ -17,6 +17,9 @@ class BulkTransferController extends Controller
 {
     const NOTE_PREFIX = 'Bulk transfer';
 
+    /** From store's name, for status messages. */
+    protected $fromName = '';
+
     protected function guard()
     {
         // Same permission StockTransferController@store checks.
@@ -285,6 +288,7 @@ class BulkTransferController extends Controller
     {
         $rows = [];
         $first_by_variation = [];
+        $this->fromName = ucfirst((string) DB::table('business_locations')->where('id', $from)->value('name'));
         foreach ($this->parseLines($list) as $p) {
             $row = ['line' => $p['line'], 'code' => $p['code'], 'qty' => $p['qty'], 'status' => 'not_found',
                 'status_text' => 'Not found', 'name' => '', 'sku' => '', 'product_id' => null, 'variation_id' => null,
@@ -344,15 +348,15 @@ class BulkTransferController extends Controller
             $short = $row['qty'] - max(0, $row['qty_from']);
             if ($row['price'] <= 0) {
                 $row['status'] = 'not_enough';
-                $row['status_text'] = 'Not enough stock at From, and no cost on file to add it. Set the cost on the product first.';
+                $row['status_text'] = 'Not enough stock at From (' . $this->fromName . ', has ' . $this->fmt($row['qty_from']) . '), and no cost on file to add it. Set the cost on the product first.';
             } else {
                 $row['topup'] = $short;
                 $row['status'] = 'ok';
-                $row['status_text'] = 'OK, adds ' . $this->fmt($short) . ' to From first';
+                $row['status_text'] = 'OK, adds ' . $this->fmt($short) . ' to ' . $this->fromName . ' first';
             }
         } elseif ($row['qty_from'] < $row['qty']) {
             $row['status'] = 'not_enough';
-            $row['status_text'] = 'Not enough stock at From (has ' . $this->fmt($row['qty_from']) . ')';
+            $row['status_text'] = 'Not enough stock at From (' . $this->fromName . ', has ' . $this->fmt($row['qty_from']) . ')';
         } else {
             $row['status'] = 'ok';
             $row['status_text'] = 'OK';
