@@ -41,7 +41,7 @@
       <div class="tr-hint">Press <strong>Add</strong> on the right record. It goes on the list below (as "VID" + its number) and the list is checked.</div>
       <div id="tr-find-results" class="tr-table-wrap" style="display:none; max-height:340px; overflow-y:auto; margin-top:6px;">
         <table class="tr-table">
-          <thead><tr><th>Artist - Title</th><th>Category</th><th>SKU</th><th class="num">At From</th><th class="num">At To</th><th></th></tr></thead>
+          <thead><tr><th>Artist - Title</th><th>Category</th><th>SKU</th><th class="num">Price</th><th class="num">At From</th><th class="num">At To</th><th></th></tr></thead>
           <tbody id="tr-find-body"></tbody>
         </table>
       </div>
@@ -229,10 +229,11 @@
       var html = '';
       (res.results || []).forEach(function (r) {
         html += '<tr class="' + (r.qty_from > 0 ? '' : 'skip') + '"><td>' + esc(r.name) + '</td><td>' + esc(r.category) + '</td><td>' + esc(r.sku) + '</td>' +
+          '<td class="num">' + (r.price > 0 ? '$' + r.price.toFixed(2) : '') + '</td>' +
           '<td class="num">' + num(r.qty_from) + '</td><td class="num">' + num(r.qty_to) + '</td>' +
           '<td><button type="button" class="tr-btn tr-find-add" style="padding:5px 12px; font-size:13px;" data-vid="' + r.variation_id + '">Add</button></td></tr>';
       });
-      $('#tr-find-body').html(html || '<tr><td colspan="6" class="tr-empty">Nothing found. Try fewer words.</td></tr>');
+      $('#tr-find-body').html(html || '<tr><td colspan="7" class="tr-empty">Nothing found. Try fewer words.</td></tr>');
       $('#tr-find-results').show();
     }).always(function () { findReq = null; });
   }
