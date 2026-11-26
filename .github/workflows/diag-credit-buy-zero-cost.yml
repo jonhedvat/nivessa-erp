@@ -50,6 +50,9 @@ jobs:
           port: ${{ steps.flags.outputs.ssh_port }}
           script_stop: false
           command_timeout: 90s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
             IDS="${{ github.event.inputs.product_ids }}"
             php artisan tinker --no-ansi <<PHP
             \$ids = array_map('intval', explode(',', "$IDS"));
