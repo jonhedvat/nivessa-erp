@@ -3493,7 +3493,15 @@ function pos_product_row(variation_id = null, purchase_line_id = null, weighing_
                     // line's price (qty stays 1), instead of the $1 catalog price.
                     try {
                         if (this_row.attr('data-gift-card') === 'true') {
-                            var gcAmountRaw = window.prompt('Gift card amount? (example: 50)', '');
+                            var gcPromo = window.posGiftCardPromo || null;
+                            var gcAsk = 'Gift card amount? (example: 50)';
+                            if (gcPromo) {
+                                gcAsk = 'BLACK FRIDAY OFFER: $' + gcPromo.bonus + ' FREE for every $' + gcPromo.per + '!\n'
+                                    + 'Tell the customer: $' + gcPromo.per + ' gets them $' + (gcPromo.per + gcPromo.bonus)
+                                    + ', $' + (gcPromo.per * 2) + ' gets them $' + (gcPromo.per * 2 + gcPromo.bonus * 2) + '.\n\n'
+                                    + 'Gift card amount the customer is paying?';
+                            }
+                            var gcAmountRaw = window.prompt(gcAsk, gcPromo ? String(gcPromo.per) : '');
                             var gcAmount = parseFloat(String(gcAmountRaw || '').replace(/[^0-9.]/g, ''));
                             if (gcAmount > 0) {
                                 var gcPriceInput = this_row.find('input.pos_unit_price_inc_tax');
@@ -3513,9 +3521,13 @@ function pos_product_row(variation_id = null, purchase_line_id = null, weighing_
                                 if (gcCode) {
                                     this_row.find('td').first().append('<div style="margin-top:4px;font-size:15px;font-weight:700;">Write on card: ' + $('<div>').text(gcCode).html() + (gcBonus > 0 ? ', amount ' + gcCardValue + ' (includes $' + gcBonus + ' free)' : '') + '</div>');
                                     if (gcBonus > 0) {
-                                        window.alert('Gift card code: ' + gcCode + '\n\nWrite on the card: ' + gcCode + ' and ' + gcCardValue + '\n\n(The free $' + gcBonus + ' is added automatically.)');
+                                        window.alert('Gift card code: ' + gcCode + '\n\nCustomer pays $' + gcAmount + ' and gets ' + gcCardValue + ' (the free $' + gcBonus + ' is added automatically).\n\nWrite on the card: ' + gcCode + ' and ' + gcCardValue);
                                     } else {
-                                        window.alert('Gift card code: ' + gcCode + '\n\nWrite it on the card. It will be active once the sale is done.');
+                                        var gcTip = '';
+                                        if (gcPromo && gcAmount < gcPromo.per) {
+                                            gcTip = '\n\nTip: at $' + gcPromo.per + ' the customer would get $' + gcPromo.bonus + ' free. To change it, remove this line and tap Sell a Gift Card again.';
+                                        }
+                                        window.alert('Gift card code: ' + gcCode + '\n\nWrite it on the card. It will be active once the sale is done.' + gcTip);
                                     }
                                 } else {
                                     toastr.warning('Could not get a gift card code. After the sale, add the card at Gift Cards > Add.');

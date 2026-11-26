@@ -18,9 +18,14 @@ class GiftCardController extends Controller
     {
         $business_id = $request->session()->get('user.business_id');
         $amount = (float) $request->input('amount', 0);
+        $promo = GiftCard::promoToday();
+        if ($request->input('peek')) {
+            return response()->json(['promo' => $promo]);
+        }
         return response()->json([
             'code' => GiftCard::generateCardNumber($business_id),
             'bonus' => GiftCard::promoBonusFor($amount),
+            'promo' => $promo,
         ]);
     }
 

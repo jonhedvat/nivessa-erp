@@ -106,6 +106,13 @@
     .pos-quick-tile .pos-quick-price { display: block; font-size: 12px; opacity: 0.85; margin-top: 3px; }
     .pos-quick-tile i { display: block; font-size: 18px; margin-bottom: 3px; }
 </style>
+<div class="pos-quick-grid-title">Quick Add — Gift Card</div>
+<div class="pos-quick-grid" style="grid-template-columns:1fr;">
+    <button type="button" class="pos-quick-tile pos-gift-card-tile" onclick="if (window.posAddGiftCard) window.posAddGiftCard();">
+        <i class="fa fa-gift"></i> Sell a Gift Card <span class="pos-quick-price" id="pos-gift-card-promo-note"></span>
+    </button>
+</div>
+
 <div class="pos-quick-grid-title">Quick Add — Snacks & Drinks</div>
 <div class="pos-quick-grid">
     <button type="button" class="pos-quick-tile pos-quick-preset" data-preset-name="Energy Drink" data-preset-price="4.50" data-preset-category="Snacks &amp; Drinks">

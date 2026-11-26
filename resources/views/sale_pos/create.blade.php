@@ -390,31 +390,44 @@
 			}
 		});
 
-		// /pos/create?gift_card=1 (the "Sell a gift card" link): add the Gift
-		// Card item right away, which then asks the cashier for the amount.
-		$(function () {
-			if (!/[?&]gift_card=1\b/.test(window.location.search)) return;
-			setTimeout(function () {
-				try {
-					var locationId = $('#location_id').val();
-					$.getJSON('/products/list', { term: 'GIFTCARD', location_id: locationId }, function (rows) {
-						var gc = (rows || []).find(function (r) { return r.sub_sku === 'GIFTCARD'; });
-						if (gc && gc.variation_id) {
-							pos_product_row(gc.variation_id);
-							// No bag for a gift card sale: drop the automatic bag fee.
+		// "Sell a Gift Card" tile (Quick Add) and /pos/create?gift_card=1:
+		// add the Gift Card item, which then asks the cashier for the amount.
+		window.posAddGiftCard = function () {
+			try {
+				var locationId = $('#location_id').val();
+				var cartWasEmpty = $('table#pos_table tbody tr.product_row').length === 0;
+				$.getJSON('/products/list', { term: 'GIFTCARD', location_id: locationId }, function (rows) {
+					var gc = (rows || []).find(function (r) { return r.sub_sku === 'GIFTCARD'; });
+					if (gc && gc.variation_id) {
+						pos_product_row(gc.variation_id);
+						// Gift card on its own: no bag, drop the automatic bag fee.
+						if (cartWasEmpty) {
 							if ($('#bag-toggle-checkbox').length) {
 								$('#bag-toggle-checkbox').prop('checked', false).trigger('change');
 							} else if ($('#add_plastic_bag').is(':checked')) {
 								$('#add_plastic_bag').prop('checked', false).trigger('change');
 							}
-						} else {
-							toastr.warning('Gift Card item not found. Search "Gift Card" instead.');
 						}
-					});
-				} catch (e) {
-					console.error('Gift card auto-add failed', e);
+					} else {
+						toastr.warning('Gift Card item not found. Search "Gift Card" instead.');
+					}
+				});
+			} catch (e) {
+				console.error('Gift card add failed', e);
+			}
+		};
+		// Promo days: show the offer on the tile so cashiers can pitch it.
+		$(function () {
+			$.getJSON('/gift-cards/next-code', { amount: 0, peek: 1 }, function (r) {
+				if (r && r.promo && r.promo.bonus) {
+					window.posGiftCardPromo = r.promo;
+					$('#pos-gift-card-promo-note').text('Today: $' + r.promo.bonus + ' FREE per $' + r.promo.per);
 				}
-			}, 1000);
+			});
+		});
+		$(function () {
+			if (!/[?&]gift_card=1\b/.test(window.location.search)) return;
+			setTimeout(function () { window.posAddGiftCard(); }, 1000);
 		});
 	</script>
 
