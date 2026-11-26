@@ -91,6 +91,35 @@ HTML,
 HTML,
             ],
             [
+                'slug' => 'gift-cards',
+                'title' => 'Gift Cards: Selling and Using Them',
+                'section' => 'POS',
+                'sort' => 2,
+                'summary' => 'Sell a gift card from the register, and take a gift card as payment.',
+                'page_keys' => ['pos.create', 'sell.create', 'pos', 'gift-cards'],
+                'body_html' => <<<'HTML'
+<p><strong>Black Friday 11/27:</strong> a $50 card gets $55. The ERP adds the free $5 by itself, and the popup tells you what to write on the card.</p>
+
+<h3>Sell a gift card</h3>
+<ol>
+  <li>On the <a href="/pos/create">register</a>, tap <strong>Sell a Gift Card</strong> (top right, under Quick Add).<br><img src="/img/help/gift-cards/1-sell-tile.jpg" alt="Sell a Gift Card button" style="max-width:100%;border:1px solid #eee;border-radius:8px;margin:8px 0;"></li>
+  <li>Type the amount the customer is paying in the popup.</li>
+  <li>Write the code (shown as "Write on card") and the amount on the physical card. Ring it up like any sale. The card turns on when the sale is done.<br><img src="/img/help/gift-cards/2-cart-code.jpg" alt="Gift card in the cart with its code" style="max-width:100%;border:1px solid #eee;border-radius:8px;margin:8px 0;"></li>
+</ol>
+<p>One gift card per sale. To sell a second card, finish the sale and tap the button again.</p>
+
+<h3>Customer pays with a gift card</h3>
+<ol>
+  <li>Ring up the items, then click <strong>More</strong> &rarr; <strong>Other split (advanced)</strong>.<br><img src="/img/help/gift-cards/3-more-other-split.jpg" alt="More menu, Other split (advanced)" style="max-width:100%;border:1px solid #eee;border-radius:8px;margin:8px 0;"></li>
+  <li>Change Payment Method to <strong>Gift Card</strong> and type the code from the card. The ERP shows the balance and caps the amount at what's on the card.<br><img src="/img/help/gift-cards/4-pay-gift-card.jpg" alt="Payment with Gift Card selected" style="max-width:100%;border:1px solid #eee;border-radius:8px;margin:8px 0;"></li>
+  <li>Click <strong>Finalize Payment</strong>. If the card doesn't cover it all, click Add Payment Row for the rest (cash or card).</li>
+</ol>
+
+<h3>Check a card</h3>
+<p>Every card and its balance is at <a href="/gift-cards">Gift Cards</a>. Codes also work at checkout on nivessa.com.</p>
+HTML,
+            ],
+            [
                 'slug' => 'receive-ams-shipment',
                 'title' => 'How to Receive an AMS Shipment',
                 'section' => 'Purchases',
