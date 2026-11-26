@@ -167,7 +167,7 @@ class BulkTransferController extends Controller
         $stockAt = function (int $loc) {
             return '(SELECT COALESCE(SUM(qty_available), 0) FROM variation_location_details WHERE variation_id = v.id AND location_id = ' . $loc . ')';
         };
-        $rows = $q->select('v.id as variation_id', 'v.product_id', 'v.name as version', 'v.sub_sku', 'p.name', 'p.artist', 'p.type',
+        $rows = $q->select('v.id as variation_id', 'v.product_id', 'v.name as version', 'v.sub_sku', 'v.sell_price_inc_tax', 'p.name', 'p.artist', 'p.type',
                 'c.name as category', DB::raw($stockAt($from) . ' as qty_from'), DB::raw($stockAt($to) . ' as qty_to'))
             ->orderByRaw($stockAt($from) . ' > 0 DESC')
             ->orderBy('p.artist')->orderBy('p.name')
@@ -187,6 +187,7 @@ class BulkTransferController extends Controller
                 'sku' => (string) $r->sub_sku,
                 'qty_from' => (float) $r->qty_from,
                 'qty_to' => (float) $r->qty_to,
+                'price' => (float) $r->sell_price_inc_tax,
             ];
         })->values();
 
