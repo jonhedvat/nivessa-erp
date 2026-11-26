@@ -203,7 +203,7 @@ class TransferReceiptController extends Controller
         $receipt = $this->findReceipt($business_id, $id);
         abort_if(!$receipt, 404);
         // "Mark received" on the Transfer Items page: one click, every item counted as here.
-        $quick = $request->boolean('all');
+        $quick = (string) $request->input('all', '') === '1';
         if ($receipt->status !== 'in_transit') {
             if ($quick) {
                 return response()->json(['success' => false, 'msg' => 'Already received by ' . $receipt->received_by_name . '.', 'status' => $receipt->status]);
