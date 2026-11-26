@@ -1,0 +1,34 @@
+# One-off, read-only: sealed vinyl products with last supplier cost, supplier,
+# UPC/sku, 365d bought/sold, stock, price. For Amazon price comparison. SELECTs only.
+
+name: Diag sealed vinyl cost (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKaW5pX3NldCgnbWVtb3J5X2xpbWl0JywnMjA0OE0nKTsgc2V0X3RpbWVfbGltaXQoMCk7CiRzZWFsZWQgPSBhcnJheV9tYXAoZnVuY3Rpb24oJHIpe3JldHVybiAoaW50KSRyLT5pZDt9LCBEQjo6c2VsZWN0KCJTRUxFQ1QgaWQgRlJPTSBjYXRlZ29yaWVzIFdIRVJFIHBhcmVudF9pZD0wIEFORCBkZWxldGVkX2F0IElTIE5VTEwgQU5EIG5hbWUgSU4gKCdWaW55bCAtIFNlYWxlZCcsJ1NlYWxlZCBWaW55bCcpIikpOwplY2hvICJzZWFsZWQgY2F0cz0iLmltcGxvZGUoJywnLCRzZWFsZWQpLiJcbiI7IGlmKCEkc2VhbGVkKSBleGl0OyAkUz1pbXBsb2RlKCcsJywkc2VhbGVkKTsKLy8gbGFzdCBwdXJjaGFzZSBjb3N0IHBlciBwcm9kdWN0IChzdXBwbGllciBwdXJjaGFzZXMsIGxhc3QgMnkpLCB1bml0cyBib3VnaHQgMzY1ZAokcm93cyA9IERCOjpzZWxlY3QoIlNFTEVDVCBwLmlkIHBpZCwgcC5uYW1lLCBDT0FMRVNDRShwLmFydGlzdCwnJykgYXJ0aXN0LCBwLnNrdSwgdi5zdWJfc2t1LAogIChTRUxFQ1QgcGwucHVyY2hhc2VfcHJpY2UgRlJPTSBwdXJjaGFzZV9saW5lcyBwbCBKT0lOIHRyYW5zYWN0aW9ucyB0IE9OIHQuaWQ9cGwudHJhbnNhY3Rpb25faWQgV0hFUkUgcGwucHJvZHVjdF9pZD1wLmlkIEFORCB0LnR5cGU9J3B1cmNoYXNlJyBBTkQgcGwucHVyY2hhc2VfcHJpY2U+MCBPUkRFUiBCWSB0LnRyYW5zYWN0aW9uX2RhdGUgREVTQywgcGwuaWQgREVTQyBMSU1JVCAxKSBsYXN0X2Nvc3QsCiAgKFNFTEVDVCBNQVgodC50cmFuc2FjdGlvbl9kYXRlKSBGUk9NIHB1cmNoYXNlX2xpbmVzIHBsIEpPSU4gdHJhbnNhY3Rpb25zIHQgT04gdC5pZD1wbC50cmFuc2FjdGlvbl9pZCBXSEVSRSBwbC5wcm9kdWN0X2lkPXAuaWQgQU5EIHQudHlwZT0ncHVyY2hhc2UnKSBsYXN0X2J1eSwKICAoU0VMRUNUIGMubmFtZSBGUk9NIHB1cmNoYXNlX2xpbmVzIHBsIEpPSU4gdHJhbnNhY3Rpb25zIHQgT04gdC5pZD1wbC50cmFuc2FjdGlvbl9pZCBMRUZUIEpPSU4gY29udGFjdHMgYyBPTiBjLmlkPXQuY29udGFjdF9pZCBXSEVSRSBwbC5wcm9kdWN0X2lkPXAuaWQgQU5EIHQudHlwZT0ncHVyY2hhc2UnIEFORCBwbC5wdXJjaGFzZV9wcmljZT4wIE9SREVSIEJZIHQudHJhbnNhY3Rpb25fZGF0ZSBERVNDLCBwbC5pZCBERVNDIExJTUlUIDEpIHN1cHBsaWVyLAogIChTRUxFQ1QgQ09BTEVTQ0UoU1VNKHBsLnF1YW50aXR5KSwwKSBGUk9NIHB1cmNoYXNlX2xpbmVzIHBsIEpPSU4gdHJhbnNhY3Rpb25zIHQgT04gdC5pZD1wbC50cmFuc2FjdGlvbl9pZCBXSEVSRSBwbC5wcm9kdWN0X2lkPXAuaWQgQU5EIHQudHlwZT0ncHVyY2hhc2UnIEFORCB0LnRyYW5zYWN0aW9uX2RhdGU+PU5PVygpLUlOVEVSVkFMIDM2NSBEQVkpIGJvdWdodDM2NSwKICAoU0VMRUNUIENPQUxFU0NFKFNVTShsLnF1YW50aXR5LUNPQUxFU0NFKGwucXVhbnRpdHlfcmV0dXJuZWQsMCkpLDApIEZST00gdHJhbnNhY3Rpb25fc2VsbF9saW5lcyBsIEpPSU4gdHJhbnNhY3Rpb25zIHQgT04gdC5pZD1sLnRyYW5zYWN0aW9uX2lkIFdIRVJFIGwucHJvZHVjdF9pZD1wLmlkIEFORCB0LnR5cGU9J3NlbGwnIEFORCB0LnN0YXR1cz0nZmluYWwnIEFORCB0LnRyYW5zYWN0aW9uX2RhdGU+PU5PVygpLUlOVEVSVkFMIDM2NSBEQVkpIHNvbGQzNjUsCiAgKFNFTEVDVCBDT0FMRVNDRShTVU0odmxkLnF0eV9hdmFpbGFibGUpLDApIEZST00gdmFyaWF0aW9uX2xvY2F0aW9uX2RldGFpbHMgdmxkIFdIRVJFIHZsZC5wcm9kdWN0X2lkPXAuaWQpIHN0b2NrLAogIHYuc2VsbF9wcmljZV9pbmNfdGF4IHByaWNlCiBGUk9NIHByb2R1Y3RzIHAgSk9JTiB2YXJpYXRpb25zIHYgT04gdi5wcm9kdWN0X2lkPXAuaWQgQU5EIHYuZGVsZXRlZF9hdCBJUyBOVUxMCiBXSEVSRSBwLmNhdGVnb3J5X2lkIElOICgkUykgQU5EIHAuaXNfaW5hY3RpdmU9MAogSEFWSU5HIGxhc3RfY29zdCBJUyBOT1QgTlVMTCBBTkQgbGFzdF9idXk+PU5PVygpLUlOVEVSVkFMIDczMCBEQVkiKTsKZWNobyAicm93cz0iLmNvdW50KCRyb3dzKS4iXG4iOwp1c29ydCgkcm93cyxmdW5jdGlvbigkYSwkYil7IHJldHVybiBbJGItPnNvbGQzNjUsJGItPmJvdWdodDM2NV0gPD0+IFskYS0+c29sZDM2NSwkYS0+Ym91Z2h0MzY1XTsgfSk7CmVjaG8gIiMjIyBSRVNVTFRTIHBpZHxhcnRpc3R8bmFtZXxza3V8c3ViX3NrdXxsYXN0X2Nvc3R8bGFzdF9idXl8c3VwcGxpZXJ8Ym91Z2h0MzY1fHNvbGQzNjV8c3RvY2t8cHJpY2VcbiI7CmZvcmVhY2goYXJyYXlfc2xpY2UoJHJvd3MsMCw0MDAwKSBhcyAkcil7CiAkZj1bJHItPnBpZCwkci0+YXJ0aXN0LCRyLT5uYW1lLCRyLT5za3UsJHItPnN1Yl9za3Uscm91bmQoJHItPmxhc3RfY29zdCwyKSxzdWJzdHIoJHItPmxhc3RfYnV5LDAsMTApLCRyLT5zdXBwbGllciwoaW50KSRyLT5ib3VnaHQzNjUsKGludCkkci0+c29sZDM2NSwoaW50KSRyLT5zdG9jayxyb3VuZCgkci0+cHJpY2UsMildOwogZWNobyAiUk9XXHQiLmltcGxvZGUoIlx0IixhcnJheV9tYXAoZnVuY3Rpb24oJHgpe3JldHVybiBzdHJfcmVwbGFjZShbIlx0IiwiXG4iLCJcciJdLCcgJywoc3RyaW5nKSR4KTt9LCRmKSkuIlxuIjsgfQo=' | base64 -d > /tmp/diag_sealed_vinyl_cost.php
+            php -l /tmp/diag_sealed_vinyl_cost.php
+            php /tmp/diag_sealed_vinyl_cost.php
+            rm -f /tmp/diag_sealed_vinyl_cost.php
