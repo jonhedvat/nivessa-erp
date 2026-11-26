@@ -1,7 +1,5 @@
-{{-- After a purchase is saved (Jon 10/23): two separate alerts. First the
-     floor reminder (the items are on nivessa.com now), then, only when a new
-     product looks like one we already have, "did you just want to change the
-     price?". Data comes from App\Services\ListingCheck via session flash.
+{{-- After a purchase is saved (Jon 10/23): floor reminder (the items are on
+     nivessa.com now). Data comes from App\Services\ListingCheck via session flash.
      Self-contained: plain JS, no Bootstrap modal, so it can't break the page. --}}
 @php($lc = session('listing_check'))
 @if(!empty($lc))
@@ -34,22 +32,5 @@
     </div>
 </div>
 
-{{-- Not on the labels page (Jon 11/25): after "Print labels" they're printing, not re-pricing. --}}
-@if(!empty($lc['pairs']) && !request()->is('labels*'))
-<div class="lc-overlay" role="dialog" aria-modal="true" style="display:none">
-    <div class="lc-card">
-        <button type="button" class="lc-x" aria-label="Close" onclick="lcClose(this)">&times;</button>
-        <h3>Did you just want to change the price?</h3>
-        @foreach($lc['pairs'] as $pair)
-            <div class="lc-pair">
-                <p>We already have <strong>{{ $pair['old']['label'] }}</strong>{{ !empty($pair['old']['category']) ? ', ' . $pair['old']['category'] : '' }} (${{ number_format($pair['old']['price'], 2) }}).</p>
-                <div class="lc-actions">
-                    <button type="button" class="lc-primary" onclick="window.location.href='{{ action('ProductController@edit', [$pair['old']['id']]) }}';">Yes</button>
-                    <button type="button" onclick="var c = this.closest('.lc-card'); this.closest('.lc-pair').remove(); if (!c.querySelector('.lc-pair')) lcClose(c);">No, it's another copy</button>
-                </div>
-            </div>
-        @endforeach
-    </div>
-</div>
-@endif
+{{-- "Did you just want to change the price?" popup removed everywhere (Jon 11/26). --}}
 @endif
