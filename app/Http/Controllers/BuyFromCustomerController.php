@@ -361,6 +361,91 @@ class BuyFromCustomerController extends Controller
         }
     }
 
+    /** Wait-time choices on the drop-off text: key => [form label, text wording]. */
+    const DROPOFF_WAITS = [
+        '30m' => ['30–45 minutes', 'usually takes about 30–45 minutes'],
+        '1-2h' => ['1–2 hours', 'usually takes about 1–2 hours'],
+        '3-4h' => ['3–4 hours', 'usually takes about 3–4 hours'],
+        'tomorrow' => ['By tomorrow', 'usually takes until tomorrow'],
+    ];
+
+    /**
+     * POST /buy-from-customer/dropoff-text. Sarah 11/26: when the customer
+     * leaves their items, the associate types a rough count and texts them the
+     * expected wait. Saves the draft first (same as autosave) so the text is
+     * tied to this buy; once per buy. Times are kept so real wait times can
+     * replace the guessed table later (dropoff_texted_at -> quote_ready_texted_at).
+     */
+    public function dropoffText(Request $request)
+    {
+        if (!auth()->user()->can('purchase.create')) {
+            abort(403, 'Unauthorized action.');
+        }
+        $count = (int) $request->input('dropoff_count');
+        $waitKey = (string) $request->input('dropoff_wait');
+        if ($count < 1) {
+            return response()->json(['success' => false, 'msg' => 'Type a rough count of their items first.']);
+        }
+        if (!isset(self::DROPOFF_WAITS[$waitKey])) {
+            return response()->json(['success' => false, 'msg' => 'Pick a wait time.']);
+        }
+        $offerId = $request->input('offer_id') ?: null;
+        if ($offerId && $this->offerIsFinalized($offerId)) {
+            return response()->json(['success' => false, 'msg' => 'This buy is already finished.']);
+        }
+
+        try {
+            $this->ensureQuoteTextedColumn();
+            $offer = DB::transaction(function () use ($request, $offerId) {
+                return $this->saveOffer($request, 'draft', $offerId, false);
+            });
+        } catch (\Throwable $e) {
+            \Log::warning('BFC drop-off text: draft save failed: ' . $e->getMessage());
+            return response()->json(['success' => false, 'msg' => 'Could not save the buy. Fill in the seller and try again.']);
+        }
+        $offer->refresh();
+        if (!empty($offer->dropoff_texted_at)) {
+            return response()->json(['success' => true, 'offer_id' => $offer->id, 'already' => true,
+                'msg' => 'Already texted the wait time at ' . \Carbon\Carbon::parse($offer->dropoff_texted_at)->timezone('America/Los_Angeles')->format('g:i A') . '.']);
+        }
+
+        $offer->load(['contact', 'location']);
+        $phone = trim((string) $offer->seller_phone) ?: trim((string) optional($offer->contact)->mobile);
+        if (strlen(preg_replace('/\D/', '', $phone)) < 10) {
+            return response()->json(['success' => false, 'offer_id' => $offer->id, 'msg' => 'Enter the seller\'s phone number first.']);
+        }
+
+        $first = trim((string) $offer->seller_first_name)
+            ?: trim(strtok((string) ($offer->seller_name ?: optional($offer->contact)->name), ' ') ?: '');
+        $store = stripos((string) optional($offer->location)->name, 'pico') !== false ? 'Nivessa on Pico' : 'Nivessa Hollywood';
+        $message = ($first !== '' ? "Hi {$first}! " : 'Hi! ')
+            . "Thanks for bringing your items (about {$count}) to {$store}. A quote this size "
+            . self::DROPOFF_WAITS[$waitKey][1] . ". We'll text you as soon as it's ready.";
+
+        try {
+            $result = (new \App\Services\OpenPhoneService())->sendFromStore(optional($offer->location)->name, $phone, $message);
+        } catch (\Throwable $e) {
+            $result = ['success' => false, 'msg' => $e->getMessage(), 'uncertain' => true];
+        }
+        $uncertain = empty($result['success']) && (array_key_exists('uncertain', $result) ? (bool) $result['uncertain'] : true);
+        if (!empty($result['success']) || $uncertain) {
+            DB::table('buy_customer_offers')->where('id', $offer->id)->update([
+                'dropoff_texted_at' => now(),
+                'dropoff_item_count' => $count,
+                'dropoff_wait' => $waitKey,
+            ]);
+        }
+        \Log::info(sprintf('BFC drop-off text for offer %s to %s (%d items, %s) by user %s: %s',
+            $offer->id, $phone, $count, $waitKey, auth()->id(), !empty($result['success']) ? 'sent' : ($result['msg'] ?? 'failed')));
+
+        if (!empty($result['success'])) {
+            return response()->json(['success' => true, 'offer_id' => $offer->id, 'msg' => 'Texted ' . $phone . ': quote in ' . self::DROPOFF_WAITS[$waitKey][0] . '.']);
+        }
+        return response()->json(['success' => false, 'offer_id' => $offer->id, 'msg' => $uncertain
+            ? 'The text to ' . $phone . ' may still go through. Check with the seller before texting again.'
+            : 'Could not text ' . $phone . ': ' . ($result['msg'] ?? 'unknown error')]);
+    }
+
     protected function quoteReadyText(BuyCustomerOffer $offer, array $items)
     {
         $first = trim((string) $offer->seller_first_name)
@@ -392,6 +477,13 @@ class BuyFromCustomerController extends Controller
         if (Schema::hasTable('buy_customer_offers') && !Schema::hasColumn('buy_customer_offers', 'quote_ready_texted_at')) {
             Schema::table('buy_customer_offers', function (Blueprint $table) {
                 $table->timestamp('quote_ready_texted_at')->nullable();
+            });
+        }
+        if (Schema::hasTable('buy_customer_offers') && !Schema::hasColumn('buy_customer_offers', 'dropoff_texted_at')) {
+            Schema::table('buy_customer_offers', function (Blueprint $table) {
+                $table->timestamp('dropoff_texted_at')->nullable();
+                $table->unsignedInteger('dropoff_item_count')->nullable();
+                $table->string('dropoff_wait', 16)->nullable();
             });
         }
     }

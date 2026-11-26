@@ -983,6 +983,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/buy-from-customer/seller-lookup', 'BuyFromCustomerController@sellerLookup')->name('buy-from-customer.seller-lookup');
     Route::get('/buy-from-customer/signed-ebay-value', 'BuyFromCustomerController@signedEbayValue')->name('buy-from-customer.signed-ebay-value');
     Route::post('/buy-from-customer/autosave', 'BuyFromCustomerController@autosave')->name('buy-from-customer.autosave');
+    Route::post('/buy-from-customer/dropoff-text', 'BuyFromCustomerController@dropoffText')->name('buy-from-customer.dropoff-text');
     Route::post('/buy-from-customer', 'BuyFromCustomerController@store')->name('buy-from-customer.store');
     Route::post('/buy-from-customer/accept', 'BuyFromCustomerController@accept')->name('buy-from-customer.accept');
     Route::post('/buy-from-customer/reject', 'BuyFromCustomerController@reject')->name('buy-from-customer.reject');

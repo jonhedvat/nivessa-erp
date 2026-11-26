@@ -25,6 +25,9 @@
     .bfc-leave-main input { margin-right:6px; }
     .bfc-leave-script { margin-top:8px; padding:8px 10px; background:#fff; border-left:4px solid #e0b100; border-radius:3px; font-size:14px; }
     .bfc-leave-result { margin-top:8px; font-weight:600; }
+    .bfc-dropoff { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+    .bfc-dropoff #bfc_dropoff_count { width:100px; }
+    .bfc-dropoff #bfc_dropoff_wait { width:auto; }
     .bfc-leave-result.is-ok { color:#1f7a3a; }
     .bfc-leave-result.is-bad { color:#b03a2e; }
     .bfc-quote-check { background:#f7f9fc; border:1px solid #dde3ea; border-radius:6px; padding:10px 12px; margin:0 0 14px; }
@@ -744,9 +747,14 @@ HTML;
                     @php
                         $qrOfferId = $saved_offer_id ?? session('saved_offer_id') ?? ($input['offer_id'] ?? null);
                         $qrTextedAt = null;
+                        $qrDrop = null;
                         if ($qrOfferId && \Illuminate\Support\Facades\Schema::hasColumn('buy_customer_offers', 'quote_ready_texted_at')) {
                             $qrTextedAt = \Illuminate\Support\Facades\DB::table('buy_customer_offers')->where('id', $qrOfferId)->value('quote_ready_texted_at');
                         }
+                        if ($qrOfferId && \Illuminate\Support\Facades\Schema::hasColumn('buy_customer_offers', 'dropoff_texted_at')) {
+                            $qrDrop = \Illuminate\Support\Facades\DB::table('buy_customer_offers')->where('id', $qrOfferId)->whereNotNull('dropoff_texted_at')->first(['dropoff_texted_at', 'dropoff_item_count', 'dropoff_wait']);
+                        }
+                        $qrWaits = \App\Http\Controllers\BuyFromCustomerController::DROPOFF_WAITS;
                         $qrOn = ($input['quote_ready_text'] ?? '1') === '1';
                         $qrItems = ($input['quote_ready_items'] ?? '0') === '1';
                     @endphp
@@ -758,6 +766,23 @@ HTML;
                         </label>
                         <div class="bfc-leave-script" id="bfc_leave_script" @if(!$qrOn) style="display:none;" @endif>
                             <strong>Tell the customer:</strong> "To get a quote, you'll need to leave your items with us. We'll text you at <span id="bfc_leave_phone">the number you gave us</span> as soon as your quote is ready."
+                            <div class="bfc-dropoff">
+                                <label for="bfc_dropoff_count" style="margin:0;">Rough count of their items</label>
+                                <input type="number" id="bfc_dropoff_count" class="form-control input-sm" min="1" step="1" placeholder="e.g. 120" value="{{ optional($qrDrop)->dropoff_item_count }}" @if($qrDrop) disabled @endif>
+                                <label for="bfc_dropoff_wait" style="margin:0;">Wait</label>
+                                <select id="bfc_dropoff_wait" class="form-control input-sm" @if($qrDrop) disabled @endif>
+                                    @foreach($qrWaits as $wk => $wv)
+                                        <option value="{{ $wk }}" @if(optional($qrDrop)->dropoff_wait === $wk) selected @endif>{{ $wv[0] }}</option>
+                                    @endforeach
+                                </select>
+                                <button type="button" class="btn btn-warning btn-sm" id="bfc_dropoff_send" @if($qrDrop) disabled @endif><i class="fa fa-commenting"></i> Text them the wait time</button>
+                            </div>
+                            <div class="bfc-step-help" style="margin-top:4px;">Send this as they leave. Busy day? Pick a longer wait.</div>
+                            <div id="bfc_dropoff_result" class="bfc-leave-result {{ $qrDrop ? 'is-ok' : '' }}" @if(!$qrDrop) style="display:none;" @endif>
+                                @if($qrDrop)
+                                    <i class="fa fa-check"></i> Wait time texted {{ \Carbon\Carbon::parse($qrDrop->dropoff_texted_at)->timezone('America/Los_Angeles')->format('M j, g:i A') }} ({{ $qrDrop->dropoff_item_count }} items, {{ $qrWaits[$qrDrop->dropoff_wait][0] ?? $qrDrop->dropoff_wait }}).
+                                @endif
+                            </div>
                             <div style="margin-top:6px;">
                                 <input type="hidden" name="quote_ready_items" value="0">
                                 <label style="font-weight:400; margin:0;">
@@ -1264,6 +1289,40 @@ HTML;
         $(document).on('change', '#bfc_quote_ready_text', bfcLeaveItemsSync);
         $(document).on('input change', 'input[name="seller_phone"], #bfc_seller_q', bfcLeaveItemsSync);
         bfcLeaveItemsSync();
+
+        // Rough count -> suggested wait (associate can change it before sending).
+        var bfcWaitTouched = false;
+        $(document).on('change', '#bfc_dropoff_wait', function () { bfcWaitTouched = true; });
+        $(document).on('input change', '#bfc_dropoff_count', function () {
+            if (bfcWaitTouched) return;
+            var n = parseInt($(this).val(), 10) || 0;
+            $('#bfc_dropoff_wait').val(n >= 300 ? 'tomorrow' : n >= 100 ? '3-4h' : n >= 25 ? '1-2h' : '30m');
+        });
+        $(document).on('click', '#bfc_dropoff_send', function () {
+            var $btn = $(this), $res = $('#bfc_dropoff_result');
+            var n = parseInt($('#bfc_dropoff_count').val(), 10) || 0;
+            if (n < 1) { $res.removeClass('is-ok').addClass('is-bad').text('Type a rough count of their items first.').show(); return; }
+            $btn.prop('disabled', true);
+            var send = function () {
+                if (window.bfcAutosaveCtl) window.bfcAutosaveCtl.pause(true);
+                var data = $('#buy_offer_form').serialize() + '&dropoff_count=' + n + '&dropoff_wait=' + encodeURIComponent($('#bfc_dropoff_wait').val());
+                $.ajax({ url: '{{ route('buy-from-customer.dropoff-text') }}', method: 'POST', dataType: 'json', data: data })
+                    .done(function (r) {
+                        if (r && r.offer_id) $('#bfc_offer_id').val(r.offer_id);
+                        var ok = r && r.success;
+                        $res.removeClass('is-ok is-bad').addClass(ok ? 'is-ok' : 'is-bad').text((r && r.msg) || 'Could not send.').show();
+                        if (ok) { $('#bfc_dropoff_count, #bfc_dropoff_wait').prop('disabled', true); }
+                        else if (!(r && /may still go through/.test(r.msg || ''))) { $btn.prop('disabled', false); }
+                    })
+                    .fail(function () {
+                        $res.removeClass('is-ok').addClass('is-bad').text('Could not send. Check the seller name and phone, then try again.').show();
+                        $btn.prop('disabled', false);
+                    })
+                    .always(function () { if (window.bfcAutosaveCtl) window.bfcAutosaveCtl.pause(false); });
+            };
+            // Let a running autosave finish first so both use the same draft.
+            if (window.bfcAutosaveCtl) { window.bfcAutosaveCtl.idle().always(send); } else { send(); }
+        });
     });
 
     (function () {
@@ -2339,8 +2398,17 @@ HTML;
                 return line;
             }
 
+            var paused = false;
+            // Drop-off text saves the draft itself; hold autosave meanwhile so
+            // the two can't each make a draft.
+            window.bfcAutosaveCtl = {
+                pause: function (p) { paused = p; if (!p && pending) { pending = false; doSave(); } },
+                idle: function () { return (inFlight && xhr) ? xhr : $.Deferred().resolve().promise(); }
+            };
+
             function doSave() {
                 if (submitting) return;
+                if (paused) { pending = true; return; }
                 if (!hasContent()) return;
                 if (inFlight) { pending = true; return; }
                 inFlight = true;
