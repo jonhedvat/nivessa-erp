@@ -1,0 +1,66 @@
+# READ-ONLY: credit-buy $0 purchase check for product ids.
+
+
+
+name: Diag credit-buy zero cost
+
+on:
+  workflow_dispatch:
+    inputs:
+      product_ids:
+        description: "Comma-separated product ids"
+        required: true
+        default: "170390,170391,170392,170393,170394,170395,170396,170397,170398,170399"
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 0
+
+      - name: Check (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 90s
+            IDS="${{ github.event.inputs.product_ids }}"
+            php artisan tinker --no-ansi <<PHP
+            \$ids = array_map('intval', explode(',', "$IDS"));
+            foreach (\DB::table('products as p')->leftJoin('buy_customer_offers as o','o.id','=','p.buy_offer_id')->whereIn('p.id',\$ids)->get(['p.id','p.name','p.buy_offer_id','o.payout_type','o.status','o.final_offer_credit','o.final_offer_cash']) as \$r) { echo json_encode(\$r), PHP_EOL; }
+            \$credit = \App\BuyCustomerOffer::creditBuyProductIds(\$ids);
+            echo "credit-buy ids: ", json_encode(\$credit), PHP_EOL;
+            // Same per-line rules the store() uses, against \$0 lines.
+            \$lines = []; foreach (\$ids as \$i => \$pid) { \$lines[\$i] = ['product_id'=>\$pid,'purchase_price'=>'0','pp_without_discount'=>'0','purchase_price_inc_tax'=>'0']; }
+            \$req = \Illuminate\Http\Request::create('/', 'POST', ['purchases'=>\$lines]);
+            \$m = new ReflectionMethod(\App\Http\Controllers\PurchaseController::class, 'creditBuyPriceRules'); \$m->setAccessible(true);
+            \$rules = ['purchases.*.purchase_price'=>'required|numeric|min:0.01','purchases.*.pp_without_discount'=>'required|numeric|min:0.01','purchases.*.purchase_price_inc_tax'=>'required|numeric|min:0.01'] + \$m->invoke(app(\App\Http\Controllers\PurchaseController::class), \$req);
+            \$v = \Validator::make(['purchases'=>\$lines], \$rules);
+            echo "validation with \$0 prices: ", (\$v->fails() ? 'FAILS '.json_encode(\$v->errors()->keys()) : 'PASSES'), PHP_EOL;
+            PHP
