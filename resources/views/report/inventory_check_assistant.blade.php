@@ -516,6 +516,44 @@ HTML;
                 <div id="ica_supplier_grid" class="ica-supplier-grid">
                     <p class="text-muted small">Loading current feeds…</p>
                 </div>
+                {{-- Clarissa 11/12: drop UPCs a distributor doesn't list anymore. --}}
+                <div style="margin-top:14px;border-top:1px solid #e4e9f0;padding-top:10px;">
+                    <strong>Remove UPCs distributors no longer list</strong>
+                    <p class="text-muted small" style="margin:2px 0 6px;">Paste UPCs (one per line or comma separated). Their old prices stop showing everywhere. You can also tap the small &times; next to any distributor price in the steps above. If a distributor still lists it, it comes back on the next price fetch.</p>
+                    <textarea id="ica_rm_upcs" class="form-control" rows="3" placeholder="602445790012&#10;888072471234"></textarea>
+                    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                        <select id="ica_rm_sup" class="form-control input-sm" style="width:auto;">
+                            <option value="">From every distributor</option>
+                            @foreach(($knownSuppliers ?? []) as $ks)
+                                @if(!empty($ks['key']))<option value="{{ $ks['key'] }}">From {{ $ks['label'] ?? $ks['key'] }} only</option>@endif
+                            @endforeach
+                        </select>
+                        <button type="button" id="ica_rm_go" class="btn btn-danger btn-sm">Remove</button>
+                        <span id="ica_rm_out" class="small"></span>
+                    </div>
+                </div>
+                <script>
+                (function () {
+                    var go = document.getElementById('ica_rm_go'), out = document.getElementById('ica_rm_out');
+                    if (!go) return;
+                    go.addEventListener('click', function () {
+                        var upcs = document.getElementById('ica_rm_upcs').value.trim();
+                        if (!upcs) { out.style.color = '#b91c1c'; out.textContent = 'Paste at least one UPC.'; return; }
+                        go.disabled = true; out.style.color = '#555'; out.textContent = 'Removing…';
+                        fetch("{{ url('reports/inventory-check-assistant/supplier-feeds/remove') }}", {
+                            method: 'POST', credentials: 'same-origin',
+                            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': (window.ICA_CSRF || ''), 'X-Requested-With': 'XMLHttpRequest' },
+                            body: new URLSearchParams({ upcs: upcs, supplier_key: document.getElementById('ica_rm_sup').value })
+                        }).then(function (r) { return r.json(); }).then(function (j) {
+                            go.disabled = false;
+                            if (!j.success) { out.style.color = '#b91c1c'; out.textContent = j.message || 'Could not remove.'; return; }
+                            out.style.color = '#2E6B2E';
+                            out.textContent = 'Removed ' + j.removed + ' listing' + (j.removed === 1 ? '' : 's') + '.' + (j.not_found && j.not_found.length ? ' Not on any list: ' + j.not_found.join(', ') : '') + (j.removed ? ' Reload to see updated prices.' : '');
+                            if (j.removed) document.getElementById('ica_rm_upcs').value = '';
+                        }).catch(function () { go.disabled = false; out.style.color = '#b91c1c'; out.textContent = 'Could not remove. Check the connection.'; });
+                    });
+                })();
+                </script>
                 @endcomponent
             </div>
         </div>
@@ -1211,6 +1249,9 @@ body.ica-wizard-active { padding-bottom: 64px; }
     background: #d4edda; color: #0b3d1a; font-weight: 700;
 }
 .ica-supplier-link { color: inherit; text-decoration: underline dotted; }
+.ica-sup-rm { border: 0; background: none; color: #b0b0b0; font-size: 14px; line-height: 1; padding: 0 0 0 4px; cursor: pointer; }
+.ica-sup-rm:hover, .ica-sup-rm:focus { color: #b91c1c; }
+@media print { .ica-sup-rm { display: none; } }
 .ica-supplier-link:hover, .ica-supplier-link:focus { color: #2c699a; text-decoration: underline; }
 .ica-supplier-best-cell .ica-supplier-link { color: #0b3d1a; }
 .ica-row-table th.ica-sortable[title*="Latest wholesale price"] {

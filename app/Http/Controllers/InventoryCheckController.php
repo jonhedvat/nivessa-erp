@@ -1290,6 +1290,74 @@ class InventoryCheckController extends Controller
         ]);
     }
 
+    /**
+     * Remove listings a distributor doesn't carry anymore (Clarissa 11/12).
+     * Feeds only ever add rows (every fetch merges into the old file), so a
+     * title the distributor dropped keeps showing its old price forever.
+     * Takes one cell's listing (supplier_key + upc, or artist + title when
+     * the row has no barcode) or a pasted list of UPCs (supplier_key blank =
+     * every distributor). Removed rows are logged to
+     * storage/app/supplier-feed-removed-{biz}.json; if the distributor still
+     * lists it, the next fetch simply adds it back.
+     */
+    public function removeSupplierListings(Request $request)
+    {
+        $business_id = (int) $request->session()->get('user.business_id');
+        $known = $this->inventoryCheckService->knownSuppliers();
+        $only = strtolower(trim((string) $request->input('supplier_key', '')));
+        if ($only !== '' && !isset($known[$only])) return response()->json(['success' => false, 'message' => 'Unknown distributor.'], 422);
+        $svc = $this->inventoryCheckService;
+        $upcs = [];
+        foreach (preg_split('/[\s,;|]+/', (string) $request->input('upcs', '')) as $u) {
+            $k = $svc->upcKey($u);
+            if (strlen($k) >= 6) $upcs[$k] = true;
+        }
+        $artist = $svc->normalizeText((string) $request->input('artist', ''));
+        $title = trim((string) $request->input('title', ''));
+        $titleN = $svc->normalizeText($title);
+        if (!$upcs && ($only === '' || $titleN === '')) return response()->json(['success' => false, 'message' => 'Paste at least one UPC.'], 422);
+
+        $removed = [];
+        $by = trim((auth()->user()->first_name ?? '') . ' ' . (auth()->user()->last_name ?? '')) ?: 'staff';
+        foreach (array_keys($known) as $key) {
+            if ($only !== '' && $key !== $only) continue;
+            $feed = $svc->loadSupplierFeed($business_id, $key);
+            if (empty($feed['rows']) || !is_array($feed['rows'])) continue;
+            $keep = [];
+            foreach ($feed['rows'] as $r) {
+                $u = is_array($r) ? $svc->upcKey($r['upc'] ?? '') : '';
+                $hit = $u !== '' && isset($upcs[$u]);
+                // Name-only listing (no barcode): match the exact row the cell showed.
+                if (!$hit && !$upcs && $u === '' && is_array($r)) {
+                    $hit = $svc->normalizeText((string) mb_substr((string) ($r['title'] ?? ''), 0, 120)) === $titleN
+                        && $svc->normalizeText((string) ($r['artist'] ?? '')) === $artist;
+                }
+                if ($hit) { $removed[] = ['supplier_key' => $key] + $r; } else { $keep[] = $r; }
+            }
+            if (count($keep) !== count($feed['rows'])) {
+                $feed['rows'] = $keep;
+                $svc->saveSupplierFeed($business_id, $key, $feed);
+            }
+        }
+        if ($removed) {
+            $logPath = storage_path('app/supplier-feed-removed-' . $business_id . '.json');
+            $log = is_file($logPath) ? (json_decode((string) file_get_contents($logPath), true) ?: []) : [];
+            $log[] = ['at' => Carbon::now()->toIso8601String(), 'by' => $by, 'rows' => $removed];
+            file_put_contents($logPath, json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            // Buckets are cached 5 min; drop them so the old price is gone on reload.
+            foreach (\App\BusinessLocation::where('business_id', $business_id)->pluck('id') as $lid) {
+                foreach (['ica_secondary_', 'ica_fast_oos_', 'ica_fast_oos_v2_'] as $pre) \Illuminate\Support\Facades\Cache::forget($pre . $business_id . '_' . $lid);
+            }
+        }
+        $found = [];
+        foreach ($removed as $r) { $u = $svc->upcKey($r['upc'] ?? ''); if ($u !== '') $found[$u] = true; }
+        return response()->json([
+            'success' => true,
+            'removed' => count($removed),
+            'not_found' => array_values(array_diff(array_keys($upcs), array_keys($found))),
+        ]);
+    }
+
     public function listSupplierFeeds(Request $request)
     {
         try {

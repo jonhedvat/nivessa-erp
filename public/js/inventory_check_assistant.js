@@ -1619,10 +1619,12 @@
                     : '';
                 const href = directUrl || queryUrl;
                 const linkTitle = (directUrl ? 'Open this product on ' : 'Search ') + escapeHtml(sup.label) + upcTip;
+                // Clarissa 11/12: x = distributor doesn't list this anymore, drop it from their list.
+                const rmBtn = `<button type="button" class="ica-sup-rm" title="${escapeHtml(sup.label)} doesn't list this anymore? Remove it" data-supplier="${escapeHtml(sup.key)}" data-upc="${escapeHtml(p.upc || '')}" data-artist="${escapeHtml(p.artist_norm || '')}" data-title="${escapeHtml(p.title || '')}" data-label="${escapeHtml(sup.label)}">&times;</button>`;
                 if (href) {
-                    return `<td class="${cls}" data-supplier="${escapeHtml(sup.key)}" data-price="${cost}"><a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="ica-supplier-link" title="${linkTitle}">$${cost.toFixed(2)}</a></td>`;
+                    return `<td class="${cls}" data-supplier="${escapeHtml(sup.key)}" data-price="${cost}"><a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="ica-supplier-link" title="${linkTitle}">$${cost.toFixed(2)}</a>${rmBtn}</td>`;
                 }
-                return `<td class="${cls}" data-supplier="${escapeHtml(sup.key)}" data-price="${cost}" title="${escapeHtml(sup.label)}${escapeHtml(upcTip)}">$${cost.toFixed(2)}</td>`;
+                return `<td class="${cls}" data-supplier="${escapeHtml(sup.key)}" data-price="${cost}" title="${escapeHtml(sup.label)}${escapeHtml(upcTip)}">$${cost.toFixed(2)}${rmBtn}</td>`;
             }).join('');
         }
         // Cost is the wholesale / default_purchase_price per unit.
@@ -3058,6 +3060,51 @@
                 slide.classList.toggle('ica-wizard-peek');
             }
         }
+    });
+
+    // Remove a listing the distributor dropped (Clarissa 11/12). Clears every
+    // cell showing that same listing, re-picks the cheapest supplier in those
+    // rows and refreshes totals + the order list.
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.ica-sup-rm');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const sup = btn.getAttribute('data-supplier'), upc = btn.getAttribute('data-upc') || '', label = btn.getAttribute('data-label') || sup;
+        if (!confirm('Remove this from ' + label + "'s list?" + (upc ? ' (UPC ' + upc + ')' : '') + "\n\nDo this when " + label + " doesn't list it anymore. If they still do, it comes back on the next price fetch.")) return;
+        btn.disabled = true;
+        const body = new URLSearchParams({ supplier_key: sup, upcs: upc, artist: btn.getAttribute('data-artist') || '', title: btn.getAttribute('data-title') || '' });
+        fetch((window.ICA_SUPPLIER_UPLOAD_URL || '') + '/remove', {
+            method: 'POST', credentials: 'same-origin', body: body,
+            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': window.ICA_CSRF, 'X-Requested-With': 'XMLHttpRequest' },
+        }).then((r) => r.json()).then((j) => {
+            if (!j || !j.success) { btn.disabled = false; alert((j && j.message) || 'Could not remove it.'); return; }
+            const same = (b) => b.getAttribute('data-supplier') === sup && (upc
+                ? b.getAttribute('data-upc') === upc
+                : (!b.getAttribute('data-upc') && b.getAttribute('data-title') === btn.getAttribute('data-title') && b.getAttribute('data-artist') === btn.getAttribute('data-artist')));
+            const rows = new Set();
+            document.querySelectorAll('.ica-sup-rm').forEach((b) => {
+                if (!same(b)) return;
+                const td = b.closest('td');
+                if (!td) return;
+                rows.add(td.closest('tr'));
+                td.className = 'ica-supplier-col';
+                td.removeAttribute('data-price');
+                td.removeAttribute('title');
+                td.textContent = '—';
+            });
+            rows.forEach((tr) => {
+                if (!tr) return;
+                let best = null;
+                tr.querySelectorAll('.ica-supplier-col').forEach((td) => {
+                    td.classList.remove('ica-supplier-best-cell');
+                    const pr = parseFloat(td.getAttribute('data-price'));
+                    if (Number.isFinite(pr) && (!best || pr < best.p)) best = { td: td, p: pr };
+                });
+                if (best) best.td.classList.add('ica-supplier-best-cell');
+            });
+            renderBucketTotals();
+        }).catch(() => { btn.disabled = false; alert('Could not remove it. Check the connection.'); });
     });
 
     // Expose the two hooks for the render pipeline (same IIFE scope).

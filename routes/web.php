@@ -1433,6 +1433,7 @@ Route::middleware(['setData', 'auth', 'SetSessionData', 'language', 'timezone', 
     Route::get('/reports/inventory-check-assistant/supplier-backfill', 'InventoryCheckController@queueSupplierBackfill');
     Route::get('/reports/inventory-check-assistant/supplier-feeds', 'InventoryCheckController@listSupplierFeeds');
     Route::post('/reports/inventory-check-assistant/supplier-feeds', 'InventoryCheckController@uploadSupplierFeed');
+    Route::post('/reports/inventory-check-assistant/supplier-feeds/remove', 'InventoryCheckController@removeSupplierListings');
     Route::post('/reports/inventory-check-assistant/supplier-auto-fetch', 'InventoryCheckController@runSupplierAutoFetch');
     Route::post('/reports/inventory-check-assistant/supplier-credentials', 'InventoryCheckController@saveSupplierCredentials');
     Route::get('/reports/inventory-check-assistant/supplier-credentials/{key}', 'InventoryCheckController@getSupplierCredentialsStatus');
