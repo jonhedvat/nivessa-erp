@@ -1,0 +1,44 @@
+name: Fix HW deposit 316 to $500 (one-off)
+on:
+  workflow_dispatch:
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Update deposit 316 + register 1648 (guarded)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 60s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            php artisan tinker --no-ansi <<'PHP'
+            // Michael's 11/16 close: drawer counted $979, next opener counted $479 → $500 went to the safe, not the $400 typed.
+            $dep = \DB::table('cash_deposits')->where('location_id', 2)->where('deposit_seq', 316)->first();
+            $reg = \DB::table('cash_registers')->where('id', 1648)->first();
+            echo "BEFORE dep id={$dep->id} reg={$dep->cash_register_id} amt={$dep->amount} | reg safe_drop={$reg->safe_drop_amount}\n";
+            if ((int) $dep->cash_register_id === 1648 && (float) $dep->amount == 400.0) {
+              \DB::transaction(function () use ($dep, $reg) {
+                \DB::table('cash_deposits')->where('id', $dep->id)->update(['amount' => 500, 'updated_at' => now()]);
+                if ((float) $reg->safe_drop_amount == 400.0) \DB::table('cash_registers')->where('id', 1648)->update(['safe_drop_amount' => 500]);
+              });
+              echo "UPDATED\n";
+            } else { echo "SKIPPED (not in expected state)\n"; }
+            $dep = \DB::table('cash_deposits')->where('id', $dep->id)->first();
+            $reg = \DB::table('cash_registers')->where('id', 1648)->first();
+            echo "AFTER dep amt={$dep->amount} | reg safe_drop={$reg->safe_drop_amount}\n";
+            echo "HW TOTAL after #278 = " . \DB::table('cash_deposits')->where('location_id', 2)->where('deposit_seq', '>', 278)->sum('amount') . "\n";
+            PHP
