@@ -78,13 +78,13 @@ return [
         // The key is used as the JSON filename slug; label is what the
         // UI shows.
         'supplier_feeds' => [
-            'ams'      => ['label' => 'AMS', 'notes' => 'All Media Supply — main weekly availability + cost'],
-            'alliance' => ['label' => 'Alliance', 'notes' => 'Alliance Entertainment — AENT / WebAMI portal. Separate distributor from AMS (Sarah 2026-05-28)'],
-            'secretly' => ['label' => 'Secretly', 'notes' => 'Secretly Distribution — Dead Oceans, Jagjaguwar, Saddle Creek, etc.'],
-            'matador'  => ['label' => 'Matador', 'notes' => 'Matador / Beggars direct dealer portal (XL, 4AD, Rough Trade, Young)'],
-            'redeye'   => ['label' => 'Redeye', 'notes' => 'Redeye Worldwide — Indie / world / reggae catalog'],
-            'monostereo' => ['label' => 'Monostereo', 'notes' => 'Monostereo — distributor'],
-            'deejay'   => ['label' => 'Deejay', 'notes' => 'Deejay — distributor'],
+            'ams'      => ['url' => 'https://www.allmediasupply.com', 'label' => 'AMS', 'notes' => 'All Media Supply — main weekly availability + cost'],
+            'alliance' => ['url' => 'https://webami.aent.com', 'label' => 'Alliance', 'notes' => 'Alliance Entertainment — AENT / WebAMI portal. Separate distributor from AMS (Sarah 2026-05-28)'],
+            'secretly' => ['url' => 'https://b2b.secretlydistribution.com', 'label' => 'Secretly', 'notes' => 'Secretly Distribution — Dead Oceans, Jagjaguwar, Saddle Creek, etc.'],
+            'matador'  => ['url' => 'https://www.matadorrecords.com', 'label' => 'Matador', 'notes' => 'Matador / Beggars direct dealer portal (XL, 4AD, Rough Trade, Young)'],
+            'redeye'   => ['url' => 'https://b2b.redeyeworldwide.com', 'label' => 'Redeye', 'notes' => 'Redeye Worldwide — Indie / world / reggae catalog'],
+            'monostereo' => ['url' => 'https://newb2b.monostereo1stop.com', 'label' => 'Monostereo', 'notes' => 'Monostereo — distributor'],
+            'deejay'   => ['url' => 'https://www.deejay.de', 'label' => 'Deejay', 'notes' => 'Deejay — distributor'],
             // VP Records removed 2026-07-30 — Nivessa does not order from VP.
             // 'beggars' generic removed 2026-07-30 — Nivessa orders Matador direct (see 'matador').
         ],

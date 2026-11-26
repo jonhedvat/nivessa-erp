@@ -762,6 +762,9 @@ HTML;
     justify-content: space-between;
 }
 .ica-order-supplier-head .ica-order-supplier-tot { color: #555; font-weight: 400; }
+.ica-order-supplier-url { padding: 2px 12px 4px; font-size: 11px; background: #eef3f9; border-bottom: 1px solid #e4e9f0; }
+.ica-order-supplier-url a { color: #2c699a; }
+@media print { .ica-order-supplier-url a:after { content: none !important; } }
 .ica-order-table { width: 100%; font-size: 13px; }
 .ica-order-table td { padding: 4px 12px; border-top: 1px solid #f0f3f7; vertical-align: top; }
 .ica-order-table .ica-order-qty { width: 50px; font-weight: 700; color: #2c699a; }

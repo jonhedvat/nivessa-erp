@@ -805,7 +805,13 @@
         const host = document.getElementById('ica_order_preview');
         if (!host) return;
         const supLabels = {};
-        (window.ICA_KNOWN_SUPPLIERS || []).forEach((s) => { if (s && s.key) supLabels[s.key] = s.label || s.key; });
+        const supUrls = {};
+        (window.ICA_KNOWN_SUPPLIERS || []).forEach((s) => {
+            if (!s || !s.key) return;
+            supLabels[s.key] = s.label || s.key;
+            const fb = supplierFallbackHost(s.key);
+            supUrls[s.key] = s.url || (fb ? 'https://' + fb : '');
+        });
         const groups = {};       // supplierKey -> { label, qty, cost, rows: [] }
         const seen = {};         // de-dupe identical title rows across buckets
         $root.querySelectorAll('.ica-bucket tr[data-row-key]').forEach((tr) => {
@@ -860,6 +866,13 @@
                 : `${g.qty} units`;
             html += '<div class="ica-order-supplier">';
             html += '<div class="ica-order-supplier-head"><span>' + escapeHtml(g.label) + '</span><span class="ica-order-supplier-tot">' + escapeHtml(totTxt) + '</span></div>';
+            // Sarah 2026-11-26: small link to the distributor's site under
+            // each supplier box header so you can jump straight to ordering.
+            const url = supUrls[k] || '';
+            if (url) {
+                const shown = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+                html += '<div class="ica-order-supplier-url"><a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(shown) + '</a></div>';
+            }
             html += '<table class="ica-order-table"><tbody>';
             g.rows.forEach((r) => {
                 const name = (r.artist ? r.artist + ' — ' : '') + r.product;

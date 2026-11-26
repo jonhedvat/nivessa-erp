@@ -68,6 +68,7 @@ class InventoryCheckController extends Controller
             $knownSuppliers[] = [
                 'key' => $key,
                 'label' => $meta['label'] ?? $key,
+                'url' => $meta['url'] ?? '',
             ];
         }
 
