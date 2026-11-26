@@ -286,6 +286,10 @@ class BuyFromCustomerController extends Controller
         // Save Draft after auto-save would spawn a second BFC record.
         $request->merge(['offer_id' => $saved->id]);
 
+        // "Leaving items with us": text the seller that their quote is ready.
+        // Once per buy, so re-saving after an edit doesn't text them again.
+        $quoteText = $this->textQuoteReady($request, $saved);
+
         $business_id = request()->session()->get('user.business_id');
         // Plain [id => name] list. Passing receipt_printer_type_attribute=true
         // makes forDropdown return ['locations'=>…, 'attributes'=>…]; this form
@@ -304,7 +308,92 @@ class BuyFromCustomerController extends Controller
         return view('buy_from_customer.create', compact('locations', 'contacts', 'itemTypes', 'grades', 'calculation', 'purchaseBudget'))
             ->with('input_data', $request->all())
             ->with('saved_offer_id', $saved->id)
+            ->with('quote_text', $quoteText)
             ->with('bfcBeta', $this->isBeta($request));
+    }
+
+    /**
+     * Sarah 11/26: customers who leave their items to get a quote get a Quo
+     * text from their store's line when the cashier clicks Save and continue.
+     * No prices (the offer is said in person, opening offer first); the item
+     * list is optional. Returns what happened so the form can show it, or null
+     * when the box is unticked. Never throws.
+     */
+    protected function textQuoteReady(Request $request, BuyCustomerOffer $offer)
+    {
+        if ($request->input('quote_ready_text') !== '1') {
+            return null;
+        }
+        try {
+            $this->ensureQuoteTextedColumn();
+            $offer->refresh();
+            if (!empty($offer->quote_ready_texted_at)) {
+                return ['ok' => true, 'msg' => 'Already texted ' . \Carbon\Carbon::parse($offer->quote_ready_texted_at)->timezone('America/Los_Angeles')->format('g:i A') . '. Not texting again.'];
+            }
+            $phone = trim((string) $offer->seller_phone) ?: trim((string) optional($offer->contact)->mobile);
+            $digits = preg_replace('/\D/', '', $phone);
+            if (strlen($digits) < 10) {
+                return ['ok' => false, 'msg' => 'No text sent: no valid phone number for this seller.'];
+            }
+
+            $offer->load(['lines', 'location']);
+            $items = $request->input('quote_ready_items') === '1' ? $this->sellerReceiptData($offer, true)['items'] : [];
+            $message = $this->quoteReadyText($offer, $items);
+            $result = (new \App\Services\OpenPhoneService())->sendFromStore(optional($offer->location)->name, $phone, $message);
+
+            $uncertain = empty($result['success']) && (array_key_exists('uncertain', $result) ? (bool) $result['uncertain'] : true);
+            if (!empty($result['success']) || $uncertain) {
+                // Uncertain counts as sent so a re-save can't text them twice.
+                DB::table('buy_customer_offers')->where('id', $offer->id)->update(['quote_ready_texted_at' => now()]);
+            }
+            \Log::info(sprintf('BFC quote-ready text for offer %s to %s by user %s: %s',
+                $offer->id, $phone, auth()->id(), !empty($result['success']) ? 'sent' : ($result['msg'] ?? 'failed')));
+
+            if (!empty($result['success'])) {
+                return ['ok' => true, 'msg' => 'Texted ' . $phone . ' that their quote is ready.'];
+            }
+            return ['ok' => false, 'msg' => $uncertain
+                ? 'The text to ' . $phone . ' may still go through. Check with the seller before texting again.'
+                : 'Could not text ' . $phone . ': ' . ($result['msg'] ?? 'unknown error')];
+        } catch (\Throwable $e) {
+            \Log::warning('BFC quote-ready text failed for offer ' . $offer->id . ': ' . $e->getMessage());
+            return ['ok' => false, 'msg' => 'Could not send the text. Try texting them from Quo.'];
+        }
+    }
+
+    protected function quoteReadyText(BuyCustomerOffer $offer, array $items)
+    {
+        $first = trim((string) $offer->seller_first_name)
+            ?: trim(strtok((string) ($offer->seller_name ?: optional($offer->contact)->name), ' ') ?: '');
+        $store = stripos((string) optional($offer->location)->name, 'pico') !== false ? 'Nivessa on Pico' : 'Nivessa Hollywood';
+        $out = [($first !== '' ? "Hi {$first}! " : 'Hi! ') . "Your quote from {$store} is ready. Come by the store to hear your offer."];
+
+        if (!empty($items)) {
+            $out[] = '';
+            $out[] = 'What you left with us:';
+            $max = 25;
+            foreach (array_slice($items, 0, $max) as $it) {
+                $q = (float) $it['quantity'];
+                $qty = fmod($q, 1.0) == 0.0 ? (int) $q : number_format($q, 2);
+                $out[] = '- ' . $qty . 'x ' . $it['title'] . ($it['grade'] !== '' ? ' (' . $it['grade'] . ')' : '');
+            }
+            if (count($items) > $max) {
+                $out[] = '+ ' . (count($items) - $max) . ' more';
+            }
+        }
+        $out[] = '';
+        $out[] = 'Buy #' . $offer->buy_record_number;
+
+        return implode("\n", $out);
+    }
+
+    protected function ensureQuoteTextedColumn()
+    {
+        if (Schema::hasTable('buy_customer_offers') && !Schema::hasColumn('buy_customer_offers', 'quote_ready_texted_at')) {
+            Schema::table('buy_customer_offers', function (Blueprint $table) {
+                $table->timestamp('quote_ready_texted_at')->nullable();
+            });
+        }
     }
 
     /** POST /buy-from-customer/beta/calculate: the Beta form's Calculate. */

@@ -20,6 +20,13 @@
 
 @section('css')
 <style>
+    .bfc-leave-items { background:#fffbea; border:1px solid #f0dc8c; border-radius:6px; padding:10px 12px; margin:6px 0 4px; }
+    .bfc-leave-main { font-weight:600; font-size:15px; margin:0; cursor:pointer; }
+    .bfc-leave-main input { margin-right:6px; }
+    .bfc-leave-script { margin-top:8px; padding:8px 10px; background:#fff; border-left:4px solid #e0b100; border-radius:3px; font-size:14px; }
+    .bfc-leave-result { margin-top:8px; font-weight:600; }
+    .bfc-leave-result.is-ok { color:#1f7a3a; }
+    .bfc-leave-result.is-bad { color:#b03a2e; }
     .bfc-quote-check { background:#f7f9fc; border:1px solid #dde3ea; border-radius:6px; padding:10px 12px; margin:0 0 14px; }
     .bfc-quote-check label { font-weight:600; margin-bottom:6px; display:block; }
     .bfc-quote-row { display:flex; gap:8px; max-width:420px; }
@@ -733,6 +740,42 @@ HTML;
                         </div>
                     </details>
 
+                    {{-- Sarah 11/26: customer leaves items, gets a Quo text when the quote is done. --}}
+                    @php
+                        $qrOfferId = $saved_offer_id ?? session('saved_offer_id') ?? ($input['offer_id'] ?? null);
+                        $qrTextedAt = null;
+                        if ($qrOfferId && \Illuminate\Support\Facades\Schema::hasColumn('buy_customer_offers', 'quote_ready_texted_at')) {
+                            $qrTextedAt = \Illuminate\Support\Facades\DB::table('buy_customer_offers')->where('id', $qrOfferId)->value('quote_ready_texted_at');
+                        }
+                        $qrOn = ($input['quote_ready_text'] ?? '1') === '1';
+                        $qrItems = ($input['quote_ready_items'] ?? '0') === '1';
+                    @endphp
+                    <div class="bfc-leave-items" id="bfc_leave_items">
+                        <input type="hidden" name="quote_ready_text" value="0">
+                        <label class="bfc-leave-main">
+                            <input type="checkbox" name="quote_ready_text" value="1" id="bfc_quote_ready_text" @if($qrOn) checked @endif>
+                            Customer is leaving their items with us. Text them when the quote is ready.
+                        </label>
+                        <div class="bfc-leave-script" id="bfc_leave_script" @if(!$qrOn) style="display:none;" @endif>
+                            <strong>Tell the customer:</strong> "To get a quote, you'll need to leave your items with us. We'll text you at <span id="bfc_leave_phone">the number you gave us</span> as soon as your quote is ready."
+                            <div style="margin-top:6px;">
+                                <input type="hidden" name="quote_ready_items" value="0">
+                                <label style="font-weight:400; margin:0;">
+                                    <input type="checkbox" name="quote_ready_items" value="1" @if($qrItems) checked @endif>
+                                    Put the list of their items in the text (no prices)
+                                </label>
+                            </div>
+                        </div>
+                        @if(!empty($quote_text))
+                            <div class="bfc-leave-result {{ $quote_text['ok'] ? 'is-ok' : 'is-bad' }}">
+                                <i class="fa {{ $quote_text['ok'] ? 'fa-check' : 'fa-exclamation-triangle' }}"></i> {{ $quote_text['msg'] }}
+                            </div>
+                        @elseif($qrTextedAt)
+                            <div class="bfc-leave-result is-ok"><i class="fa fa-check"></i> Customer was texted {{ \Carbon\Carbon::parse($qrTextedAt)->timezone('America/Los_Angeles')->format('M j, g:i A') }} that their quote is ready.</div>
+                        @endif
+                    </div>
+                    <input type="hidden" id="bfc_quote_already_texted" value="{{ $qrTextedAt ? '1' : '0' }}">
+
                     <hr>
                     <h4 class="bfc-step"><span class="bfc-step-num">2</span> What are they selling?</h4>
                     <div id="bfc_items_gate_hint" class="bfc-items-gate-hint" style="display:none;">
@@ -911,7 +954,7 @@ HTML;
                     <div id="bfc_calc_error" class="alert alert-danger" style="display:none;"></div>
                     <div class="pos-action-row">
                         <span class="bfc-step-help" style="margin-right:auto; align-self:center; max-width:520px;">Next you'll enter what you paid and get the seller's signature.</span>
-                        <button type="submit" class="btn btn-primary btn-lg"><i class="fa fa-arrow-right"></i> Save and continue</button>
+                        <button type="submit" class="btn btn-primary btn-lg" id="bfc_save_continue_btn"><i class="fa fa-arrow-right"></i> <span id="bfc_save_continue_label">Save and continue</span></button>
                     </div>
 
                     </form>
@@ -1203,6 +1246,26 @@ HTML;
 
 @section('javascript')
 <script>
+    // Sarah 11/26: "leaving items with us" box: show the script to read the
+    // customer, fill in their phone, and relabel the save button.
+    $(function () {
+        function bfcLeaveItemsSync() {
+            var on = $('#bfc_quote_ready_text').is(':checked');
+            var texted = $('#bfc_quote_already_texted').val() === '1';
+            $('#bfc_leave_script').toggle(on);
+            $('#bfc_save_continue_label').text(on && !texted ? 'Quote done, please text customer' : 'Save and continue');
+            var ph = $.trim($('input[name="seller_phone"]').val() || '');
+            if (!ph) {
+                var c = $.trim($('#bfc_seller_q').val() || '');
+                if (/\d{3}/.test(c)) { ph = c; }
+            }
+            $('#bfc_leave_phone').text(ph || 'the number you gave us');
+        }
+        $(document).on('change', '#bfc_quote_ready_text', bfcLeaveItemsSync);
+        $(document).on('input change', 'input[name="seller_phone"], #bfc_seller_q', bfcLeaveItemsSync);
+        bfcLeaveItemsSync();
+    });
+
     (function () {
         // Website quote check: staff type the seller's quote number (Q1234)
         // and see what nivessa.com quoted, its expiry, and the items.
