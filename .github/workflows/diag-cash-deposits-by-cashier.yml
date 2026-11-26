@@ -1,0 +1,77 @@
+name: Diag cash deposits by cashier
+on:
+  workflow_dispatch:
+    inputs:
+      dates:
+        description: "Dates YYYY-MM-DD, comma-separated"
+        required: true
+      names:
+        description: "Cashier first names, comma-separated"
+        required: false
+        default: ""
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3 4 5; do
+            ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+            if grep -q . ~/.ssh/known_hosts 2>/dev/null; then exit 0; fi
+            sleep 5
+          done
+          exit 0
+      - name: Deposits + safe drops (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DATES: ${{ inputs.dates }}
+          NAMES: ${{ inputs.names }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          envs: DATES,NAMES
+          script_stop: false
+          command_timeout: 120s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            export DATES NAMES
+            php artisan tinker --no-ansi <<'PHP'
+            $tz = config('app.timezone'); echo 'TZ app=' . $tz . "\n";
+            $names = array_filter(array_map('trim', explode(',', (string) getenv('NAMES'))));
+            $dates = array_filter(array_map('trim', explode(',', (string) getenv('DATES'))));
+            $users = \DB::table('users')->where(function ($w) use ($names) { foreach ($names as $n) { $w->orWhere('first_name', 'like', $n . '%')->orWhere('last_name', 'like', $n . '%'); } })->get(['id', 'first_name', 'last_name', 'username']);
+            foreach ($users as $u) echo "USER {$u->id} {$u->first_name} {$u->last_name} ({$u->username})\n";
+            $ids = $users->pluck('id')->all();
+            $locs = \DB::table('business_locations')->pluck('name', 'id');
+            foreach ($dates as $d) {
+              $from = \Carbon\Carbon::parse($d . ' 00:00', 'America/Los_Angeles')->setTimezone($tz)->toDateTimeString();
+              $to = \Carbon\Carbon::parse($d . ' 00:00', 'America/Los_Angeles')->addDay()->addHours(6)->setTimezone($tz)->toDateTimeString();
+              echo "\n===== $d =====\n";
+              echo "-- cash_deposits rows that day (all cashiers) --\n";
+              foreach (\DB::table('cash_deposits')->whereBetween('deposited_at', [$from, $to])->orderBy('deposited_at')->get() as $x) {
+                echo "DEP id={$x->id} #{$x->deposit_seq} loc=" . ($locs[$x->location_id] ?? $x->location_id) . " reg={$x->cash_register_id} user={$x->user_id} cashier=[{$x->cashier_name}] amt={$x->amount} phase={$x->phase} at={$x->deposited_at}\n";
+              }
+              echo "-- registers for these cashiers --\n";
+              foreach (\DB::table('cash_registers')->whereIn('user_id', $ids)->where(fn ($w) => $w->whereBetween('created_at', [$from, $to])->orWhereBetween('closed_at', [$from, $to]))->orderBy('id')->get() as $r) {
+                $deps = \DB::table('cash_deposits')->where('cash_register_id', $r->id)->get()->map(fn ($x) => $x->phase . ':$' . $x->amount . '#' . $x->deposit_seq)->implode(' ');
+                echo "REG {$r->id} user={$r->user_id} loc=" . ($locs[$r->location_id] ?? $r->location_id) . " open={$r->created_at} closed=" . ($r->closed_at ?? '-') . " safe_drop=" . ($r->safe_drop_amount ?? '-') . " deposits=[$deps] note=[" . str_replace("\n", ' | ', (string) $r->closing_note) . "]\n";
+              }
+            }
+            PHP
+            echo "=== done ==="
