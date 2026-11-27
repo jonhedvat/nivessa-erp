@@ -1,0 +1,99 @@
+# READ-ONLY: one person's paycheck, period by period, rebuilt with the Payroll
+# page's own math (hours file -> reg/OT, rate, commissions on/off, adjustments)
+# plus live time-clock hours and Sling scheduled hours, to answer "why was my
+# check smaller". No writes (skips assemble()'s sweepPendingCloses/autoLoad).
+name: Diag payroll person periods
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "First name as on the Payroll page (e.g. luis)"
+        required: true
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Add server to known_hosts (best-effort)
+        continue-on-error: true
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1; then
+              exit 0
+            fi
+            sleep 3
+          done
+          exit 0
+
+      - name: Dump paychecks (read-only)
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: false
+          command_timeout: 180s
+          script: |
+            set +e
+            cd /www/playlist.nivessa.com/app
+            NAME="${{ github.event.inputs.name }}"
+            php artisan tinker --no-ansi <<PHP
+            \$key = strtolower(preg_replace('/[^a-z0-9]/i', '', "$NAME"));
+            \$c = app(\App\Http\Controllers\PayrollController::class);
+            \$r = new \ReflectionClass(\$c);
+            \$call = function (\$n, ...\$a) use (\$c, \$r) { \$m = \$r->getMethod(\$n); \$m->setAccessible(true); return \$m->invoke(\$c, ...\$a); };
+            \$bid = (int) \DB::table('business')->value('id');
+            \$config = \$call('loadConfig');
+            echo "RATE CONFIG for '\$key': ".json_encode(\$config['rates'][\$key] ?? null)."\n";
+            \$comm = \$call('commissionByUser', \$bid);
+            \$lastPaid = \$call('lastCommissionPaidByUser');
+            foreach (\Storage::disk('local')->files('payroll/runs') as \$f) {
+              \$d = json_decode(\Storage::disk('local')->get(\$f), true);
+              foreach ((\$d['people'] ?? []) as \$p) if ((\$p['key'] ?? '') === \$key) echo "SAVED RUN ".\$d['start']."..".\$d['end']." saved_at=".(\$d['saved_at'] ?? '')." total=".\$p['total']."\n";
+            }
+            \$periods = [['2026-10-01','2026-10-14'],['2026-10-15','2026-10-28'],['2026-10-29','2026-11-11'],['2026-11-12','2026-11-25']];
+            foreach (\$periods as [\$s, \$e]) {
+              echo "\n===== PERIOD \$s .. \$e =====\n";
+              \$hd = \$call('loadHours', \$s, \$e);
+              \$run = \$call('loadRun', \$s, \$e);
+              echo "hours file: rows=".count(\$hd['rows'] ?? [])." source=".(\$hd['source'] ?? '-')." edited=".json_encode(\$hd['edited'] ?? false)." imported_at=".(\$hd['imported_at'] ?? '-')."\n";
+              echo "run: include_commissions=".json_encode(\$run['include_commissions'])." include_uids=".json_encode(\$run['include_uids'])."\n";
+              \$sched = \$call('scheduleIndex', \$s, \$e);
+              \$people = \$call('buildPeople', \$hd['rows'] ?? [], \$config['rates'], \$config['settings'], \$sched);
+              \$people = \$call('attachCommissions', \$people, \$comm, \$lastPaid, \$call('lastPaycheckMap', \$s), \$bid);
+              \$people = \$call('attachParty', \$people, \$bid);
+              \$people = \$call('applyRun', \$people, \$run, \$config['rates'], \$config['settings']);
+              \$p = null; foreach (\$people as \$x) if (\$x['key'] === \$key) \$p = \$x;
+              if (!\$p) { echo "NOT IN THIS PERIOD\n"; continue; }
+              foreach (['rate','reg_hours','ot_hours','dt_hours','total_hours','wages','comm_included','sales_comm','listing_comm','party_comm','comm_earned','adj_dollars','grand_total','last_paycheck','home_company','one_hours','two_hours'] as \$k) echo "  \$k=".json_encode(\$p[\$k] ?? null)."\n";
+              echo "  adjustments=".json_encode(\$p['adjustments'] ?? [])."\n";
+              echo "  flags=".json_encode(array_slice(\$p['flags'] ?? [], 0, 15))."\n";
+              \$byDay = [];
+              foreach ((\$p['log'] ?? []) as \$l) { \$byDay[\$l['day']] = (\$byDay[\$l['day']] ?? 0) + \$l['hours']; }
+              ksort(\$byDay);
+              echo "  PUNCHED HOURS BY DAY: "; foreach (\$byDay as \$d => \$h) echo substr(\$d,5)."=".round(\$h,2)." "; echo "\n";
+              \$uid = \$p['user_id'];
+              if (\$uid) {
+                \$sl = \DB::table('sling_shifts')->where('erp_user_id', \$uid)->whereBetween(\DB::raw('DATE(dtstart)'), [\$s, \$e])->where('published', 1)->get();
+                \$sd = []; foreach (\$sl as \$x) { \$d = substr(\$x->dtstart,0,10); \$sd[\$d] = (\$sd[\$d] ?? 0) + (float) (\$x->hours ?? 0); }
+                ksort(\$sd);
+                echo "  SLING SCHEDULED: "; foreach (\$sd as \$d => \$h) echo substr(\$d,5)."=".round(\$h,2)." "; echo " total=".round(array_sum(\$sd),2)."\n";
+              }
+            }
+            PHP
