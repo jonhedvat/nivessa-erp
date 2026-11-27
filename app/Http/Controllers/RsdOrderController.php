@@ -659,7 +659,9 @@ class RsdOrderController extends Controller
         foreach ([false, true] as $fuzzy) { // fuzzy pass only if exact finds nothing (AMS "Borrrowed")
         $out = [];
         foreach ($pool as $id => $n) {
-            $wl = array_map(function ($w) { return preg_match('/^(19|20)(\d\d)$/', $w, $m) ? $m[2] : $w; }, preg_split('/[^a-z0-9]+/', $n));
+            // Title words must be in the title part ("Artist - Title", "ARTIST,FIRST / Title"), not the artist.
+            $tp = preg_match('/^.+?\s(?:-|\/|–)\s(.+)$/u', $n, $mm) ? $mm[1] : $n;
+            $wl = array_map(function ($w) { return preg_match('/^(19|20)(\d\d)$/', $w, $m) ? $m[2] : $w; }, preg_split('/[^a-z0-9]+/', $tp));
             $words = array_flip($wl);
             $ok = true;
             foreach ($tokens as $t) {
@@ -669,15 +671,22 @@ class RsdOrderController extends Controller
                 if (!$near) { $ok = false; break; }
             }
             if (!$ok) continue;
+            // One-word titles ("Takanaka", "1966") must start the title part, not sit inside it.
+            $lead = ($wl[0] ?? '') === 'the' ? ($wl[1] ?? '') : ($wl[0] ?? '');
+            if (count($tokens) === 1 && levenshtein($lead, $tokens[0]) > ($fuzzy ? 1 : 0)) continue;
             if ($aWords) {
                 $hit = false;
-                foreach ($aWords as $a) if (isset($words[$a])) { $hit = true; break; }
+                $full = array_flip(preg_split('/[^a-z0-9]+/', $n));
+                foreach ($aWords as $a) if (isset($full[$a])) { $hit = true; break; }
                 if (!$hit) continue;
             }
             if ($isCd !== (bool) preg_match('/\bcds?\b|\dcd\b|\d\s*x\s*cd/', $n)) continue;
             if ($is7 && !preg_match('/7"|7 ?inch|7in\b/', $n)) continue;
             $out[] = (int) $id;
         }
+        // Several matches and some are tagged RSD: those are the RSD copies.
+        $rsd = array_values(array_filter($out, function ($id) use ($pool) { return (bool) preg_match('/\brsd\b/', $pool[$id]); }));
+        if ($rsd) return $rsd;
         if ($out) return $out;
         }
         return [];

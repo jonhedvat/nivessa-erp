@@ -50,7 +50,7 @@ return [
         ['Grateful Dead', 'On A Back Porch Vol. 4'],
         ['Grateful Dead', 'Carousel Ballroom, San Francisco, CA, 2/14/68 (Live)'],
         ['Playboi Carti', 'Music - Sorry 4 Da Wait'],
-        ['The Doors', '1966.0'],
+        ['The Doors', '1966'],
         ['TV Girl', 'Four Classic Albums (CD)'],
         ['Billy Joel', 'Billy Joel Tonight'],
         ['Cher', 'Christmas - DJ Party Edition'],
