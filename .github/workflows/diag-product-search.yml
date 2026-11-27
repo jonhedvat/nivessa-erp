@@ -1,0 +1,43 @@
+# READ-ONLY: search ERP products by words in name/artist; prints category,
+# price, per-store stock and units sold. No writes.
+name: Diag product search (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      term:
+        description: "Words to match in product name/artist (all must match)"
+        required: true
+
+concurrency:
+  group: production-diag
+  cancel-in-progress: false
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Search
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          TERM_Q: ${{ github.event.inputs.term }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          envs: TERM_Q
+          script_stop: true
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJHRlcm0gPSB0cmltKGdldGVudignVEVSTV9RJykgPzogJycpOwokd29yZHMgPSBwcmVnX3NwbGl0KCcvXHMrLycsICR0ZXJtKTsKJHEgPSBEQjo6dGFibGUoJ3Byb2R1Y3RzIGFzIHAnKS0+bGVmdEpvaW4oJ2NhdGVnb3JpZXMgYXMgYycsJ2MuaWQnLCc9JywncC5jYXRlZ29yeV9pZCcpLT5sZWZ0Sm9pbignY2F0ZWdvcmllcyBhcyBzYycsJ3NjLmlkJywnPScsJ3Auc3ViX2NhdGVnb3J5X2lkJyk7CmZvcmVhY2ggKCR3b3JkcyBhcyAkdykgeyAkcS0+d2hlcmUoZnVuY3Rpb24oJHgpIHVzZSAoJHcpeyAkeC0+d2hlcmUoJ3AubmFtZScsJ2xpa2UnLCIlJHclIiktPm9yV2hlcmUoJ3AuYXJ0aXN0JywnbGlrZScsIiUkdyUiKTsgfSk7IH0KJHJvd3MgPSAkcS0+b3JkZXJCeSgncC5pZCcpLT5saW1pdCgxMDApLT5nZXQoWydwLmlkJywncC5za3UnLCdwLm5hbWUnLCdwLmFydGlzdCcsJ3AuaXNfaW5hY3RpdmUnLCdwLmNyZWF0ZWRfYXQnLCdjLm5hbWUgYXMgY2F0Jywnc2MubmFtZSBhcyBzdWJjYXQnXSk7CmVjaG8gIj09IHByb2R1Y3RzIG1hdGNoaW5nICckdGVybSc6ICIuY291bnQoJHJvd3MpLiJcbiI7CmZvcmVhY2ggKCRyb3dzIGFzICRyKSB7CiAgJHByaWNlID0gREI6OnRhYmxlKCd2YXJpYXRpb25zJyktPndoZXJlKCdwcm9kdWN0X2lkJywkci0+aWQpLT52YWx1ZSgnc2VsbF9wcmljZV9pbmNfdGF4Jyk7CiAgJHN0b2NrID0gREI6OnRhYmxlKCd2YXJpYXRpb25fbG9jYXRpb25fZGV0YWlscyBhcyB2JyktPmpvaW4oJ2J1c2luZXNzX2xvY2F0aW9ucyBhcyBsJywnbC5pZCcsJz0nLCd2LmxvY2F0aW9uX2lkJyktPndoZXJlKCd2LnByb2R1Y3RfaWQnLCRyLT5pZCktPmdldChbJ2wubmFtZScsJ3YucXR5X2F2YWlsYWJsZSddKTsKICAkc3QgPSAkc3RvY2stPm1hcChmbigkcyk9PiRzLT5uYW1lLic9Jy4oZmxvYXQpJHMtPnF0eV9hdmFpbGFibGUpLT5pbXBsb2RlKCcsICcpOwogICRzb2xkID0gREI6OnRhYmxlKCd0cmFuc2FjdGlvbl9zZWxsX2xpbmVzIGFzIHRzbCcpLT5qb2luKCd0cmFuc2FjdGlvbnMgYXMgdCcsJ3QuaWQnLCc9JywndHNsLnRyYW5zYWN0aW9uX2lkJyktPndoZXJlKCd0c2wucHJvZHVjdF9pZCcsJHItPmlkKS0+d2hlcmUoJ3QudHlwZScsJ3NlbGwnKS0+d2hlcmUoJ3Quc3RhdHVzJywnZmluYWwnKS0+c2VsZWN0UmF3KCdDT0FMRVNDRShTVU0odHNsLnF1YW50aXR5IC0gdHNsLnF1YW50aXR5X3JldHVybmVkKSwwKSBxLCBNQVgodC50cmFuc2FjdGlvbl9kYXRlKSBsYXN0JyktPmZpcnN0KCk7CiAgcHJpbnRmKCIjJWQgfCBza3UgJXMgfCAlcyDigJQgJXMgfCAlcyAvICVzIHwgJCVzIHwgJXMgfCBpbmFjdGl2ZT0lZCB8IHN0b2NrOiAlcyB8IHNvbGQgJXMgKGxhc3QgJXMpXG4iLCAkci0+aWQsJHItPnNrdSwkci0+YXJ0aXN0LCRyLT5uYW1lLCRyLT5jYXQsJHItPnN1YmNhdCwkcHJpY2Usc3Vic3RyKCRyLT5jcmVhdGVkX2F0LDAsMTApLCRyLT5pc19pbmFjdGl2ZSwkc3QgPzogJ25vbmUnLChmbG9hdCkkc29sZC0+cSwkc29sZC0+bGFzdCA/PyAnLScpOwp9Cg==' | base64 -d > /tmp/diag_product_search.php
+            php /tmp/diag_product_search.php
+            rm -f /tmp/diag_product_search.php
