@@ -571,6 +571,118 @@ class RsdOrderController extends Controller
         ])->header('Access-Control-Allow-Origin', '*')->header('Cache-Control', 'public, max-age=300');
     }
 
+    /** Sheet-side key: =LOWER(REGEXREPLACE(B5&"|"&C5,"[^A-Za-z0-9|]","")) gives the same string. */
+    public static function sheetKey(string $artist, string $title): string
+    {
+        return preg_replace('/[^a-z0-9|]+/', '', strtolower($artist . '|' . $title));
+    }
+
+    /**
+     * GET /rsd-stock.csv?store=hollywood|pico (public, read-only; Sarah 11/27).
+     * One line per row of that store's tab on the RSD order Google Sheet
+     * (config/rsd_sheet_rows.php): key, Sold (since 11/20), Left on the shelf, Status.
+     * The sheet pulls it with IMPORTDATA and VLOOKUPs by key. Add &debug=1 for
+     * the matched ERP product names as JSON.
+     */
+    public function publicStock(Request $request)
+    {
+        $store = $request->query('store') === 'pico' ? 'pico' : 'hollywood';
+        $debug = (bool) $request->query('debug');
+        $rows = (array) config('rsd_sheet_rows.' . $store, []);
+        $out = \Cache::remember('rsd-stock-' . $store, 300, function () use ($store, $rows) {
+            $biz = (int) (config('services.nivessa_web.business_id') ?: 1);
+            $locIds = [];
+            foreach (\App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id') as $id => $name) {
+                if (stripos($name, $store) !== false) $locIds[] = (int) $id;
+            }
+            // One pass over RSD-ish products: tagged RSD, or created after orders went in
+            // (new-release SKU = UPC). Matched to sheet rows in PHP.
+            $pool = \DB::table('products')->where('business_id', $biz)
+                ->where(function ($w) {
+                    $w->where('name', 'like', '%RSD%')->orWhere('name', 'like', '%record store day%')
+                      ->orWhere('created_at', '>=', '2026-10-15');
+                })->pluck('name', 'id')->map(function ($n) { return strtolower((string) $n); })->all();
+            $match = [];
+            $all = [];
+            foreach ($rows as $i => $r) {
+                [$artist, $title] = array_values($r);
+                $match[$i] = $this->matchProducts($pool, $artist, $title);
+                foreach ($match[$i] as $id) $all[$id] = true;
+            }
+            $ids = array_keys($all);
+            $left = $sold = [];
+            if ($ids && $locIds) {
+                $left = \DB::table('variation_location_details')->whereIn('product_id', $ids)->whereIn('location_id', $locIds)
+                    ->groupBy('product_id')->selectRaw('product_id, SUM(qty_available) as q')->pluck('q', 'product_id')->all();
+                $sold = \DB::table('transaction_sell_lines as l')
+                    ->join('transactions as t', 't.id', '=', 'l.transaction_id')
+                    ->whereIn('l.product_id', $ids)->whereIn('t.location_id', $locIds)
+                    ->where('t.type', 'sell')->where('t.status', 'final')
+                    ->where('t.transaction_date', '>=', '2026-11-20 00:00:00')
+                    ->groupBy('l.product_id')->selectRaw('l.product_id, SUM(l.quantity - COALESCE(l.quantity_returned, 0)) as q')
+                    ->pluck('q', 'product_id')->all();
+            }
+            $res = [];
+            foreach ($rows as $i => $r) {
+                [$artist, $title] = array_values($r);
+                $L = 0; $S = 0; $names = [];
+                foreach ($match[$i] as $id) { $L += (float) ($left[$id] ?? 0); $S += (float) ($sold[$id] ?? 0); $names[] = $pool[$id]; }
+                $L = max(0, (int) round($L)); $S = (int) round($S);
+                $status = !$match[$i] ? 'Not in ERP' : ($L > 0 ? 'In stock' : ($S > 0 ? 'SOLD OUT' : 'None in stock'));
+                $res[] = ['key' => self::sheetKey($artist, $title), 'artist' => $artist, 'title' => $title,
+                    'products' => $names, 'sold' => $S, 'left' => $L, 'status' => $status];
+            }
+            return $res;
+        });
+        if ($debug) return response()->json(['store' => $store, 'rows' => $out]);
+        $lines = ["key,Sold,Left,Status"];
+        foreach ($out as $o) {
+            $lines[] = implode(',', [$o['key'], $o['sold'], $o['left'], $o['status']]);
+        }
+        $lines[] = 'updated,,,' . now()->format('m/d/y g:ia');
+        return response(implode("\n", $lines) . "\n", 200, [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Cache-Control' => 'public, max-age=300',
+        ]);
+    }
+
+    /** ERP product ids whose name has the artist and the sheet title's words, same format (CD / 7"). */
+    protected function matchProducts(array $pool, string $artist, string $title): array
+    {
+        $tokens = self::titleTokens($title);
+        if (empty($tokens)) $tokens = array_values(array_filter(preg_split('/[^a-z0-9]+/', strtolower($title))));
+        $aWords = array_values(array_filter(preg_split('/[^a-z0-9]+/', strtolower(preg_replace('/\(.*?\)/', '', $artist))),
+            function ($w) { return strlen($w) >= 3 && !in_array($w, ['the', 'and'], true); }));
+        if (empty($tokens)) return [];
+        $isCd = (bool) preg_match('/\bCD\b/i', $title);
+        $is7 = (bool) preg_match('/7"|7 inch/i', $title);
+        foreach ([false, true] as $fuzzy) { // fuzzy pass only if exact finds nothing (AMS "Borrrowed")
+        $out = [];
+        foreach ($pool as $id => $n) {
+            $wl = array_map(function ($w) { return preg_match('/^(19|20)(\d\d)$/', $w, $m) ? $m[2] : $w; }, preg_split('/[^a-z0-9]+/', $n));
+            $words = array_flip($wl);
+            $ok = true;
+            foreach ($tokens as $t) {
+                if (isset($words[$t])) continue;
+                $near = false;
+                if ($fuzzy && strlen($t) >= 5) foreach ($wl as $w) if (abs(strlen($w) - strlen($t)) <= 1 && levenshtein($w, $t) <= 1) { $near = true; break; }
+                if (!$near) { $ok = false; break; }
+            }
+            if (!$ok) continue;
+            if ($aWords) {
+                $hit = false;
+                foreach ($aWords as $a) if (isset($words[$a])) { $hit = true; break; }
+                if (!$hit) continue;
+            }
+            if ($isCd !== (bool) preg_match('/\bcds?\b|\dcd\b|\d\s*x\s*cd/', $n)) continue;
+            if ($is7 && !preg_match('/7"|7 ?inch|7in\b/', $n)) continue;
+            $out[] = (int) $id;
+        }
+        if ($out) return $out;
+        }
+        return [];
+    }
+
     public function markOrdered(Request $request)
     {
         $biz = (int) $request->session()->get('user.business_id');

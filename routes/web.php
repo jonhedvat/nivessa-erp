@@ -26,6 +26,7 @@ use App\Http\Controllers\SellPosController;
 // from here — the ERP is the source of truth.
 Route::get('/events-feed.json', 'EventsController@publicFeed');
 Route::get('/rsd-ordered.json', 'RsdOrderController@publicOrdered');
+Route::get('/rsd-stock.csv', 'RsdOrderController@publicStock');
 // Per-store "pays more / pays less" genres for nivessa.com /buy-sell-trade pages.
 Route::get('/buy-premiums.json', [\App\Http\Controllers\Api\NivessaBuyPremiumsController::class, 'publicFeed']);
 // Used-vinyl titles + typical sold price for the nivessa.com /vinyl-worth value database.
