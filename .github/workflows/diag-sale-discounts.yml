@@ -50,21 +50,11 @@ jobs:
             php artisan tinker --no-ansi <<'PHP'
             $days = max(1, (int) getenv('DAYS'));
             $from = now()->subDays($days)->toDateTimeString();
-            $rows = \DB::table('transactions as t')->leftJoin('users as u','u.id','=','t.created_by')->leftJoin('business_locations as bl','bl.id','=','t.location_id')
-              ->where('t.type','sell')->where('t.transaction_date','>=',$from)->where('t.discount_amount','>',0)
-              ->orderByDesc('t.id')->limit(60)
-              ->get(['t.id','t.invoice_no','t.transaction_date','t.discount_type','t.discount_amount','t.total_before_tax','t.final_total','t.rp_redeemed_amount','t.is_direct_sale','t.source','t.created_at','t.updated_at','u.username','bl.name as loc','t.additional_notes','t.staff_note']);
+            $rows = \DB::table('transactions as t')->leftJoin('users as u','u.id','=','t.created_by')->leftJoin('business_locations as bl','bl.id','=','t.location_id')->where('t.type','sell')->where('t.transaction_date','>=',$from)->where('t.discount_amount','>',0)->orderByDesc('t.id')->limit(60)->get(['t.id','t.invoice_no','t.transaction_date','t.discount_type','t.discount_amount','t.total_before_tax','t.final_total','t.rp_redeemed_amount','t.is_direct_sale','t.source','t.created_at','t.updated_at','u.username','bl.name as loc','t.additional_notes','t.staff_note']);
             $all = \DB::table('transactions')->where('type','sell')->where('transaction_date','>=',$from)->count();
             echo "sells since $from: $all, with discount: ".\DB::table('transactions')->where('type','sell')->where('transaction_date','>=',$from)->where('discount_amount','>',0)->count()."\n";
             echo "by amount/type:\n";
             foreach (\DB::table('transactions')->where('type','sell')->where('transaction_date','>=',$from)->where('discount_amount','>',0)->selectRaw('discount_type, discount_amount, count(*) c, min(transaction_date) first, max(transaction_date) last')->groupBy('discount_type','discount_amount')->orderByDesc('c')->get() as $g) echo "  {$g->discount_type} {$g->discount_amount} x{$g->c}  {$g->first} .. {$g->last}\n";
             foreach (\DB::table('transactions')->where('type','sell')->where('transaction_date','>=',$from)->selectRaw('date(transaction_date) d, sum(discount_amount>0) disc, count(*) c')->groupBy('d')->orderBy('d')->get() as $g) echo "  day {$g->d}: {$g->disc}/{$g->c} discounted\n";
-            foreach ($rows as $r) {
-              $lines = \DB::table('transaction_sell_lines as l')->leftJoin('products as p','p.id','=','l.product_id')->where('l.transaction_id',$r->id)->get(['p.name','l.quantity','l.unit_price_before_discount','l.unit_price_inc_tax','l.line_discount_type','l.line_discount_amount']);
-              $pay = \DB::table('transaction_payments')->where('transaction_id',$r->id)->get(['method','amount','is_return']);
-              echo "\n#{$r->id} {$r->invoice_no} {$r->transaction_date} {$r->loc} by {$r->username} disc={$r->discount_type}:{$r->discount_amount} before_tax={$r->total_before_tax} final={$r->final_total} rp={$r->rp_redeemed_amount} src={$r->source} upd={$r->updated_at}\n";
-              if ($r->additional_notes || $r->staff_note) echo "   notes: ".trim($r->additional_notes.' | '.$r->staff_note)."\n";
-              foreach ($lines as $l) echo "   - ".mb_substr((string)$l->name,0,50)." q{$l->quantity} pre={$l->unit_price_before_discount} inc={$l->unit_price_inc_tax} ld={$l->line_discount_type}:{$l->line_discount_amount}\n";
-              foreach ($pay as $p) echo "   \$ {$p->method} {$p->amount}".($p->is_return?' (change)':'')."\n";
-            }
+            foreach ($rows as $r) { $lines = \DB::table('transaction_sell_lines as l')->leftJoin('products as p','p.id','=','l.product_id')->where('l.transaction_id',$r->id)->get(['p.name','l.quantity','l.unit_price_before_discount','l.unit_price_inc_tax','l.line_discount_type','l.line_discount_amount']); $pay = \DB::table('transaction_payments')->where('transaction_id',$r->id)->get(['method','amount','is_return']); echo "\n#{$r->id} {$r->invoice_no} {$r->transaction_date} {$r->loc} by {$r->username} disc={$r->discount_type}:{$r->discount_amount} before_tax={$r->total_before_tax} final={$r->final_total} rp={$r->rp_redeemed_amount} src={$r->source} upd={$r->updated_at}\n"; if ($r->additional_notes || $r->staff_note) echo "   notes: ".trim($r->additional_notes.' | '.$r->staff_note)."\n"; foreach ($lines as $l) echo "   - ".mb_substr((string)$l->name,0,50)." q{$l->quantity} pre={$l->unit_price_before_discount} inc={$l->unit_price_inc_tax} ld={$l->line_discount_type}:{$l->line_discount_amount}\n"; foreach ($pay as $p) echo "   \$ {$p->method} {$p->amount}".($p->is_return?' (change)':'')."\n"; }
             PHP
