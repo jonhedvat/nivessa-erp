@@ -65,7 +65,7 @@
 				</div>
 
 				{{-- Large barcode fills the remaining width --}}
-				<div style="width: 100%; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;">
+				<div style="width: 100%; flex: 1 0 auto; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;">
 					<img style="max-width: 96% !important; height: 0.45in !important; width: auto; display: block;" src="data:image/png;base64,{{DNS1D::getBarcodePNG($page_product->sub_sku, $page_product->barcode_type, 1, 30, array(0, 0, 0), false)}}">
 					<span class="nv-keep" style="font-size: 13px !important; letter-spacing: 1px; flex-shrink: 0;">{{ $page_product->sub_sku }}</span>
 				</div>
@@ -248,6 +248,20 @@
       if (r.width === 0 && r.height === 0) continue;
       if (r.bottom > box.bottom + 0.5 || r.top < box.top - 0.5 || r.right > box.right + 0.5 || r.left < box.left - 0.5) return true;
       if (el.tagName === 'SPAN' && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).whiteSpace === 'nowrap') return true;
+    }
+    // Text must never sit on top of the barcode/logo (long wrapped titles used to
+    // push the price + condition lines under the barcode, 11/27).
+    var imgs = label.querySelectorAll('img');
+    var texts = label.querySelectorAll('span, b');
+    for (var j = 0; j < imgs.length; j++) {
+      var ir = imgs[j].getBoundingClientRect();
+      if (!ir.height) continue;
+      for (var k = 0; k < texts.length; k++) {
+        if (texts[k].classList.contains('nv-keep')) continue;
+        var tr = texts[k].getBoundingClientRect();
+        if (!tr.height) continue;
+        if (tr.bottom > ir.top + 0.5 && tr.top < ir.bottom - 0.5 && tr.right > ir.left + 0.5 && tr.left < ir.right - 0.5) return true;
+      }
     }
     return false;
   }
