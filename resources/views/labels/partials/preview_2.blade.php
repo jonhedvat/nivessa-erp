@@ -28,13 +28,15 @@
 				{{-- Nivessa logo --}}
 				@if(!empty($nivessa_logo_b64))<img src="data:image/png;base64,{{ $nivessa_logo_b64 }}" style="height: 0.3in; width: auto; display: block; margin: 0 auto; flex-shrink: 0;">@endif
 
-				{{-- Optional text fields (kept compact so the barcode dominates) --}}
+				{{-- Optional text fields (kept compact so the barcode dominates). Title + artist WRAP
+				     instead of being one-line: a long one-line title made shrink-to-fit shrink the whole
+				     label to fit it, leaving a big empty middle. --}}
 				<div style="line-height: 1.05;">
 					@if(!empty($print['name']))
-						<span style="display: block !important; font-weight: bold; font-size: {{ max((int)($print['name_size'] ?? 10) + 5, 16) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{$page_product->product_actual_name}}</span>
+						<span style="display: block !important; font-weight: bold; font-size: {{ max((int)($print['name_size'] ?? 10) + 5, 16) }}px; white-space: normal; overflow-wrap: anywhere; max-width: 100%;">{{$page_product->product_actual_name}}</span>
 						@endif
 						@if(!empty($page_product->artist))
-							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 4, 15) }}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{$page_product->artist}}</span>
+							<span style="display: block !important; font-size: {{ max((int)($print['name_size'] ?? 10) + 4, 15) }}px; white-space: normal; overflow-wrap: anywhere; max-width: 100%;">{{$page_product->artist}}</span>
 						@endif
 						@if(!empty($page_product->sub_category))
 							<span style="display: block !important; font-weight: bold; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">{{ $page_product->sub_category }}</span>
