@@ -668,7 +668,7 @@ HTML;
                                      of the phone so staff verify it with the seller. (Sarah 2026-11-27) --}}
                                 {!! Form::select('contact_id', collect($contacts)->only(array_filter([(string) ($input['contact_id'] ?? '')]))->all(), $input['contact_id'] ?? null, ['class' => 'form-control bfc-seller-lookup', 'id' => 'contact_id', 'style' => 'display:none;']) !!}
                                 <input type="text" id="bfc_seller_q" class="form-control" autocomplete="off" placeholder="Phone, email, or name"
-                                       value="{{ collect($contacts)->get((string) ($input['contact_id'] ?? ''), '') }}">
+                                       value="{{ !empty($input['contact_id']) ? collect($contacts)->get((string) $input['contact_id'], '') : '' }}">
                                 <div id="bfc_seller_picked" style="display:none; align-items:center; gap:8px; padding:6px 10px; border:1px solid #3c8dbc; border-radius:4px; background:#f0f7fc;">
                                     <i class="fa fa-user" style="color:#3c8dbc;"></i>
                                     <span id="bfc_seller_picked_text" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;"></span>
@@ -1463,6 +1463,7 @@ HTML;
                 $picked.hide(); $q.show();
             }
             if ($c.val()) showPicked($.trim($c.find('option:selected').text()) || $q.val());
+            else if (/^none$/i.test($.trim($q.val()))) $q.val('');
             $('#bfc_seller_change_btn').on('click', function () {
                 setContact('', '');
                 $q.val('').trigger('change');
@@ -1511,7 +1512,8 @@ HTML;
                 }
                 setContact($a.attr('data-id'), r.text);
                 $q.val(r.masked ? '' : r.text).trigger('change');
-                showPicked(r.text);
+                showPicked(r.name || r.text);
+                $pickedText.attr('title', r.text);
             });
             $q.on('blur', function () { setTimeout(function () { $list.hide(); }, 150); });
             $q.on('keydown', function (e) {
