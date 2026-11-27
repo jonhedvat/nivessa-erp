@@ -663,12 +663,17 @@ HTML;
                         <div class="col-md-3 seller-contact-block">
                             <div class="form-group">
                                 <label>Existing contact <span class="text-danger">*</span></label>
-                                {{-- Lookup is phone/email only (no browsing or searching by name), so the
-                                     page only ships the already-picked contact; everything else comes
-                                     from the seller-lookup endpoint. (Sarah 2026-11-10) --}}
+                                {{-- Lookup by phone, email or name via the seller-lookup endpoint; the page
+                                     only ships the already-picked contact. Name hits show just the last 4
+                                     of the phone so staff verify it with the seller. (Sarah 2026-11-27) --}}
                                 {!! Form::select('contact_id', collect($contacts)->only(array_filter([(string) ($input['contact_id'] ?? '')]))->all(), $input['contact_id'] ?? null, ['class' => 'form-control bfc-seller-lookup', 'id' => 'contact_id', 'style' => 'display:none;']) !!}
-                                <input type="text" id="bfc_seller_q" class="form-control" autocomplete="off" placeholder="Type phone number or email"
+                                <input type="text" id="bfc_seller_q" class="form-control" autocomplete="off" placeholder="Phone, email, or name"
                                        value="{{ collect($contacts)->get((string) ($input['contact_id'] ?? ''), '') }}">
+                                <div id="bfc_seller_picked" style="display:none; align-items:center; gap:8px; padding:6px 10px; border:1px solid #3c8dbc; border-radius:4px; background:#f0f7fc;">
+                                    <i class="fa fa-user" style="color:#3c8dbc;"></i>
+                                    <span id="bfc_seller_picked_text" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;"></span>
+                                    <button type="button" class="btn btn-default btn-xs" id="bfc_seller_change_btn"><i class="fa fa-exchange"></i> Change</button>
+                                </div>
                                 <div id="bfc_seller_results" class="list-group" style="display:none; position:absolute; z-index:1050; width:calc(100% - 30px); max-height:260px; overflow-y:auto; margin:0; box-shadow:0 4px 12px rgba(0,0,0,.15);"></div>
                                 <button type="button" class="btn btn-link btn-xs" id="bfc_view_account_btn" style="padding-left:0;">
                                     <i class="fa fa-user"></i> View account (store credit &amp; history)
@@ -1434,36 +1439,61 @@ HTML;
         // delegated native `change` as a fallback in case select2 isn't
         // initialized. One of these fires whenever an account is picked, so the
         // gate re-runs and unlocks the items. (Sarah 2026-07-21)
-        // Seller lookup by phone number or email only — never by name. Plain
-        // input + result list (select2 here left a stacked dead copy you
-        // couldn't type into). Picking a result sets the hidden #contact_id.
+        // Seller lookup by phone, email or name. Plain input + result list
+        // (select2 here left a stacked dead copy you couldn't type into).
+        // Picking a result sets the hidden #contact_id and swaps the input for
+        // a "picked" chip with a Change button. Name-only hits are masked to
+        // the phone's last 4 and need a verify confirm. (Sarah 2026-11-27)
         (function () {
             var $c = $('#contact_id'), $q = $('#bfc_seller_q'), $list = $('#bfc_seller_results');
+            var $picked = $('#bfc_seller_picked'), $pickedText = $('#bfc_seller_picked_text');
             if (!$q.length) return;
-            var url = @json(url('/buy-from-customer/seller-lookup')), timer = null, seq = 0;
+            var url = @json(url('/buy-from-customer/seller-lookup')), timer = null, seq = 0, byId = {};
             function msg(t) { $list.html($('<div class="list-group-item text-muted"></div>').text(t)).show(); }
             function setContact(id, text) {
                 $c.empty();
                 if (id) $c.append($('<option></option>').attr('value', id).text(text));
                 $c.val(id || '').trigger('change');
             }
+            function showPicked(text) {
+                $pickedText.text(text).attr('title', text);
+                $q.hide(); $list.hide(); $picked.css('display', 'flex');
+            }
+            function showSearch() {
+                $picked.hide(); $q.show();
+            }
+            if ($c.val()) showPicked($.trim($c.find('option:selected').text()) || $q.val());
+            $('#bfc_seller_change_btn').on('click', function () {
+                setContact('', '');
+                $q.val('').trigger('change');
+                showSearch();
+                $q.trigger('focus');
+            });
             $q.on('input', function () {
                 var q = $.trim($q.val());
                 if ($c.val()) setContact('', '');
                 clearTimeout(timer);
                 var digits = q.replace(/\D/g, '');
-                if (q.indexOf('@') === -1 && digits.length < 4) {
-                    if (q.length) msg(/[a-z]/i.test(q) && q.indexOf('@') === -1 ? 'Search by phone number or email (not name)' : 'Keep typing the phone number…'); else $list.hide();
+                var letters = /[a-z]/i.test(q);
+                if (q.indexOf('@') === -1 && !letters && digits.length < 4) {
+                    if (q.length) msg('Keep typing the phone number…'); else $list.hide();
                     return;
                 }
+                if (letters && q.length < 3) { msg('Keep typing…'); return; }
                 timer = setTimeout(function () {
                     var my = ++seq;
                     $.getJSON(url, { q: q }).done(function (d) {
                         if (my !== seq) return;
                         var res = (d && d.results) || [];
-                        if (!res.length) return msg('No account with that phone/email');
-                        $list.empty();
+                        if (!res.length) return msg('No account found for that phone, email or name');
+                        $list.empty(); byId = {};
+                        if (res.some(function (r) { return r.masked; })) {
+                            $('<div class="list-group-item text-muted small"></div>')
+                                .text('Name matches: ask the seller for their phone number and check the last 4 digits.')
+                                .appendTo($list);
+                        }
                         res.forEach(function (r) {
+                            byId[r.id] = r;
                             $('<a href="#" class="list-group-item"></a>').text(r.text).attr('data-id', r.id).appendTo($list);
                         });
                         $list.show();
@@ -1472,10 +1502,16 @@ HTML;
             });
             $list.on('mousedown', 'a.list-group-item', function (e) {
                 e.preventDefault();
-                var $a = $(this);
-                setContact($a.attr('data-id'), $a.text());
-                $q.val($a.text());
-                $list.hide();
+                var $a = $(this), r = byId[$a.attr('data-id')] || { text: $a.text() };
+                if (r.masked) {
+                    var ok = r.verify
+                        ? window.confirm('Verify with the seller: ask for their phone number.\n\nDoes it end in ' + r.verify + '?')
+                        : window.confirm(r.name + ' has no phone on file. Are you sure this is the right person?');
+                    if (!ok) return;
+                }
+                setContact($a.attr('data-id'), r.text);
+                $q.val(r.masked ? '' : r.text).trigger('change');
+                showPicked(r.text);
             });
             $q.on('blur', function () { setTimeout(function () { $list.hide(); }, 150); });
             $q.on('keydown', function (e) {

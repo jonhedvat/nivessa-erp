@@ -599,8 +599,10 @@ class BuyFromCustomerController extends Controller
 
     /** Buy form signed lines: eBay asking-price lookup (SignedValueLookupService). */
     /**
-     * Seller picker lookup for the buy form: phone number or email ONLY.
-     * Staff must not be able to find people by name here. (Sarah 2026-11-10)
+     * Seller picker lookup for the buy form: phone number, email, or name.
+     * Phone/email hits show the full contact. Name-only hits show just the
+     * last 4 digits of the phone so staff verify it with the seller before
+     * picking (Sarah 2026-11-27; was phone/email only since 2026-11-10).
      */
     public function sellerLookup(Request $request)
     {
@@ -614,13 +616,33 @@ class BuyFromCustomerController extends Controller
             ->where('type', '!=', 'lead')
             ->active();
 
+        $digits = preg_replace('/\D+/', '', $q);
+        $hasLetters = (bool) preg_match('/[a-z]/i', $q);
+        $nameMode = false;
         if (strpos($q, '@') !== false) {
-            if (strlen($q) < 5) {
+            if (strlen($q) < 3) {
                 return response()->json(['results' => []]);
             }
-            $query->where('email', 'like', $q . '%');
+            $query->where('contacts.email', 'like', '%' . $q . '%');
+        } elseif ($hasLetters) {
+            if (mb_strlen($q) < 3) {
+                return response()->json(['results' => []]);
+            }
+            // Letters: match email (contains) or name (every word must appear).
+            $nameMode = true;
+            $words = array_values(array_filter(preg_split('/\s+/', $q)));
+            $query->where(function ($w) use ($q, $words) {
+                $w->where('contacts.email', 'like', '%' . $q . '%')
+                  ->orWhere(function ($n) use ($words) {
+                      foreach ($words as $word) {
+                          $n->where(function ($x) use ($word) {
+                              $x->where('contacts.name', 'like', '%' . $word . '%')
+                                ->orWhere('contacts.supplier_business_name', 'like', '%' . $word . '%');
+                          });
+                      }
+                  });
+            });
         } else {
-            $digits = preg_replace('/\D+/', '', $q);
             if (strlen($digits) < 4) {
                 return response()->json(['results' => []]);
             }
@@ -648,12 +670,20 @@ class BuyFromCustomerController extends Controller
             ->limit(20)
             ->get();
 
-        $results = $rows->map(function ($c) {
+        $results = $rows->map(function ($c) use ($nameMode, $q) {
+            // Found by name only (not by their email) → mask phone + email.
+            $byEmail = $nameMode && stripos((string) $c->email, $q) !== false;
+            if ($nameMode && !$byEmail) {
+                $ph = preg_replace('/\D+/', '', (string) $c->mobile);
+                $last4 = strlen($ph) >= 4 ? substr($ph, -4) : '';
+                $text = $c->name . ($last4 !== '' ? ' — phone ends in ' . $last4 : ' — no phone on file');
+                return ['id' => $c->id, 'text' => $text, 'name' => $c->name, 'verify' => $last4 !== '' ? $last4 : null, 'masked' => true];
+            }
             $text = $c->name;
             if (!empty($c->mobile)) $text .= ' — ' . $c->mobile;
             if (!empty($c->email)) $text .= ' — ' . $c->email;
             if (!empty($c->contact_id)) $text .= ' (' . $c->contact_id . ')';
-            return ['id' => $c->id, 'text' => $text];
+            return ['id' => $c->id, 'text' => $text, 'name' => $c->name];
         })->values();
 
         return response()->json(['results' => $results]);
