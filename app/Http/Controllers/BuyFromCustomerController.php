@@ -607,8 +607,8 @@ class BuyFromCustomerController extends Controller
     const NAME_LOOKUP_CONTACT_IDS = [407];
 
     /**
-     * Seller picker lookup for the buy form: phone number or email (partial
-     * ok). Name search only reaches NAME_LOOKUP_CONTACT_IDS.
+     * Seller picker lookup for the buy form: phone number or email (needs
+     * the "@"). Name search only reaches NAME_LOOKUP_CONTACT_IDS.
      */
     public function sellerLookup(Request $request)
     {
@@ -634,22 +634,18 @@ class BuyFromCustomerController extends Controller
             if (mb_strlen($q) < 3) {
                 return response()->json(['results' => []]);
             }
-            // Letters: match email (contains), or name for the allowlisted
-            // no-phone sellers only (every word must appear).
+            // Letters, no "@": name search, allowlisted no-phone sellers only.
             $nameMode = true;
             $words = array_values(array_filter(preg_split('/\s+/', $q)));
-            $query->where(function ($w) use ($q, $words) {
-                $w->where('contacts.email', 'like', '%' . $q . '%')
-                  ->orWhere(function ($n) use ($words) {
-                      $n->whereIn('contacts.id', self::NAME_LOOKUP_CONTACT_IDS);
-                      foreach ($words as $word) {
-                          $n->where(function ($x) use ($word) {
-                              $x->where('contacts.name', 'like', '%' . $word . '%')
-                                ->orWhere('contacts.supplier_business_name', 'like', '%' . $word . '%');
-                          });
-                      }
-                  });
-            });
+            // Email needs the "@" (branch above) so a name can't be found
+            // through the email column either.
+            $query->whereIn('contacts.id', self::NAME_LOOKUP_CONTACT_IDS);
+            foreach ($words as $word) {
+                $query->where(function ($x) use ($word) {
+                    $x->where('contacts.name', 'like', '%' . $word . '%')
+                      ->orWhere('contacts.supplier_business_name', 'like', '%' . $word . '%');
+                });
+            }
         } else {
             if (strlen($digits) < 4) {
                 return response()->json(['results' => []]);

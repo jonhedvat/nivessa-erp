@@ -1489,7 +1489,7 @@ HTML;
                     $.getJSON(url, { q: q }).done(function (d) {
                         if (my !== seq) return;
                         var res = (d && d.results) || [];
-                        if (!res.length) return msg('No account with that phone number or email');
+                        if (!res.length) return msg(/[a-z]/i.test(q) && q.indexOf('@') === -1 ? 'Type their phone number, or their email with the @' : 'No account with that phone number or email');
                         $list.empty(); byId = {};
                         if (res.some(function (r) { return r.masked && r.verify; })) {
                             $('<div class="list-group-item text-muted small"></div>')
