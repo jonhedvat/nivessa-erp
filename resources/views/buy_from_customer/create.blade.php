@@ -1462,7 +1462,10 @@ HTML;
             function showSearch() {
                 $picked.hide(); $q.show();
             }
-            if ($c.val()) showPicked($.trim($c.find('option:selected').text()) || $q.val());
+            // The hidden input only feeds the "we'll text you at ..." line, so
+            // keep just the phone number in it, not name/email/account #.
+            function phoneFrom(t) { var m = String(t || '').match(/\+?\d[\d\s().-]{6,}\d/); return m ? m[0] : ''; }
+            if ($c.val()) { var pt = $.trim($c.find('option:selected').text()) || $q.val(); showPicked(pt); $q.val(phoneFrom(pt)).trigger('change'); }
             else if (/^none$/i.test($.trim($q.val()))) $q.val('');
             $('#bfc_seller_change_btn').on('click', function () {
                 setContact('', '');
@@ -1511,7 +1514,7 @@ HTML;
                     if (!ok) return;
                 }
                 setContact($a.attr('data-id'), r.text);
-                $q.val(r.masked ? '' : r.text).trigger('change');
+                $q.val(r.masked ? '' : phoneFrom(r.text)).trigger('change');
                 showPicked(r.name || r.text);
                 $pickedText.attr('title', r.text);
             });
