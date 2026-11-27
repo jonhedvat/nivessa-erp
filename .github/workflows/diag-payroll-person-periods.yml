@@ -96,4 +96,17 @@ jobs:
                 echo "  SLING SCHEDULED: "; foreach (\$sd as \$d => \$h) echo substr(\$d,5)."=".round(\$h,2)." "; echo " total=".round(array_sum(\$sd),2)."\n";
               }
             }
+            \$uid = (int) (\$config['rates'][\$key]['user_id'] ?? 0);
+            echo "\n===== RAW TIME CLOCK PUNCHES 11/12..11/27 (uid \$uid) =====\n";
+            foreach (\DB::table('time_clock_punches')->where('user_id', \$uid)->whereBetween('clock_in_at', ['2026-11-12 00:00:00', '2026-11-27 23:59:59'])->orderBy('clock_in_at')->get() as \$x)
+              echo "  #".\$x->id." in=".\$x->clock_in_at." out=".(\$x->clock_out_at ?? 'OPEN')." src=".\$x->clock_in_source."/".(\$x->clock_out_source ?? '-')." edited=".\$x->edited." voided=".(\$x->voided_at ?? '-')." created=".(\$x->created_at ?? '')."\n";
+            echo "PUNCH EDITS:\n";
+            \$ids = \DB::table('time_clock_punches')->where('user_id', \$uid)->whereBetween('clock_in_at', ['2026-11-12 00:00:00', '2026-11-27 23:59:59'])->pluck('id');
+            foreach (\DB::table('time_clock_punch_edits')->whereIn('punch_id', \$ids)->get() as \$x) echo "  ".json_encode(\$x)."\n";
+            echo "REGISTER SESSIONS 11/14..11/16 + 11/24..11/26:\n";
+            foreach (\DB::table('cash_registers')->where('user_id', \$uid)->where(function (\$q) { \$q->whereBetween('created_at', ['2026-11-14', '2026-11-17'])->orWhereBetween('created_at', ['2026-11-24', '2026-11-27']); })->get(['id','location_id','created_at','closed_at','status']) as \$x) echo "  ".json_encode(\$x)."\n";
+            echo "LIVE TIME-CLOCK total for 11/12..11/25 (what a reload would show): ";
+            \$got = \$call('erpHoursRows', \$bid, '2026-11-12', '2026-11-25');
+            \$tot = 0; foreach ((\$got[0] ?? []) as \$row) if (strtolower(explode(' ', trim(\$row['name']))[0]) === \$key) \$tot += (float) (\$row['elapsed'] ?? 0);
+            echo round(\$tot, 2)." hrs\n";
             PHP
