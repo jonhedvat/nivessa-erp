@@ -599,10 +599,16 @@ class BuyFromCustomerController extends Controller
 
     /** Buy form signed lines: eBay asking-price lookup (SignedValueLookupService). */
     /**
-     * Seller picker lookup for the buy form: phone number, email, or name.
-     * Phone/email hits show the full contact. Name-only hits show just the
-     * last 4 digits of the phone so staff verify it with the seller before
-     * picking (Sarah 2026-11-27; was phone/email only since 2026-11-10).
+     * Contacts that can be found by NAME in the buy form seller box — sellers
+     * with no phone on file. Everyone else is phone or email only, so staff
+     * can't pick the wrong person's account by name. (Sarah 2026-11-27)
+     * 407 = "Scooter" (no phone; the account the buy form actually uses).
+     */
+    const NAME_LOOKUP_CONTACT_IDS = [407];
+
+    /**
+     * Seller picker lookup for the buy form: phone number or email (partial
+     * ok). Name search only reaches NAME_LOOKUP_CONTACT_IDS.
      */
     public function sellerLookup(Request $request)
     {
@@ -628,12 +634,14 @@ class BuyFromCustomerController extends Controller
             if (mb_strlen($q) < 3) {
                 return response()->json(['results' => []]);
             }
-            // Letters: match email (contains) or name (every word must appear).
+            // Letters: match email (contains), or name for the allowlisted
+            // no-phone sellers only (every word must appear).
             $nameMode = true;
             $words = array_values(array_filter(preg_split('/\s+/', $q)));
             $query->where(function ($w) use ($q, $words) {
                 $w->where('contacts.email', 'like', '%' . $q . '%')
                   ->orWhere(function ($n) use ($words) {
+                      $n->whereIn('contacts.id', self::NAME_LOOKUP_CONTACT_IDS);
                       foreach ($words as $word) {
                           $n->where(function ($x) use ($word) {
                               $x->where('contacts.name', 'like', '%' . $word . '%')

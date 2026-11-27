@@ -664,10 +664,10 @@ HTML;
                             <div class="form-group">
                                 <label>Existing contact <span class="text-danger">*</span></label>
                                 {{-- Lookup by phone, email or name via the seller-lookup endpoint; the page
-                                     only ships the already-picked contact. Name hits show just the last 4
+                                     only ships the already-picked contact. Name search only finds no-phone sellers (Scooter); hits show just the last 4
                                      of the phone so staff verify it with the seller. (Sarah 2026-11-27) --}}
                                 {!! Form::select('contact_id', collect($contacts)->only(array_filter([(string) ($input['contact_id'] ?? '')]))->all(), $input['contact_id'] ?? null, ['class' => 'form-control bfc-seller-lookup', 'id' => 'contact_id', 'style' => 'display:none;']) !!}
-                                <input type="text" id="bfc_seller_q" class="form-control" autocomplete="off" placeholder="Phone, email, or name"
+                                <input type="text" id="bfc_seller_q" class="form-control" autocomplete="off" placeholder="Phone number or email"
                                        value="{{ !empty($input['contact_id']) ? collect($contacts)->get((string) $input['contact_id'], '') : '' }}">
                                 <div id="bfc_seller_picked" style="display:none; align-items:center; gap:8px; padding:6px 10px; border:1px solid #3c8dbc; border-radius:4px; background:#f0f7fc;">
                                     <i class="fa fa-user" style="color:#3c8dbc;"></i>
@@ -1489,9 +1489,9 @@ HTML;
                     $.getJSON(url, { q: q }).done(function (d) {
                         if (my !== seq) return;
                         var res = (d && d.results) || [];
-                        if (!res.length) return msg('No account found for that phone, email or name');
+                        if (!res.length) return msg('No account with that phone number or email');
                         $list.empty(); byId = {};
-                        if (res.some(function (r) { return r.masked; })) {
+                        if (res.some(function (r) { return r.masked && r.verify; })) {
                             $('<div class="list-group-item text-muted small"></div>')
                                 .text('Name matches: ask the seller for their phone number and check the last 4 digits.')
                                 .appendTo($list);
