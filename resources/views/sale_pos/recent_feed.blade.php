@@ -1281,6 +1281,12 @@
                 }
                 $total = (float) $sale->final_total;
                 $discount = (float) ($sale->discount_amount ?? 0);
+                // discount_amount is a PERCENT when discount_type = 'percentage'
+                // (20 = 20% off), so turn it into dollars off the pre-tax total.
+                $discountPct = ($sale->discount_type ?? '') === 'percentage' ? $discount : null;
+                if ($discountPct !== null) {
+                    $discount = round((float) $sale->total_before_tax * $discountPct / 100, 2);
+                }
 
                 // Tender the cashier picked at checkout. Per-payment-row method
                 // ('cash' / 'card' / 'bank_transfer' / 'cheque' / 'custom_pay_*' /
@@ -1479,7 +1485,7 @@
                 <div class="rf-foot">
                     <div class="rf-foot-meta">
                         {{ ucfirst(str_replace('_', ' ', $sale->payment_status ?? '')) }}
-                        @if($discount > 0) · discount −${{ number_format($discount, 2) }} @endif
+                        @if($discount > 0) · @if($discountPct !== null){{ rtrim(rtrim(number_format($discountPct, 2), '0'), '.') }}% off (−${{ number_format($discount, 2) }})@else discount −${{ number_format($discount, 2) }}@endif @endif
                     </div>
                     {{-- Sarah 2026-05-12: always show ERP amount. When there's
                          no Clover pair, render the Clover column as "-" so the
