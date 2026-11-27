@@ -589,7 +589,7 @@ class RsdOrderController extends Controller
         $store = $request->query('store') === 'pico' ? 'pico' : 'hollywood';
         $debug = (bool) $request->query('debug');
         $rows = (array) config('rsd_sheet_rows.' . $store, []);
-        $out = \Cache::remember('rsd-stock-' . $store, 300, function () use ($store, $rows) {
+        $out = \Cache::remember('rsd-stock-v3-' . $store, 300, function () use ($store, $rows) {
             $biz = (int) (config('services.nivessa_web.business_id') ?: 1);
             $locIds = [];
             foreach (\App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id') as $id => $name) {
@@ -656,38 +656,57 @@ class RsdOrderController extends Controller
         if (empty($tokens)) return [];
         $isCd = (bool) preg_match('/\bCD\b/i', $title);
         $is7 = (bool) preg_match('/7"|7 inch/i', $title);
-        foreach ([false, true] as $fuzzy) { // fuzzy pass only if exact finds nothing (AMS "Borrrowed")
-        $out = [];
-        foreach ($pool as $id => $n) {
-            // Title words must be in the title part ("Artist - Title", "ARTIST,FIRST / Title"), not the artist.
-            $tp = preg_match('/^.+?\s(?:-|\/|–)\s(.+)$/u', $n, $mm) ? $mm[1] : $n;
-            $wl = array_map(function ($w) { return preg_match('/^(19|20)(\d\d)$/', $w, $m) ? $m[2] : $w; }, preg_split('/[^a-z0-9]+/', $tp));
-            $words = array_flip($wl);
-            $ok = true;
-            foreach ($tokens as $t) {
-                if (isset($words[$t])) continue;
-                $near = false;
-                if ($fuzzy && strlen($t) >= 5) foreach ($wl as $w) if (abs(strlen($w) - strlen($t)) <= 1 && levenshtein($w, $t) <= 1) { $near = true; break; }
-                if (!$near) { $ok = false; break; }
+        // Passes, loosest last: exact words, one typo (AMS "Borrrowed"), then names the ERP
+        // cut short ("Pi'erre Bourne - Life Of"), each first with the 7" rule and then without.
+        foreach (['exact', 'fuzzy', 'trunc'] as $mode) {
+            foreach ([true, false] as $strict7) {
+                $out = [];
+                foreach ($pool as $id => $n) {
+                    // Title words are checked in the title part ("Artist - Title", "ARTIST,FIRST / Title").
+                    $tp = preg_match('/^.+?\s(?:-|\/|–)\s(.+)$/u', $n, $mm) ? $mm[1] : $n;
+                    $wl = array_map(function ($w) { return preg_match('/^(19|20)(\d\d)$/', $w, $m) ? $m[2] : $w; }, preg_split('/[^a-z0-9]+/', $tp));
+                    $words = array_flip($wl);
+                    if ($mode === 'trunc') {
+                        // Every word of the (shortened) ERP title is in the sheet title, the last may be cut mid-word.
+                        $pt = self::titleTokens($tp);
+                        if (count($pt) < 1) continue;
+                        $ok = true;
+                        foreach ($pt as $w) {
+                            if (in_array($w, $tokens, true)) continue;
+                            $pre = false;
+                            if (strlen($w) >= 1) foreach ($tokens as $t) if (strpos($t, $w) === 0) { $pre = true; break; }
+                            if (!$pre) { $ok = false; break; }
+                        }
+                        if (!$ok || ($pt[0] ?? '') !== $tokens[0] && strpos($tokens[0], $pt[0] ?? '#') !== 0) continue;
+                    } else {
+                        $ok = true;
+                        foreach ($tokens as $t) {
+                            if (isset($words[$t])) continue;
+                            $near = false;
+                            if ($mode === 'fuzzy' && strlen($t) >= 5) foreach ($wl as $w) if (abs(strlen($w) - strlen($t)) <= 1 && levenshtein($w, $t) <= 1) { $near = true; break; }
+                            if (!$near) { $ok = false; break; }
+                        }
+                        if (!$ok) continue;
+                        // One-word titles ("Takanaka", "1966") must start the title part, not sit inside it.
+                        $lead = ($wl[0] ?? '') === 'the' ? ($wl[1] ?? '') : ($wl[0] ?? '');
+                        if (count($tokens) === 1 && levenshtein($lead, $tokens[0]) > ($mode === 'fuzzy' ? 1 : 0)) continue;
+                    }
+                    if ($aWords) {
+                        $hit = false;
+                        $full = array_flip(preg_split('/[^a-z0-9]+/', $n));
+                        foreach ($aWords as $a) if (isset($full[$a])) { $hit = true; break; }
+                        if (!$hit) continue;
+                    }
+                    if ($isCd !== (bool) preg_match('/\bcds?\b|\dcd\b|\d\s*x\s*cd/', $n)) continue;
+                    if ($strict7 && $is7 && !preg_match('/7"|7 ?inch|7in\b/', $n)) continue;
+                    $out[] = (int) $id;
+                }
+                // Several matches and some are tagged RSD: those are the RSD copies.
+                $rsd = array_values(array_filter($out, function ($id) use ($pool) { return (bool) preg_match('/\brsd\b/', $pool[$id]); }));
+                if ($rsd) return $rsd;
+                if ($out) return $out;
+                if (!$is7) break;
             }
-            if (!$ok) continue;
-            // One-word titles ("Takanaka", "1966") must start the title part, not sit inside it.
-            $lead = ($wl[0] ?? '') === 'the' ? ($wl[1] ?? '') : ($wl[0] ?? '');
-            if (count($tokens) === 1 && levenshtein($lead, $tokens[0]) > ($fuzzy ? 1 : 0)) continue;
-            if ($aWords) {
-                $hit = false;
-                $full = array_flip(preg_split('/[^a-z0-9]+/', $n));
-                foreach ($aWords as $a) if (isset($full[$a])) { $hit = true; break; }
-                if (!$hit) continue;
-            }
-            if ($isCd !== (bool) preg_match('/\bcds?\b|\dcd\b|\d\s*x\s*cd/', $n)) continue;
-            if ($is7 && !preg_match('/7"|7 ?inch|7in\b/', $n)) continue;
-            $out[] = (int) $id;
-        }
-        // Several matches and some are tagged RSD: those are the RSD copies.
-        $rsd = array_values(array_filter($out, function ($id) use ($pool) { return (bool) preg_match('/\brsd\b/', $pool[$id]); }));
-        if ($rsd) return $rsd;
-        if ($out) return $out;
         }
         return [];
     }
