@@ -32,28 +32,5 @@ jobs:
           script: |
             set -e
             cd /www/playlist.nivessa.com/app
-            cat > /tmp/diag_rsd_ledger.php <<'PHP'
-            <?php
-            require 'vendor/autoload.php';
-            $app = require 'bootstrap/app.php';
-            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-            use Illuminate\Support\Facades\DB;
-            $locs = DB::table('business_locations')->pluck('name', 'id')->all();
-            $pats = ['%carousel ballroom%','%wicked: the complete%','%great divide%','%last of the bugs%','%day & night%','%day and night%','%takanaka%','%everybody scream%','%draw you out%','%rubber soul - the us%','%no ceilings%','%carnegie hall (2lp%','%we are the world%','%back porch vol. 4%','%sorry 4 da wait%','%life of%pi%','%katseye: the dance%'];
-            $ids = DB::table('products')->where('id', '>=', 160000)->where(function ($q) use ($pats) { foreach ($pats as $p) $q->orWhere('name', 'like', $p); })->pluck('name', 'id')->all();
-            foreach ($ids as $id => $name) {
-              echo "\n#$id $name\n";
-              $pl = DB::table('purchase_lines as pl')->join('transactions as t', 't.id', '=', 'pl.transaction_id')->where('pl.product_id', $id)
-                ->selectRaw('t.type, t.status, t.location_id, SUM(pl.quantity) q, GROUP_CONCAT(DISTINCT t.id) ids')->groupBy('t.type', 't.status', 't.location_id')->get();
-              foreach ($pl as $r) echo "  IN  {$r->type}/{$r->status} @".($locs[$r->location_id] ?? $r->location_id).": {$r->q}  (tx {$r->ids})\n";
-              $sl = DB::table('transaction_sell_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->where('l.product_id', $id)
-                ->selectRaw('t.type, t.status, t.location_id, SUM(l.quantity - COALESCE(l.quantity_returned,0)) q, MIN(t.transaction_date) first')->groupBy('t.type', 't.status', 't.location_id')->get();
-              foreach ($sl as $r) echo "  OUT {$r->type}/{$r->status} @".($locs[$r->location_id] ?? $r->location_id).": {$r->q}  (first {$r->first})\n";
-              $al = DB::table('stock_adjustment_lines as a')->join('transactions as t', 't.id', '=', 'a.transaction_id')->where('a.product_id', $id)
-                ->selectRaw('t.location_id, SUM(a.quantity) q')->groupBy('t.location_id')->get();
-              foreach ($al as $r) echo "  ADJ @".($locs[$r->location_id] ?? $r->location_id).": -{$r->q}\n";
-              $st = DB::table('variation_location_details')->where('product_id', $id)->get(['location_id', 'qty_available']);
-              foreach ($st as $r) echo "  NOW @".($locs[$r->location_id] ?? $r->location_id).": {$r->qty_available}\n";
-            }
-            PHP
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBJbGx1bWluYXRlXFN1cHBvcnRcRmFjYWRlc1xEQjsKJGxvY3MgPSBEQjo6dGFibGUoJ2J1c2luZXNzX2xvY2F0aW9ucycpLT5wbHVjaygnbmFtZScsICdpZCcpLT5hbGwoKTsKJHBhdHMgPSBbJyVjYXJvdXNlbCBiYWxscm9vbSUnLCcld2lja2VkOiB0aGUgY29tcGxldGUlJywnJWdyZWF0IGRpdmlkZSUnLCclbGFzdCBvZiB0aGUgYnVncyUnLCclZGF5ICYgbmlnaHQlJywnJWRheSBhbmQgbmlnaHQlJywnJXRha2FuYWthJScsJyVldmVyeWJvZHkgc2NyZWFtJScsJyVkcmF3IHlvdSBvdXQlJywnJXJ1YmJlciBzb3VsIC0gdGhlIHVzJScsJyVubyBjZWlsaW5ncyUnLCclY2FybmVnaWUgaGFsbCAoMmxwJScsJyV3ZSBhcmUgdGhlIHdvcmxkJScsJyViYWNrIHBvcmNoIHZvbC4gNCUnLCclc29ycnkgNCBkYSB3YWl0JScsJyVsaWZlIG9mJXBpJScsJyVrYXRzZXllOiB0aGUgZGFuY2UlJ107CiRpZHMgPSBEQjo6dGFibGUoJ3Byb2R1Y3RzJyktPndoZXJlKCdpZCcsICc+PScsIDE2MDAwMCktPndoZXJlKGZ1bmN0aW9uICgkcSkgdXNlICgkcGF0cykgeyBmb3JlYWNoICgkcGF0cyBhcyAkcCkgJHEtPm9yV2hlcmUoJ25hbWUnLCAnbGlrZScsICRwKTsgfSktPnBsdWNrKCduYW1lJywgJ2lkJyktPmFsbCgpOwpmb3JlYWNoICgkaWRzIGFzICRpZCA9PiAkbmFtZSkgewogIGVjaG8gIlxuIyRpZCAkbmFtZVxuIjsKICAkcGwgPSBEQjo6dGFibGUoJ3B1cmNoYXNlX2xpbmVzIGFzIHBsJyktPmpvaW4oJ3RyYW5zYWN0aW9ucyBhcyB0JywgJ3QuaWQnLCAnPScsICdwbC50cmFuc2FjdGlvbl9pZCcpLT53aGVyZSgncGwucHJvZHVjdF9pZCcsICRpZCkKICAgIC0+c2VsZWN0UmF3KCd0LnR5cGUsIHQuc3RhdHVzLCB0LmxvY2F0aW9uX2lkLCBTVU0ocGwucXVhbnRpdHkpIHEsIEdST1VQX0NPTkNBVChESVNUSU5DVCB0LmlkKSBpZHMnKS0+Z3JvdXBCeSgndC50eXBlJywgJ3Quc3RhdHVzJywgJ3QubG9jYXRpb25faWQnKS0+Z2V0KCk7CiAgZm9yZWFjaCAoJHBsIGFzICRyKSBlY2hvICIgIElOICB7JHItPnR5cGV9L3skci0+c3RhdHVzfSBAIi4oJGxvY3NbJHItPmxvY2F0aW9uX2lkXSA/PyAkci0+bG9jYXRpb25faWQpLiI6IHskci0+cX0gICh0eCB7JHItPmlkc30pXG4iOwogICRzbCA9IERCOjp0YWJsZSgndHJhbnNhY3Rpb25fc2VsbF9saW5lcyBhcyBsJyktPmpvaW4oJ3RyYW5zYWN0aW9ucyBhcyB0JywgJ3QuaWQnLCAnPScsICdsLnRyYW5zYWN0aW9uX2lkJyktPndoZXJlKCdsLnByb2R1Y3RfaWQnLCAkaWQpCiAgICAtPnNlbGVjdFJhdygndC50eXBlLCB0LnN0YXR1cywgdC5sb2NhdGlvbl9pZCwgU1VNKGwucXVhbnRpdHkgLSBDT0FMRVNDRShsLnF1YW50aXR5X3JldHVybmVkLDApKSBxLCBNSU4odC50cmFuc2FjdGlvbl9kYXRlKSBmaXJzdCcpLT5ncm91cEJ5KCd0LnR5cGUnLCAndC5zdGF0dXMnLCAndC5sb2NhdGlvbl9pZCcpLT5nZXQoKTsKICBmb3JlYWNoICgkc2wgYXMgJHIpIGVjaG8gIiAgT1VUIHskci0+dHlwZX0veyRyLT5zdGF0dXN9IEAiLigkbG9jc1skci0+bG9jYXRpb25faWRdID8/ICRyLT5sb2NhdGlvbl9pZCkuIjogeyRyLT5xfSAgKGZpcnN0IHskci0+Zmlyc3R9KVxuIjsKICAkYWwgPSBEQjo6dGFibGUoJ3N0b2NrX2FkanVzdG1lbnRfbGluZXMgYXMgYScpLT5qb2luKCd0cmFuc2FjdGlvbnMgYXMgdCcsICd0LmlkJywgJz0nLCAnYS50cmFuc2FjdGlvbl9pZCcpLT53aGVyZSgnYS5wcm9kdWN0X2lkJywgJGlkKQogICAgLT5zZWxlY3RSYXcoJ3QubG9jYXRpb25faWQsIFNVTShhLnF1YW50aXR5KSBxJyktPmdyb3VwQnkoJ3QubG9jYXRpb25faWQnKS0+Z2V0KCk7CiAgZm9yZWFjaCAoJGFsIGFzICRyKSBlY2hvICIgIEFESiBAIi4oJGxvY3NbJHItPmxvY2F0aW9uX2lkXSA/PyAkci0+bG9jYXRpb25faWQpLiI6IC17JHItPnF9XG4iOwogICRzdCA9IERCOjp0YWJsZSgndmFyaWF0aW9uX2xvY2F0aW9uX2RldGFpbHMnKS0+d2hlcmUoJ3Byb2R1Y3RfaWQnLCAkaWQpLT5nZXQoWydsb2NhdGlvbl9pZCcsICdxdHlfYXZhaWxhYmxlJ10pOwogIGZvcmVhY2ggKCRzdCBhcyAkcikgZWNobyAiICBOT1cgQCIuKCRsb2NzWyRyLT5sb2NhdGlvbl9pZF0gPz8gJHItPmxvY2F0aW9uX2lkKS4iOiB7JHItPnF0eV9hdmFpbGFibGV9XG4iOwp9' | base64 -d > /tmp/diag_rsd_ledger.php
             php /tmp/diag_rsd_ledger.php; rm -f /tmp/diag_rsd_ledger.php
