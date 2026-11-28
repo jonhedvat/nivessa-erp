@@ -79,7 +79,8 @@ class RsdOrderController extends Controller
             if (preg_match('/^(19|20)(\d\d)$/', $w, $m)) $w = $m[2];
             $out[$w] = true;
         }
-        return array_keys($out);
+        // Strings only: PHP turns "77" keys into ints, and PHP 7 strpos reads an int needle as a char code.
+        return array_map('strval', array_keys($out));
     }
 
     protected static function titleCore(string $t): string
@@ -589,7 +590,7 @@ class RsdOrderController extends Controller
         $store = $request->query('store') === 'pico' ? 'pico' : 'hollywood';
         $debug = (bool) $request->query('debug');
         $rows = (array) config('rsd_sheet_rows.' . $store, []);
-        $out = \Cache::remember('rsd-stock-v4-' . $store, 300, function () use ($store, $rows) {
+        $out = \Cache::remember('rsd-stock-v5-' . $store, 300, function () use ($store, $rows) {
             $biz = (int) (config('services.nivessa_web.business_id') ?: 1);
             $locIds = [];
             foreach (\App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id') as $id => $name) {
