@@ -2090,7 +2090,9 @@ $(document).ready(function() {
         var n = 0;
         $('table#pos_table tbody tr.product_row').each(function() {
             var row = $(this);
-            if (!/\bused\b/i.test(row.find('.pos-row-category').text() || '')) return;
+            var catText = (row.find('.pos-row-category').text() || '').trim();
+            // 'Vinyl - Used' etc.; movie categories ('DVD / Sci-Fi') are the used shelf too.
+            if (!/\bused\b/i.test(catText) && !/^(dvd|blu-?ray|4k|vhs)\b/i.test(catText)) return;
             var cur = __read_number(row.find('input.row_discount_amount'));
             if (cur && cur > 0) return;
             applyEmployeeDiscount(row);
