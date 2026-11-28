@@ -589,7 +589,7 @@ class RsdOrderController extends Controller
         $store = $request->query('store') === 'pico' ? 'pico' : 'hollywood';
         $debug = (bool) $request->query('debug');
         $rows = (array) config('rsd_sheet_rows.' . $store, []);
-        $out = \Cache::remember('rsd-stock-v3-' . $store, 300, function () use ($store, $rows) {
+        $out = \Cache::remember('rsd-stock-v4-' . $store, 300, function () use ($store, $rows) {
             $biz = (int) (config('services.nivessa_web.business_id') ?: 1);
             $locIds = [];
             foreach (\App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id') as $id => $name) {
@@ -601,6 +601,9 @@ class RsdOrderController extends Controller
                 ->where(function ($w) {
                     $w->where('name', 'like', '%RSD%')->orWhere('name', 'like', '%record store day%')
                       ->orWhere('created_at', '>=', '2026-10-15');
+                    // Some adds leave created_at empty: anything with a newer id than the first 10/15 add counts too.
+                    $firstId = (int) \DB::table('products')->where('created_at', '>=', '2026-10-15')->min('id');
+                    if ($firstId > 0) $w->orWhere('id', '>=', $firstId);
                 })->pluck('name', 'id')->map(function ($n) { return strtolower((string) $n); })->all();
             $match = [];
             $all = [];
@@ -647,8 +650,22 @@ class RsdOrderController extends Controller
     }
 
     /** ERP product ids whose name has the artist and the sheet title's words, same format (CD / 7"). */
+    /** ERP names too short to match on words: [artist, words in the sheet title, words in the ERP name]. */
+    const STOCK_ALIASES = [
+        ['stan getz', 'keystone korner', 'stan getz - sound in sf'],
+        ['jerry garcia', 'garcia live vol. 8', 'garcia live v8'],
+        ['bruce springsteen', 'tower theater', 'bruce springsteen - live at'],
+    ];
+
     protected function matchProducts(array $pool, string $artist, string $title): array
     {
+        foreach (self::STOCK_ALIASES as [$aa, $tt, $nn]) {
+            if (stripos($artist, $aa) === false || stripos($title, $tt) === false) continue;
+            $hit = [];
+            foreach ($pool as $id => $n) if (strpos($n, $nn) !== false) $hit[] = (int) $id;
+            if ($hit) return $hit;
+        }
+        $title = str_replace(["'", '’'], '', $title);
         $tokens = self::titleTokens($title);
         if (empty($tokens)) $tokens = array_values(array_filter(preg_split('/[^a-z0-9]+/', strtolower($title))));
         $aWords = array_values(array_filter(preg_split('/[^a-z0-9]+/', strtolower(preg_replace('/\(.*?\)/', '', $artist))),
@@ -663,7 +680,10 @@ class RsdOrderController extends Controller
                 $out = [];
                 foreach ($pool as $id => $n) {
                     // Title words are checked in the title part ("Artist - Title", "ARTIST,FIRST / Title").
-                    $tp = preg_match('/^.+?\s(?:-|\/|–)\s(.+)$/u', $n, $mm) ? $mm[1] : $n;
+                    $n2 = str_replace(["'", '’'], '', $n);
+                    $tp = preg_match('/^.+?\s(?:-|\/|–)\s(.+)$/u', $n2, $mm) ? $mm[1] : $n2;
+                    $last = preg_match('/.*\s(?:-|–)\s(.+)$/u', $n2, $ml) ? $ml[1] : $tp; // "XTC - Vol 1 - Besides"
+                    $wLast = preg_split('/[^a-z0-9]+/', $last);
                     $wl = array_map(function ($w) { return preg_match('/^(19|20)(\d\d)$/', $w, $m) ? $m[2] : $w; }, preg_split('/[^a-z0-9]+/', $tp));
                     $words = array_flip($wl);
                     if ($mode === 'trunc') {
@@ -689,7 +709,8 @@ class RsdOrderController extends Controller
                         if (!$ok) continue;
                         // One-word titles ("Takanaka", "1966") must start the title part, not sit inside it.
                         $lead = ($wl[0] ?? '') === 'the' ? ($wl[1] ?? '') : ($wl[0] ?? '');
-                        if (count($tokens) === 1 && levenshtein($lead, $tokens[0]) > ($mode === 'fuzzy' ? 1 : 0)) continue;
+                        $tol = $mode === 'fuzzy' ? 1 : 0;
+                        if (count($tokens) === 1 && levenshtein($lead, $tokens[0]) > $tol && levenshtein($wLast[0] ?? '', $tokens[0]) > $tol) continue;
                     }
                     if ($aWords) {
                         $hit = false;
