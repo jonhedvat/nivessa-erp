@@ -559,6 +559,9 @@
                         <div class="adj-discount-menu" role="menu">
                             <button type="button" id="pos-manual-discount"><i class="fa fa-percent"></i> Manual discount</button>
                             <button type="button" id="pos-preset-discount"><i class="fa fa-tags"></i> Preset discount</button>
+                            @if(\Carbon\Carbon::now('America/Los_Angeles')->toDateString() === '2026-11-27')
+                                <button type="button" id="pos-bf-used-20"><i class="fa fa-tags"></i> Black Friday: 20% off used</button>
+                            @endif
                             @if($edit_discount)
                                 <button type="button" id="pos-edit-discount" data-toggle="modal" data-target="#posEditDiscountModal"><i class="fa fa-edit"></i> @lang('sale.edit_discount')</button>
                             @endif

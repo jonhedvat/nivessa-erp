@@ -2085,6 +2085,25 @@ $(document).ready(function() {
         }, 100);
     });
 
+    // Black Friday 11/27/26: 20% off every used item in the cart (any order total).
+    $(document).on('click', '#pos-bf-used-20', function() {
+        var n = 0;
+        $('table#pos_table tbody tr.product_row').each(function() {
+            var row = $(this);
+            if (!/\bused\b/i.test(row.find('.pos-row-category').text() || '')) return;
+            var cur = __read_number(row.find('input.row_discount_amount'));
+            if (cur && cur > 0) return;
+            applyEmployeeDiscount(row);
+            n++;
+        });
+        pos_total_row();
+        if (n > 0) {
+            toastr.success('20% off applied to ' + n + ' used item' + (n === 1 ? '' : 's') + '.');
+        } else {
+            toastr.warning('No used items found in the cart (or they already have a discount).');
+        }
+    });
+
     // Edit icon should keep manual mode behavior.
     $(document).on('click', '#pos-edit-discount', function() {
         window.pos_discount_mode = 'manual';
