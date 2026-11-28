@@ -590,7 +590,7 @@ class RsdOrderController extends Controller
         $store = $request->query('store') === 'pico' ? 'pico' : 'hollywood';
         $debug = (bool) $request->query('debug');
         $rows = (array) config('rsd_sheet_rows.' . $store, []);
-        $out = \Cache::remember('rsd-stock-v5-' . $store, 300, function () use ($store, $rows) {
+        $out = \Cache::remember('rsd-stock-v6-' . $store, 300, function () use ($store, $rows) {
             $biz = (int) (config('services.nivessa_web.business_id') ?: 1);
             $locIds = [];
             foreach (\App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id') as $id => $name) {
@@ -658,8 +658,16 @@ class RsdOrderController extends Controller
         ['bruce springsteen', 'tower theater', 'bruce springsteen - live at'],
     ];
 
+    /** ERP products whose names can't tell the format apart: sheet key => product ids (Bill Withers CD is the $20.39 one). */
+    const STOCK_IDS = [
+        'billwithers|inconcertliveatthebbc1974cd' => [166184],
+        'billwithers|inconcertliveatthebbc1974lp' => [169173],
+    ];
+
     protected function matchProducts(array $pool, string $artist, string $title): array
     {
+        $ids = self::STOCK_IDS[self::sheetKey($artist, $title)] ?? null;
+        if ($ids) return $ids;
         foreach (self::STOCK_ALIASES as [$aa, $tt, $nn]) {
             if (stripos($artist, $aa) === false || stripos($title, $tt) === false) continue;
             $hit = [];
