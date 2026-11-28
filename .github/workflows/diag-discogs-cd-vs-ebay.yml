@@ -1,0 +1,42 @@
+# One-off, read-only: lists our Discogs (nivessa) CD listings and looks each up on eBay
+# (Browse API, Buy It Now asking prices, CD category) to find CDs priced far under eBay.
+# Reads Discogs + eBay APIs only. Writes nothing.
+
+name: Diag Discogs CDs vs eBay (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      max:
+        description: 'Max CDs to look up on eBay (eBay Browse quota ~5000/day)'
+        default: '4000'
+      offset:
+        description: 'Skip this many CDs (sorted by our price, high to low)'
+        default: '0'
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+
+      - name: Run diag
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          command_timeout: 110m
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            echo 'PD9waHAKcmVxdWlyZSAndmVuZG9yL2F1dG9sb2FkLnBocCc7CiRhcHAgPSByZXF1aXJlICdib290c3RyYXAvYXBwLnBocCc7CiRhcHAtPm1ha2UoSWxsdW1pbmF0ZVxDb250cmFjdHNcQ29uc29sZVxLZXJuZWw6OmNsYXNzKS0+Ym9vdHN0cmFwKCk7CnVzZSBBcHBcU2VydmljZXNcRGlzY29nc1NlcnZpY2U7IHVzZSBBcHBcU2VydmljZXNcRWJheVNlcnZpY2U7CmluaV9zZXQoJ21lbW9yeV9saW1pdCcsJzEwMjRNJyk7IHNldF90aW1lX2xpbWl0KDApOwokTUFYPShpbnQpKGdldGVudignTUFYJyk/OjQwMDApOyAkT0ZGPShpbnQpKGdldGVudignT0ZGJyk/OjApOwokZD1uZXcgRGlzY29nc1NlcnZpY2UoMSk7ICRlPW5ldyBFYmF5U2VydmljZSgxKTsKLy8gMSkgRGlzY29ncyBDRCBsaXN0aW5ncwokY2RzPVtdOyAkcGFnZT0xOyAkcGFnZXM9MTsKZG8geyAkcj0kZC0+ZmV0Y2hJbnZlbnRvcnlQYWdlKCduaXZlc3NhJywkcGFnZSwxMDAsJ0ZvciBTYWxlJyk7CiAgaWYoIWVtcHR5KCRyWydlcnJvciddKSl7IGVjaG8gImRpc2NvZ3MgZXJyIHAkcGFnZSB7JHJbJ2Vycm9yJ119XG4iOyBpZighZW1wdHkoJHJbJ3JldHJ5J10pKXtzbGVlcCgzMCk7Y29udGludWU7fSBzbGVlcCg1KTsgJHBhZ2UrKzsgY29udGludWU7IH0KICAkcGFnZXM9KGludCkoJHJbJ3BhZ2luYXRpb24nXVsncGFnZXMnXT8/MSk7CiAgZm9yZWFjaCgoJHJbJ2xpc3RpbmdzJ10/P1tdKSBhcyAkbCl7ICRmPSRsWydyZWxlYXNlJ11bJ2Zvcm1hdCddPz8nJzsgaWYoIXByZWdfbWF0Y2goJy9cYihcZCt4KT8oQ0R8U0FDRHxIRENEfENEcilcYi8nLCRmKSkgY29udGludWU7CiAgICAkY2RzW109WydsaWQnPT4kbFsnaWQnXSwncmlkJz0+JGxbJ3JlbGVhc2UnXVsnaWQnXT8/MCwnYXJ0aXN0Jz0+JGxbJ3JlbGVhc2UnXVsnYXJ0aXN0J10/PycnLCd0aXRsZSc9PiRsWydyZWxlYXNlJ11bJ3RpdGxlJ10/PycnLCdmbXQnPT4kZiwnY29uZCc9PiRsWydjb25kaXRpb24nXT8/JycsJ3ByaWNlJz0+KGZsb2F0KSgkbFsncHJpY2UnXVsndmFsdWUnXT8/MCldOyB9CiAgJHBhZ2UrKzsgdXNsZWVwKDExMDAwMDApOwp9IHdoaWxlKCRwYWdlPD0kcGFnZXMpOwplY2hvICJDRCBsaXN0aW5nczogIi5jb3VudCgkY2RzKS4iXG4iOwp1c29ydCgkY2RzLGZuKCRhLCRiKT0+JGJbJ3ByaWNlJ108PT4kYVsncHJpY2UnXSk7CiRjZHM9YXJyYXlfc2xpY2UoJGNkcywkT0ZGLCRNQVgpOwokc3RvcD1bJ3RoZScsJ2EnLCdhbicsJ29mJywnYW5kJywnY2QnLCdhbGJ1bScsJ2luJywnb24nLCd0bycsJ2ZvcicsJ2J5Jywndm9sJywndm9sdW1lJywnd2l0aCcsJ2RlJywnbGEnLCdsZScsJ2VsJywnJiddOwokd29yZHM9ZnVuY3Rpb24oJHMpdXNlKCRzdG9wKXsgJHM9c3RydG9sb3dlcihwcmVnX3JlcGxhY2UoJy9ccypcKFxkK1wpJC8nLCcnLCRzKSk7ICRzPXByZWdfcmVwbGFjZSgnL1teYS16MC05IF0rLycsJyAnLHN0cl9yZXBsYWNlKFsnKicsIiciXSwnJywkcykpOyByZXR1cm4gYXJyYXlfdmFsdWVzKGFycmF5X3VuaXF1ZShhcnJheV9maWx0ZXIoZXhwbG9kZSgnICcsJHMpLGZuKCR3KT0+c3RybGVuKCR3KT49MiYmIWluX2FycmF5KCR3LCRzdG9wKSkpKTsgfTsKJGJhZD0nL1xiKHZpbnlsfGxwfGxwc3xjYXNzZXR0ZXx0YXBlfGR2ZHxibHUuP3JheXxsb3R8bG90c3xidW5kbGV8cG9zdGVyfHNoaXJ0fDgudHJhY2t8bWluaWRpc2N8cmVlbHxzaWduZWR8YXV0b2dyYXBoXHcqfGNhc2Ugb25seXxubyBjZHxkaXNjIG9ubHl8YXJ0d29yayBvbmx5fGluc2VydCBvbmx5fGVtcHR5fGthcmFva2V8dHJpYnV0ZXxjb3ZlciBiYW5kKVxiL2knOwokbWVkPWZ1bmN0aW9uKCRhKXsgc29ydCgkYSk7ICRuPWNvdW50KCRhKTsgcmV0dXJuICRuPyAoJG4lMj8kYVtpbnRkaXYoJG4sMildOigkYVskbi8yLTFdKyRhWyRuLzJdKS8yKTowOyB9OwokcDI1PWZ1bmN0aW9uKCRhKXsgc29ydCgkYSk7IHJldHVybiAkYT8gJGFbKGludClmbG9vcigoY291bnQoJGEpLTEpKjAuMjUpXTowOyB9OwokY2FsbHM9MDsgJG9rPTA7CmZvcmVhY2goJGNkcyBhcyAkYyl7CiAgJGF3PSR3b3JkcygkY1snYXJ0aXN0J10pOyAkdHc9JHdvcmRzKCRjWyd0aXRsZSddKTsgJHZhcmlvdXM9cHJlZ19tYXRjaCgnL152YXJpb3VzL2knLCRjWydhcnRpc3QnXSk7CiAgJHE9dHJpbSgoJHZhcmlvdXM/Jyc6cHJlZ19yZXBsYWNlKCcvXHMqXChcZCtcKSQvJywnJyxzdHJfcmVwbGFjZSgnKicsJycsJGNbJ2FydGlzdCddKSkpLicgJy4kY1sndGl0bGUnXSk7ICRxPW1iX3N1YnN0cigkcSwwLDk1KTsKICB0cnl7ICRyZXM9JGUtPmJyb3dzZVNlYXJjaChbJ3EnPT4kcSwnY2F0ZWdvcnlfaWRzJz0+JzE3Njk4NCcsJ2ZpbHRlcic9PididXlpbmdPcHRpb25zOntGSVhFRF9QUklDRX0scHJpY2VDdXJyZW5jeTpVU0QnLCdsaW1pdCc9PjUwXSk7IH1jYXRjaChcVGhyb3dhYmxlICRleCl7ICRtPXN1YnN0cigkZXgtPmdldE1lc3NhZ2UoKSwwLDE2MCk7IGVjaG8gImViYXkgZXJyIHskY1snbGlkJ119ICRtXG4iOyBpZihzdHJwb3MoJG0sJzQyOScpIT09ZmFsc2V8fHN0cnBvcygkbSwnZXhjZWVkZWQnKSE9PWZhbHNlKXtlY2hvICJRVU9UQSBTVE9QIGF0ICRjYWxsc1xuIjticmVhazt9IGNvbnRpbnVlOyB9CiAgJGNhbGxzKys7ICRzZWFsZWQ9c3RyaXBvcygkY1snY29uZCddLCdNaW50IChNKScpPT09MDsgJHB4PVtdOwogIGZvcmVhY2goKCRyZXNbJ2l0ZW1TdW1tYXJpZXMnXT8/W10pIGFzICRpdCl7ICR0PSRpdFsndGl0bGUnXT8/Jyc7IGlmKHByZWdfbWF0Y2goJGJhZCwkdCkpIGNvbnRpbnVlOwogICAgJGl3PSR3b3JkcygkdCk7ICRoaXQ9Zm4oJHdzKT0+JHdzP2NvdW50KGFycmF5X2ludGVyc2VjdCgkd3MsJGl3KSkvY291bnQoJHdzKToxOwogICAgaWYoISR2YXJpb3VzICYmICRoaXQoJGF3KTwwLjYpIGNvbnRpbnVlOyBpZigkaGl0KCR0dyk8KCR2YXJpb3VzPzAuODowLjYpKSBjb250aW51ZTsKICAgICRpc05ldz1zdHJpcG9zKCRpdFsnY29uZGl0aW9uJ10/PycnLCduZXcnKT09PTAgJiYgc3RyaXBvcygkaXRbJ2NvbmRpdGlvbiddPz8nJywnbGlrZScpPT09ZmFsc2U7CiAgICBpZigkc2VhbGVkIT09JGlzTmV3KSBjb250aW51ZTsKICAgICR2PShmbG9hdCkoJGl0WydwcmljZSddWyd2YWx1ZSddPz8wKTsgaWYoJHY+MCkgJHB4W109JHY7IH0KICAkbj1jb3VudCgkcHgpOyBpZigkbjwzKXsgZWNobyAiU0tJUFx0eyRjWydsaWQnXX1cdCRuXG4iOyB1c2xlZXAoMTUwMDAwKTsgY29udGludWU7IH0KICAkb2srKzsgcHJpbnRmKCJST1dcdCVkXHQlZFx0JXNcdCVzXHQlc1x0JXNcdCUuMmZcdCVkXHQlLjJmXHQlLjJmXHQlLjJmXG4iLCRjWydsaWQnXSwkY1sncmlkJ10sJGNbJ2FydGlzdCddLCRjWyd0aXRsZSddLCRjWydmbXQnXSwkY1snY29uZCddLCRjWydwcmljZSddLCRuLG1pbigkcHgpLCRwMjUoJHB4KSwkbWVkKCRweCkpOwogIHVzbGVlcCgxNTAwMDApOwp9CmVjaG8gImVCYXkgY2FsbHMgJGNhbGxzLCBjb21wYXJlZCAkb2tcbiI7Cg==' | base64 -d > /tmp/diag_cdebay.php
+            MAX='${{ inputs.max }}' OFF='${{ inputs.offset }}' php /tmp/diag_cdebay.php
+            rm -f /tmp/diag_cdebay.php
