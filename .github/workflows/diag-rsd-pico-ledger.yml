@@ -1,0 +1,59 @@
+# READ-ONLY: where did RSD BF 2026 copies go per store (purchases, sales, transfers,
+# adjustments, current stock) for titles where Pico is short vs what was ordered.
+# No writes. Runs on push to this diag branch only.
+name: Nivessa · diag RSD Pico ledger (read-only)
+on:
+  push:
+    branches: [diag-rsd-pico-ledger]
+  workflow_dispatch:
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve SSH port
+        id: flags
+        env:
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+        run: echo "ssh_port=${DEPLOY_PORT:-22}" >> "$GITHUB_OUTPUT"
+      - name: Add server to known_hosts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          for a in 1 2 3; do ssh-keyscan -T 10 -p "${{ steps.flags.outputs.ssh_port }}" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>&1 && exit 0; sleep 3; done; exit 0
+      - name: Run over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ steps.flags.outputs.ssh_port }}
+          script_stop: true
+          script: |
+            set -e
+            cd /www/playlist.nivessa.com/app
+            cat > /tmp/diag_rsd_ledger.php <<'PHP'
+            <?php
+            require 'vendor/autoload.php';
+            $app = require 'bootstrap/app.php';
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            use Illuminate\Support\Facades\DB;
+            $locs = DB::table('business_locations')->pluck('name', 'id')->all();
+            $pats = ['%carousel ballroom%','%wicked: the complete%','%great divide%','%last of the bugs%','%day & night%','%day and night%','%takanaka%','%everybody scream%','%draw you out%','%rubber soul - the us%','%no ceilings%','%carnegie hall (2lp%','%we are the world%','%back porch vol. 4%','%sorry 4 da wait%','%life of%pi%','%katseye: the dance%'];
+            $ids = DB::table('products')->where('id', '>=', 160000)->where(function ($q) use ($pats) { foreach ($pats as $p) $q->orWhere('name', 'like', $p); })->pluck('name', 'id')->all();
+            foreach ($ids as $id => $name) {
+              echo "\n#$id $name\n";
+              $pl = DB::table('purchase_lines as pl')->join('transactions as t', 't.id', '=', 'pl.transaction_id')->where('pl.product_id', $id)
+                ->selectRaw('t.type, t.status, t.location_id, SUM(pl.quantity) q, GROUP_CONCAT(DISTINCT t.id) ids')->groupBy('t.type', 't.status', 't.location_id')->get();
+              foreach ($pl as $r) echo "  IN  {$r->type}/{$r->status} @".($locs[$r->location_id] ?? $r->location_id).": {$r->q}  (tx {$r->ids})\n";
+              $sl = DB::table('transaction_sell_lines as l')->join('transactions as t', 't.id', '=', 'l.transaction_id')->where('l.product_id', $id)
+                ->selectRaw('t.type, t.status, t.location_id, SUM(l.quantity - COALESCE(l.quantity_returned,0)) q, MIN(t.transaction_date) first')->groupBy('t.type', 't.status', 't.location_id')->get();
+              foreach ($sl as $r) echo "  OUT {$r->type}/{$r->status} @".($locs[$r->location_id] ?? $r->location_id).": {$r->q}  (first {$r->first})\n";
+              $al = DB::table('stock_adjustment_lines as a')->join('transactions as t', 't.id', '=', 'a.transaction_id')->where('a.product_id', $id)
+                ->selectRaw('t.location_id, SUM(a.quantity) q')->groupBy('t.location_id')->get();
+              foreach ($al as $r) echo "  ADJ @".($locs[$r->location_id] ?? $r->location_id).": -{$r->q}\n";
+              $st = DB::table('variation_location_details')->where('product_id', $id)->get(['location_id', 'qty_available']);
+              foreach ($st as $r) echo "  NOW @".($locs[$r->location_id] ?? $r->location_id).": {$r->qty_available}\n";
+            }
+            PHP
+            php /tmp/diag_rsd_ledger.php; rm -f /tmp/diag_rsd_ledger.php
