@@ -590,7 +590,7 @@ class RsdOrderController extends Controller
         $store = $request->query('store') === 'pico' ? 'pico' : 'hollywood';
         $debug = (bool) $request->query('debug');
         $rows = (array) config('rsd_sheet_rows.' . $store, []);
-        $out = \Cache::remember('rsd-stock-v6-' . $store, 300, function () use ($store, $rows) {
+        $out = \Cache::remember('rsd-stock-v7-' . $store, 300, function () use ($store, $rows) {
             $biz = (int) (config('services.nivessa_web.business_id') ?: 1);
             $locIds = [];
             foreach (\App\BusinessLocation::where('business_id', $biz)->pluck('name', 'id') as $id => $name) {
@@ -614,7 +614,7 @@ class RsdOrderController extends Controller
                 foreach ($match[$i] as $id) $all[$id] = true;
             }
             $ids = array_keys($all);
-            $left = $sold = [];
+            $left = $sold = $rev = $cost = [];
             if ($ids && $locIds) {
                 $left = \DB::table('variation_location_details')->whereIn('product_id', $ids)->whereIn('location_id', $locIds)
                     ->groupBy('product_id')->selectRaw('product_id, SUM(qty_available) as q')->pluck('q', 'product_id')->all();
@@ -625,16 +625,30 @@ class RsdOrderController extends Controller
                     ->where('t.transaction_date', '>=', '2026-11-20 00:00:00')
                     ->groupBy('l.product_id')->selectRaw('l.product_id, SUM(l.quantity - COALESCE(l.quantity_returned, 0)) as q')
                     ->pluck('q', 'product_id')->all();
+                // Real money for the debug view: what the lines sold for (before tax) and ERP unit cost.
+                $rev = \DB::table('transaction_sell_lines as l')
+                    ->join('transactions as t', 't.id', '=', 'l.transaction_id')
+                    ->whereIn('l.product_id', $ids)->whereIn('t.location_id', $locIds)
+                    ->where('t.type', 'sell')->where('t.status', 'final')
+                    ->where('t.transaction_date', '>=', '2026-11-20 00:00:00')
+                    ->groupBy('l.product_id')->selectRaw('l.product_id, SUM((l.quantity - COALESCE(l.quantity_returned, 0)) * l.unit_price) as r')
+                    ->pluck('r', 'product_id')->all();
+                $cost = \DB::table('variations')->whereIn('product_id', $ids)
+                    ->groupBy('product_id')->selectRaw('product_id, MAX(default_purchase_price) as c')->pluck('c', 'product_id')->all();
             }
             $res = [];
             foreach ($rows as $i => $r) {
                 [$artist, $title] = array_values($r);
-                $L = 0; $S = 0; $names = [];
-                foreach ($match[$i] as $id) { $L += (float) ($left[$id] ?? 0); $S += (float) ($sold[$id] ?? 0); $names[] = $pool[$id]; }
+                $L = 0; $S = 0; $names = []; $RV = 0; $CS = 0;
+                foreach ($match[$i] as $id) {
+                    $L += (float) ($left[$id] ?? 0); $S += (float) ($sold[$id] ?? 0); $names[] = $pool[$id];
+                    $RV += (float) ($rev[$id] ?? 0); $CS += (float) ($sold[$id] ?? 0) * (float) ($cost[$id] ?? 0);
+                }
                 $L = max(0, (int) round($L)); $S = (int) round($S);
                 $status = !$match[$i] ? 'Not in ERP' : ($L > 0 ? 'In stock' : ($S > 0 ? 'SOLD OUT' : 'None in stock'));
                 $res[] = ['key' => self::sheetKey($artist, $title), 'artist' => $artist, 'title' => $title,
-                    'products' => $names, 'sold' => $S, 'left' => $L, 'status' => $status];
+                    'products' => $names, 'sold' => $S, 'left' => $L, 'status' => $status,
+                    'revenue' => round($RV, 2), 'cost_sold' => round($CS, 2)];
             }
             return $res;
         });
